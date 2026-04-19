@@ -1,0 +1,61 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2024-01-28",
+  "total_articles": 9,
+  "categories": {
+    "frontend": {
+      "count": 2,
+      "articles": [
+        "react-state-management",
+        "typescript-advanced-types"
+      ]
+    },
+    "backend": {
+      "count": 1,
+      "articles": [
+        "rust-ownership-system"
+      ]
+    },
+    "mobile": {
+      "count": 2,
+      "articles": [
+        "deeplink-deep-dive",
+        "h5-offline-package"
+      ]
+    },
+    "devops": {
+      "count": 2,
+      "articles": [
+        "docker-best-practices",
+        "kubernetes-ops"
+      ]
+    },
+    "architecture": {
+      "count": 2,
+      "articles": [
+        "pc-offline-cache"
+      ]
+    }
+  },
+  "tags": {
+    "rust": ["rust-ownership-system"],
+    "react": ["react-state-management"],
+    "vue": [],
+    "typescript": ["typescript-advanced-types"],
+    "webpack": [],
+    "vite": [],
+    "docker": ["docker-best-practices"],
+    "kubernetes": ["kubernetes-ops"],
+    "deeplink": ["deeplink-deep-dive"],
+    "h5": ["h5-offline-package"],
+    "offline": ["h5-offline-package", "pc-offline-cache"],
+    "microservices": [],
+    "nodejs": []
+  },
+  "recent_updates": [
+    "2024-01-28: Added kubernetes-ops article",
+    "2024-01-28: Added docker-best-practices article",
+    "2024-01-22: Added typescript-advanced-types article",
+    "2024-01-20: Added react-state-management article"
+  ]
+}

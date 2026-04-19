@@ -1,0 +1,19 @@
+[project]
+name = "rag-chat-cli"
+version = "0.1.0"
+description = "An interactive chat tool powered by Ollama with knowledge base and conversation memory support"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "datasets",
+    "pandas",
+    "transformers",
+    "torch",
+    "httpx",
+    "rich",
+    "peft",
+    "bitsandbytes",
+]
+
+[project.scripts]
+rag-chat-cli = "main:main"

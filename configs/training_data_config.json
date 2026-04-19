@@ -1,0 +1,86 @@
+{
+  "knowledge_base": {
+    "base_path": "./knowledge",
+    "articles_path": "./knowledge/articles",
+    "categories": ["frontend", "backend", "mobile", "devops", "architecture"],
+    "metadata_files": ["**/*.json"]
+  },
+  "training_data": {
+    "output_path": "./data/train.json",
+    "format": "instruction-response",
+    "min_article_count": 5,
+    "questions_per_article": 3,
+    "include_metadata": true
+  },
+  "categories": {
+    "frontend": {
+      "weight": 0.25,
+      "tags": ["react", "vue", "typescript", "webpack", "vite", "state-management"],
+      "questions": [
+        "请详细介绍一下 {title} 的核心概念和实际应用场景？",
+        "如何使用 {title} 优化前端应用性能？",
+        "{title} 在大型项目中的最佳实践是什么？",
+        "对比分析 {title} 与其他类似技术的优劣势？",
+        "深入讲解 {title} 的底层原理和实现机制？"
+      ]
+    },
+    "backend": {
+      "weight": 0.25,
+      "tags": ["rust", "nodejs", "nestjs", "express", "koa", "rpc", "thrift"],
+      "questions": [
+        "请介绍一下 {title} 的核心特性和适用场景？",
+        "如何使用 {title} 构建高性能后端服务？",
+        "{title} 在微服务架构中如何应用？",
+        "讲解 {title} 的内存管理和性能优化技巧？",
+        "{title} 的错误处理和容错机制设计？"
+      ]
+    },
+    "mobile": {
+      "weight": 0.15,
+      "tags": ["deeplink", "h5", "offline", "android", "ios", "flutter"],
+      "questions": [
+        "请详细讲解 {title} 的实现原理和方案选型？",
+        "如何使用 {title} 优化移动端用户体验？",
+        "{title} 在跨平台开发中的应用？",
+        "移动端 {title} 的性能优化和监控？",
+        "{title} 的安全性和权限管理？"
+      ]
+    },
+    "devops": {
+      "weight": 0.20,
+      "tags": ["docker", "kubernetes", "ci-cd", "monitoring", "container"],
+      "questions": [
+        "请介绍一下 {title} 的核心概念和架构设计？",
+        "如何使用 {title} 实现自动化部署和运维？",
+        "{title} 在生产环境中的最佳实践？",
+        "讲解 {title} 的监控告警和故障排查？",
+        "{title} 的安全加固和资源优化？"
+      ]
+    },
+    "architecture": {
+      "weight": 0.15,
+      "tags": ["microservices", "offline-cache", "incremental-update", "version-control"],
+      "questions": [
+        "请详细分析 {title} 的系统架构设计？",
+        "如何使用 {title} 实现高可用和可扩展性？",
+        "{title} 的数据一致性和事务管理？",
+        "讲解 {title} 的容量规划和性能调优？",
+        "{title} 的容灾备份和恢复策略？"
+      ]
+    }
+  },
+  "data_generation": {
+    "enabled": true,
+    "source": "knowledge_base",
+    "augmentation": {
+      "enabled": true,
+      "synonym_replacement": true,
+      "question_variation": true
+    },
+    "filtering": {
+      "min_content_length": 200,
+      "remove_duplicates": true,
+      "validate_json": true
+    }
+  }
+}

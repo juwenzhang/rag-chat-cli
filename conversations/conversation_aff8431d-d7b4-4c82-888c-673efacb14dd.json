@@ -1,0 +1,17 @@
+{
+  "id": "aff8431d-d7b4-4c82-888c-673efacb14dd",
+  "messages": [
+    {
+      "role": "user",
+      "content": "你好，我想了解一下Docker的最佳实践",
+      "timestamp": "2026-04-20T03:07:20.845857"
+    },
+    {
+      "role": "assistant",
+      "content": "Docker的最佳实践包括以下几点：\n1. 使用官方基础镜像\n2. 最小化镜像大小\n3. 使用多阶段构建\n4. 避免在容器中运行root用户\n5. 合理使用缓存\n6. 定义明确的CMD和ENTRYPOINT\n7. 使用.dockerignore文件\n8. 定期更新基础镜像",
+      "timestamp": "2026-04-20T03:07:20.845869"
+    }
+  ],
+  "start_time": "2026-04-20T03:07:20.845845",
+  "end_time": "2026-04-20T03:07:20.845882"
+}

@@ -1,0 +1,20 @@
+{
+  "conversation_id": "conv_20260420_033115_902741",
+  "started_at": "2026-04-20T03:31:15.902776",
+  "ended_at": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "s",
+      "timestamp": "2026-04-20T03:31:15.902895",
+      "message_id": "msg_20260420_033115_902889"
+    },
+    {
+      "role": "assistant",
+      "content": "好的，请告诉我您需要我如何帮助？",
+      "timestamp": "2026-04-20T03:31:15.902915",
+      "message_id": "msg_20260420_033115_902911"
+    }
+  ],
+  "metadata": {}
+}

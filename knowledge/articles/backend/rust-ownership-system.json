@@ -1,0 +1,12 @@
+{
+  "id": "rust-ownership-system",
+  "title": "Rust 所有权系统深度解析",
+  "category": "backend",
+  "tags": ["rust", "memory-management"],
+  "author": "Tech Writer",
+  "created_at": "2024-01-15",
+  "updated_at": "2024-01-15",
+  "summary": "深入理解 Rust 的所有权、借用和生命周期机制",
+  "difficulty": "advanced",
+  "reading_time": "15min"
+}

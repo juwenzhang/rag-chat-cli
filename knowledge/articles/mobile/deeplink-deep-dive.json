@@ -1,0 +1,12 @@
+{
+  "id": "deeplink-deep-dive",
+  "title": "Deeplink 深度链接完全指南",
+  "category": "mobile",
+  "tags": ["deeplink", "ios", "android", "mobile"],
+  "author": "Tech Writer",
+  "created_at": "2024-01-16",
+  "updated_at": "2024-01-16",
+  "summary": "深入理解 Deeplink 原理与跨平台实现方案",
+  "difficulty": "advanced",
+  "reading_time": "20min"
+}
