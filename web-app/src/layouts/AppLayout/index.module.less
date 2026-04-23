@@ -1,0 +1,98 @@
+.appLayout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: @color-bg;
+}
+
+.appLayout__header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: 56px;
+  padding: 0 24px;
+  border-bottom: 1px solid @color-border;
+  background: @color-surface;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.appLayout__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.appLayout__logo {
+  font-size: 18px;
+  color: @color-primary;
+}
+
+.appLayout__name {
+  font-family: @font-mono;
+  font-size: 13px;
+  color: @color-text-primary;
+}
+
+.appLayout__nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.appLayout__navItem {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: @color-text-secondary;
+  border-radius: @radius-md;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.appLayout__navItem:hover {
+  color: @color-text-primary;
+  background: @color-surface-2;
+}
+
+.appLayout__navItem:global(.is-active) {
+  color: @color-primary;
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.appLayout__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.appLayout__iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid @color-border;
+  border-radius: @radius-md;
+  color: @color-text-secondary;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.appLayout__iconBtn:hover {
+  color: @color-primary;
+  border-color: @color-border-strong;
+}
+
+.appLayout__main {
+  flex: 1;
+  padding: 32px;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}

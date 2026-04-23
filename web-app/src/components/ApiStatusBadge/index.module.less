@@ -1,0 +1,38 @@
+.apiStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 999px;
+  border: 1px solid @color-border;
+  background: @color-surface-2;
+}
+
+.apiStatus__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: @color-text-muted;
+}
+
+.apiStatus__text {
+  color: @color-text-secondary;
+}
+
+.apiStatus--ok .apiStatus__dot {
+  background: @color-success;
+  box-shadow: 0 0 6px @color-success;
+}
+
+.apiStatus--down .apiStatus__dot {
+  background: @color-danger;
+}
+
+.apiStatus--down .apiStatus__text {
+  color: @color-danger;
+}
+
+.apiStatus--pending .apiStatus__dot {
+  background: @color-warning;
+}

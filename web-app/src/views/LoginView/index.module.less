@@ -1,0 +1,31 @@
+.loginView {
+  width: 100%;
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  &__serverError {
+    margin: 0;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: @color-danger;
+    background: rgba(248, 113, 113, 0.08);
+    border: 1px solid rgba(248, 113, 113, 0.25);
+    border-radius: @radius-md;
+  }
+
+  &__submit {
+    width: 100%;
+  }
+
+  &__demo {
+    margin: 0;
+    font-family: @font-mono;
+    font-size: 11px;
+    color: @color-text-muted;
+    text-align: center;
+  }
+}

@@ -1,14 +1,36 @@
-# Python-generated files
+# ── Python ─────────────────────────────────────────────
 __pycache__/
 *.py[oc]
 build/
 dist/
 wheels/
 *.egg-info
-
-# Virtual environments
 .venv
 
+# ── AI agent runtime dirs ──────────────────────────────
 .claude/
 .codex/
 .trae/
+
+# ── OS ─────────────────────────────────────────────────
+.DS_Store
+
+# ── Env ────────────────────────────────────────────────
+.env
+.env.local
+
+# ── Logs ───────────────────────────────────────────────
+*.log
+
+# ── Node / Frontend (web-app/) ─────────────────────────
+node_modules/
+.vite/
+coverage/
+# unplugin 自动生成的类型声明（每次 dev 重写）
+auto-imports.d.ts
+components.d.ts
+# msw service worker（每个开发者本地 pnpm dlx msw init 生成）
+web-app/public/mockServiceWorker.js
+
+# ── Outputs ────────────────────────────────────────────
+outputs/

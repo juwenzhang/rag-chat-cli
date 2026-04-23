@@ -1,0 +1,40 @@
+.authLayout {
+  position: relative;
+  flex-direction: column;
+  gap: 32px;
+  padding: 48px 16px;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(34, 211, 238, 0.12), transparent 60%),
+    @color-bg;
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: @color-text-primary;
+  }
+
+  &__logo {
+    font-size: 22px;
+    color: @color-primary;
+  }
+
+  &__name {
+    font-family: @font-mono;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+  }
+
+  &__slot {
+    width: 100%;
+    max-width: 420px;
+  }
+
+  &__footer {
+    position: absolute;
+    bottom: 16px;
+    font-size: 11px;
+    color: @color-text-muted;
+    font-family: @font-mono;
+  }
+}

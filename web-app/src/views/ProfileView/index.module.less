@@ -1,0 +1,35 @@
+.profile {
+  max-width: 640px;
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px dashed @color-border;
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  &__label {
+    margin: 0;
+    font-size: 12px;
+    color: @color-text-muted;
+  }
+
+  &__value {
+    margin: 0;
+    font-family: @font-mono;
+    font-size: 13px;
+    color: @color-text-primary;
+  }
+}

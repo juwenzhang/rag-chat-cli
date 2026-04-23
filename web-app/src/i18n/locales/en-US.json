@@ -1,0 +1,54 @@
+{
+  "app": {
+    "title": "rag-chat · Identity Portal",
+    "brand": "rag-chat"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "token": "CLI Token",
+    "profile": "Profile",
+    "logout": "Sign out"
+  },
+  "auth": {
+    "login": {
+      "title": "Sign in",
+      "subtitle": "Sign in with email to get your access token",
+      "email": "Email",
+      "emailPlaceholder": "you@example.com",
+      "password": "Password",
+      "passwordPlaceholder": "At least 8 chars, letters + digits",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "forgot": "Forgot password?",
+      "errorInvalidCredentials": "Invalid email or password",
+      "errorNetwork": "Network error, please retry"
+    }
+  },
+  "dashboard": {
+    "welcome": "Welcome back, {name}",
+    "tokenCardTitle": "Current access token",
+    "tokenCardHint": "Expires in {expiresIn}",
+    "copy": "Copy",
+    "copied": "Copied",
+    "cliUsage": "Run in your terminal:",
+    "cliHint": "Then you can call protected services from the CLI."
+  },
+  "profile": {
+    "title": "Account",
+    "email": "Email",
+    "displayName": "Display name",
+    "scope": "Scope",
+    "createdAt": "Created at"
+  },
+  "common": {
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "loading": "Loading…",
+    "empty": "No data",
+    "retry": "Retry"
+  },
+  "status": {
+    "apiHealthy": "API healthy",
+    "apiDown": "API unreachable"
+  }
+}
