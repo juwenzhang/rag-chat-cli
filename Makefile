@@ -109,9 +109,12 @@ rebuild: ## 不用缓存重建所有镜像
 	$(COMPOSE) build --no-cache
 
 # ─── Database ────────────────────────────────────────────────────────────────
-.PHONY: db.up db.migrate db.rev db.downgrade db.reset db.shell redis.shell
-db.up: ## 仅起 postgres + redis（用于本地直跑时依赖）
-	$(COMPOSE) up -d postgres redis
+.PHONY: db.up db.init db.migrate db.rev db.downgrade db.reset db.shell redis.shell
+db.up: ## 启动 postgres (pgvector)。P5 后会同时起 redis。
+	$(COMPOSE) --profile db up -d postgres
+
+db.init: ## 首次初始化：probe + alembic upgrade head + 校验 pgvector
+	$(PY) python scripts/db_init.py
 
 db.migrate: ## alembic upgrade head
 	$(PY) alembic upgrade head
@@ -136,8 +139,9 @@ db.reset: ## [DEV 专用] 删库重建 + 迁移（二次确认）
 db.shell: ## 进 postgres psql
 	$(COMPOSE) exec postgres psql -U rag -d ragdb
 
-redis.shell: ## 进 redis-cli
-	$(COMPOSE) exec redis redis-cli
+redis.shell: ## [P5] redis-cli — redis service lands in add-redis-and-workers.
+	@echo "[skip] redis service not in docker-compose yet (P5)."
+	@exit 2
 
 # ─── Ollama ──────────────────────────────────────────────────────────────────
 .PHONY: ollama.pull ollama.ps
@@ -149,26 +153,56 @@ ollama.ps: ## 列出 ollama 已拉取模型
 	$(COMPOSE) exec ollama ollama list
 
 # ─── Quality ─────────────────────────────────────────────────────────────────
-.PHONY: lint fmt test test.api test.web check
-lint: ## ruff check + mypy + web lint
+# 单一真相来源：与 CI workflow .github/workflows/ci.yml 对齐。
+# mypy 通过 `uvx` 运行，不依赖本地 venv 预装。
+.PHONY: lint lint-fix fmt fmt-check typecheck test test-fast test-cov test-cov-strict ci
+# Use the project's venv (`uv run`) rather than a fresh uvx environment so
+# mypy can see the real dependency set (SQLAlchemy, pgvector, etc.).
+MYPY ?= uv run mypy
+
+lint: ## ruff check（只报告，不修）
 	$(PY) ruff check .
-	-$(PY) mypy api core db cache workers settings.py 2>/dev/null || echo "mypy: 部分目标路径尚未落地，跳过"
-	$(PNPM) lint
 
-fmt: ## ruff format + prettier
+lint-fix: ## ruff check --fix
+	$(PY) ruff check . --fix
+
+fmt: ## ruff format（写入）
 	$(PY) ruff format .
-	$(PNPM) format
 
-test: ## 运行 Python 测试
+fmt-check: ## ruff format --check（不写入）
+	$(PY) ruff format --check .
+
+typecheck: ## mypy --strict（走 uv run，能解析项目所有依赖）
+	$(MYPY) --strict . --explicit-package-bases
+
+test: ## 跑所有 pytest
 	$(PY) pytest -q
 
-test.api: ## 仅运行 API 测试
-	$(PY) pytest tests/api -q
+test-fast: ## 跳过 slow / pg / redis / integration 标记
+	$(PY) pytest -q -m "not slow and not pg and not redis and not integration"
 
-test.web: ## 前端测试
-	$(PNPM) test
+test-cov: ## pytest-cov（软门：只报告，不退出码）
+	uvx --with pytest-cov --with pytest-asyncio --with rich --with pydantic-settings --with prompt_toolkit --with httpx pytest --cov --cov-report=term-missing --cov-report=xml
+	python scripts/check_coverage.py --soft
 
-check: lint test ## CI 聚合: lint + test
+test-cov-strict: ## pytest-cov（硬门：未达 AGENTS.md §12 阈值则失败）
+	uvx --with pytest-cov --with pytest-asyncio --with rich --with pydantic-settings --with prompt_toolkit --with httpx pytest --cov --cov-report=term-missing --cov-report=xml
+	python scripts/check_coverage.py
+
+ci: lint fmt-check typecheck test ## 本地一把梭：与 CI 等价的组合
+
+# ─── Legacy / future-module shims ────────────────────────────────────────────
+# 下列 target 引用了尚未落地的模块（P4+ 才会实装）。
+# 保留 target 让 Makefile 文档表达"未来蓝图"，实际调用时返回提示 + exit 2，
+# 避免开发者误以为失败是 bug。
+.PHONY: test.api test.web
+test.api: ## [P5] API tests — awaits add-fastapi-rest-api
+	@echo "[skip] tests/api/ not yet bootstrapped (P5). See openspec/changes/add-fastapi-rest-api/."
+	@exit 2
+
+test.web: ## [P7] Web tests — awaits build-web-views-auth-chat-knowledge
+	@echo "[skip] web-app/ not yet bootstrapped. See openspec/changes/build-web-views-auth-chat-knowledge/."
+	@exit 2
 
 # ─── Seed / Ingest ───────────────────────────────────────────────────────────
 .PHONY: seed.user ingest

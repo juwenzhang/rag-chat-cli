@@ -5,15 +5,189 @@ description = "An interactive chat tool powered by Ollama with knowledge base an
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "datasets",
     "pandas",
-    "transformers",
-    "torch",
     "httpx",
     "rich",
+    "pydantic-settings>=2.2",
+    "prompt_toolkit>=3.0.43",
+    # Database layer (P4): SQLAlchemy 2.x async + asyncpg + pgvector + Alembic.
+    "sqlalchemy[asyncio]>=2.0.29",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "pgvector>=0.2.5",
+    "greenlet>=3.0",  # required by SQLAlchemy asyncio
+]
+
+[project.optional-dependencies]
+# LoRA 训练相关（仅 `scripts/lora_train.py` 与 `utils/model/trainer.py` 需要）。
+# 在 macOS x86_64 上这些库普遍无 wheel，因此从核心依赖剥离。
+# 训练用途请使用 `uv sync --extra train`。
+train = [
+    "datasets",
+    "transformers",
+    "torch",
     "peft",
     "bitsandbytes",
 ]
 
+# 开发期工具（测试、格式化、类型检查等）。
+# 安装方式：`uv sync --all-extras` 或 `uv sync --extra dev`。
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+    # SQLite async driver — lets the DB test suite run without Postgres.
+    "aiosqlite>=0.20",
+]
+
 [project.scripts]
 rag-chat-cli = "main:main"
+
+# ---------------------------------------------------------------------------
+# ruff — single source of truth for style + lint
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["."]
+# 历史归档的 change 目录里有大段 proposal 代码片段，不该被 lint。
+extend-exclude = [
+    "openspec/changes/archive",
+    ".venv",
+    "conversations",
+    "knowledge",
+]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",   # pycodestyle + pyflakes
+    "I",             # isort
+    "B",             # bugbear
+    "UP",            # pyupgrade
+    "SIM",           # simplify
+    "RUF",           # ruff-specific
+    "ASYNC",         # async-specific
+    "S",             # bandit-lite
+    "T20",           # no print
+]
+ignore = [
+    "E501",  # line length → formatter 负责
+    "S101",  # assert，测试里常用
+    "S311",  # pseudo-random acceptable (we use secrets where it matters)
+    "SIM108", # ternary-vs-if-else 有时会降低可读性
+    # 项目刻意使用中文全角标点作为 docstring / comment / 错误消息的一部分。
+    # 全盘替换会损毁语义；单独忽略这三条规则（RUF* 其余规则仍然开启）。
+    "RUF001", "RUF002", "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "T20", "B", "ASYNC"]
+"scripts/**" = ["T20", "S"]
+"main.py" = ["T20"]
+"app/cli.py" = ["T20"]  # CLI stub messages legitimately go to stdout
+
+[tool.ruff.format]
+quote-style = "double"
+line-ending = "lf"
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+# 让仓库根目录成为 import root（这样 `import settings` 可以找到根目录下的 settings.py）。
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+asyncio_mode = "auto"
+markers = [
+    "slow: slow tests (> 1s)",
+    "integration: cross-module integration tests",
+    "pg: requires PostgreSQL (added by P4)",
+    "redis: requires Redis (added by P5)",
+]
+
+# ---------------------------------------------------------------------------
+# coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+branch = true
+# 覆盖当前存在的业务层；未来 api/ workers/ 落地后在各自的 change 中扩充。
+source = ["app", "core", "db", "ui", "settings"]
+omit = [
+    "tests/*",
+    "scripts/*",
+    "alembic/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+skip_covered = false
+# ``fail_under`` is the **target** per AGENTS.md §12 (total ≥ 85, core ≥ 90)
+# but enforcement is routed through ``scripts/check_coverage.py`` so the ruff
+# + mypy + pytest triad can fail fast on real bugs without coupling to coverage
+# ratcheting. See Makefile targets ``test-cov`` (soft) vs ``test-cov-strict``.
+fail_under = 0
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+# ---------------------------------------------------------------------------
+# mypy — strict on business layers, relaxed on legacy / 3rd-party-stubless
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+strict = true
+
+# settings.py 归属于上一个已归档的 change（bootstrap-settings-and-env）。
+# 本次 change 只约束 ui/ 与 app/，故对 settings.py 放宽以避免跨 scope 噪声。
+[[tool.mypy.overrides]]
+module = "settings"
+ignore_errors = true
+
+# ``ui/`` 归属于已归档的 change（restructure-cli-ui-opencode-style）；
+# 其中对 prompt_toolkit 的异步包装返回 Any 来自第三方 stub 缺失，
+# 不在本次 ``split-core-domain-layer`` 范围内，故允许 Any 返回值。
+[[tool.mypy.overrides]]
+module = "ui.prompt"
+warn_return_any = false
+
+# 第三方无 stub 的库，mypy strict 下会报 import-not-found；降级。
+[[tool.mypy.overrides]]
+module = [
+    "httpx",
+    "rich.*",
+    "prompt_toolkit.*",
+    "pytest",
+    "_pytest.*",
+    # P4 DB layer
+    "pgvector.*",
+    "asyncpg",
+    "asyncpg.*",
+    "aiosqlite",
+    "aiosqlite.*",
+    "alembic",
+    "alembic.*",
+]
+ignore_missing_imports = true
+
+# 测试使用 pytest fixture，strict 下会把 fixture 参数判为 untyped；放宽。
+# 注意 mypy 的 `tests.*` 只匹配直接子模块；用多层 glob 覆盖更深层。
+[[tool.mypy.overrides]]
+module = ["tests", "tests.*", "tests.*.*", "tests.*.*.*"]
+disallow_untyped_defs = false
+check_untyped_defs = true
+disable_error_code = ["untyped-decorator", "no-untyped-def"]
+
+# 根级 main.py / scripts 不属于 core API，允许 Any-call 简化。
+[[tool.mypy.overrides]]
+module = ["main", "scripts.*"]
+disallow_untyped_decorators = false
