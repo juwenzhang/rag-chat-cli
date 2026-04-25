@@ -58,7 +58,7 @@ jobs:
       - name: uv python install
         run: uv python install ${{ matrix.python }}
       - name: uv sync
-        run: uv sync --extra dev --python ${{ matrix.python }}
+        run: uv sync --python ${{ matrix.python }} --extra dev
       - name: pytest
         run: uv run pytest -q
 
