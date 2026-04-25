@@ -82,3 +82,6 @@ conversations/*.json
 # Auto-crawled knowledge snapshots (if/when knowledge/ is re-introduced).
 knowledge/articles/frontend/chat_*.json
 knowledge/articles/frontend/chat_*.md
+
+# local sqlite db (if used instead of Postgres in dev); not relevant to production.
+.dev.db

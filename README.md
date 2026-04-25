@@ -15,12 +15,13 @@ concrete build plan lives in [openspec/changes/](openspec/changes/).
 - **P2** `split-core-domain-layer` ✓ archived — `core/` domain package (Ollama + ChatService)
 - **P3** `setup-quality-gates-ci-cd` ✓ archived — ruff / mypy / pytest-cov / pre-commit / GitHub Actions
 - **P4** `setup-db-postgres-pgvector-alembic` ✓ archived — database schema + async SQLAlchemy + Alembic
-- **P5** `add-redis-and-workers` — queue & background workers
-- **P6** `add-fastapi-rest-api` + `add-jwt-auth` — HTTP surface
-- **P6** `add-sse-and-websocket-streaming` — streaming responses
-- **P7** `implement-rag-retrieval-pgvector` — retrieval pipeline
-- **P8** `bootstrap-web-vite-react-ts` + `build-web-views-auth-chat-knowledge` — Web UI
-- **P9** `add-observability-otel` + `setup-quality-gates-ci-cd` + `containerize-with-docker-compose`
+- **P5** `add-jwt-auth` ✓ archived — auth domain (bcrypt + JWT + refresh rotation) + CLI token store
+- **P6** `add-fastapi-rest-api` ✓ archived — FastAPI app + routers + middleware + OpenAPI dump
+- **P7** `add-sse-and-websocket-streaming` ✓ archived — `POST /chat/stream` (SSE) + `/ws/chat` (WebSocket) + abort + log sanitization
+- **P8** `add-redis-and-workers` — queue & background workers
+- **P9** `implement-rag-retrieval-pgvector` — retrieval pipeline
+- **P10** `bootstrap-web-vite-react-ts` + `build-web-views-auth-chat-knowledge` — Web UI
+- **P11** `add-observability-otel` + `containerize-with-docker-compose`
 
 See `openspec list` for live status.
 
@@ -61,6 +62,59 @@ Environment variables are grouped by concern (app / auth / db / redis / ollama
 / retrieval / rate_limit) and support both flat names (`JWT_SECRET`) and
 nested names (`AUTH__JWT_SECRET`).
 
+### Generating `JWT_SECRET`
+
+`dev` falls back to an insecure placeholder with a warning. For anything
+beyond a throwaway shell, generate a strong secret and put it in `.env`:
+
+```bash
+openssl rand -hex 32
+```
+
+`APP_ENV=prod` refuses to boot unless `JWT_SECRET` is a non-placeholder value.
+
+### Quickstart: run the API on your laptop
+
+The Docker-compose defaults in `.env.example` use service-network hostnames
+(`postgres`, `redis`, `ollama`) that **do not resolve on your host machine**.
+For running the API directly against Python:
+
+```bash
+# 1. Create .env from the template
+cp .env.example .env
+
+# 2. Pick one of these DATABASE_URLs — edit .env accordingly:
+#    (a) zero-install, validates API + auth, no real RAG search:
+#        DATABASE_URL=sqlite+aiosqlite:///./.dev.db
+#    (b) real Postgres (recommended once you want RAG working):
+#        make db.up     # starts pgvector/pgvector:pg16 on localhost:5432
+#        DATABASE_URL=postgresql+asyncpg://rag:rag@localhost:5432/ragdb
+
+# 3. Generate a strong JWT secret so you don't see the "insecure dev secret" warning
+openssl rand -hex 32          # copy output into JWT_SECRET=... in .env
+
+# 4. Initialise the schema (idempotent — safe to re-run)
+make db.init
+
+# 5. Start the API (auto-reload). PORT=xxx if 8000 is taken:
+make dev.api                   # or: make dev.api PORT=8001
+# Prefer one-shot: `make dev` = db.init + dev.api in sequence.
+
+# Port stuck? `make dev.kill` frees PORT=$PORT (default 8000).
+```
+
+Smoke:
+
+```bash
+curl http://localhost:8000/health
+# {"status":"ok"}
+
+curl -X POST http://localhost:8000/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"me@example.com","password":"password1demo"}'
+# 201 + {"id":"…","email":"me@example.com",…}
+```
+
 ## Database (Postgres + pgvector)
 
 The DB layer is **optional** for running the CLI — the chat loop still works
@@ -97,11 +151,36 @@ uv run python main.py --help
 uv run python main.py chat
 uv run python main.py          # same thing
 
+# Run the FastAPI server (P6 onwards)
+uv run python main.py serve --host 127.0.0.1 --port 8000
+# → /docs UI, /openapi.json, /health, /auth/*, /me, /chat/*, /knowledge/*
+
 # Not-yet-implemented stubs (exit code 2)
-uv run python main.py serve    # FastAPI server (lands in P5)
 uv run python main.py train    # LoRA trainer
 uv run python main.py ingest   # knowledge ingestion
 ```
+
+### REST API quick reference (P6)
+
+| Method | Path | Auth |
+|---|---|---|
+| `GET` | `/health` | public |
+| `POST` | `/auth/register` | public |
+| `POST` | `/auth/login` | public |
+| `POST` | `/auth/refresh` | public (refresh token) |
+| `POST` | `/auth/logout` | public (refresh token) |
+| `GET` `PATCH` | `/me` | bearer |
+| `POST` `GET` | `/chat/sessions` | bearer |
+| `GET` | `/chat/sessions/{id}/messages` | bearer |
+| `POST` | `/chat/messages` | bearer (non-streaming, aggregates SSE) |
+| `POST` | `/chat/stream` | bearer — SSE, events: `retrieval / token / done / error` |
+| `WS` | `/ws/chat` | bearer (subprotocol `bearer,<jwt>` or `?token=<jwt>`); supports `{"type":"abort"}` |
+| `POST` `GET` | `/knowledge/documents` | bearer |
+| `POST` | `/knowledge/documents:reindex` | bearer (202 stub until P8) |
+| `GET` | `/knowledge/search` | bearer (empty until P9) |
+
+`make openapi` regenerates [docs/openapi.json](docs/openapi.json); `make test.api`
+runs the route tests against an in-memory SQLite via `httpx.ASGITransport`.
 
 ### Chat keybindings (AGENTS.md §11)
 
@@ -115,7 +194,10 @@ uv run python main.py ingest   # knowledge ingestion
 | `/help` | List all slash commands |
 | `/clear` | Clear screen |
 | `/new` | Start a fresh local session (clears in-memory history) |
-| `/model` `/retrieve` `/login` `/logout` | Reserved (prints "not implemented yet") |
+| `/login` | Interactive email + password → stores JWT at `~/.config/rag-chat/token.json` (0600) |
+| `/logout` | Revoke the current refresh token and clear the local token file |
+| `/whoami` | Print the user id decoded from the stored access token |
+| `/model` `/retrieve` | Reserved (prints "not implemented yet") |
 
 > The default reply provider in P1 is an in-process `EchoReplyProvider` — it
 > echoes your input back as streaming tokens so the full render pipeline is
