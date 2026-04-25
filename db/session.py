@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import (
 
 __all__ = [
     "current_engine",
+    "current_session_factory",
     "dispose_engine",
     "get_session",
     "init_engine",
@@ -98,6 +99,18 @@ def current_engine() -> AsyncEngine:
     if _engine is None:
         raise RuntimeError("db.session.init_engine() has not been called yet")
     return _engine
+
+
+def current_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Return the module-level :class:`async_sessionmaker` or raise if uninitialised.
+
+    Handy for non-FastAPI callers (CLI, workers) that want to inject a session
+    factory into :class:`core.auth.service.AuthService` without re-building one.
+    """
+
+    if _SessionLocal is None:
+        raise RuntimeError("db.session.init_engine() has not been called yet")
+    return _SessionLocal
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

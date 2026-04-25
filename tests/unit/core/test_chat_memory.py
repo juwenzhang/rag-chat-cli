@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 
 from core.llm.client import ChatMessage
-from core.memory.chat_memory import ChatMemory
+from core.memory.chat_memory import FileChatMemory
 
 
 @pytest.mark.asyncio
 async def test_new_session_is_isolated(tmp_path: Path) -> None:
-    mem = ChatMemory(root=tmp_path)
+    mem = FileChatMemory(root=tmp_path)
     sid_a = await mem.new_session()
     sid_b = await mem.new_session()
     assert sid_a != sid_b
@@ -21,7 +21,7 @@ async def test_new_session_is_isolated(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_append_and_get_roundtrip(tmp_path: Path) -> None:
-    mem = ChatMemory(root=tmp_path)
+    mem = FileChatMemory(root=tmp_path)
     sid = await mem.new_session()
     await mem.append(sid, ChatMessage(role="user", content="hi"))
     await mem.append(sid, ChatMessage(role="assistant", content="hello"))
@@ -32,7 +32,7 @@ async def test_append_and_get_roundtrip(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_delete_session(tmp_path: Path) -> None:
-    mem = ChatMemory(root=tmp_path)
+    mem = FileChatMemory(root=tmp_path)
     sid = await mem.new_session()
     await mem.delete_session(sid)
     assert await mem.list_sessions() == []
@@ -40,6 +40,6 @@ async def test_delete_session(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_rejects_unsafe_session_id(tmp_path: Path) -> None:
-    mem = ChatMemory(root=tmp_path)
+    mem = FileChatMemory(root=tmp_path)
     with pytest.raises(ValueError):
         await mem.get("../etc/passwd")
