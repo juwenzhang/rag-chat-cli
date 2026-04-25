@@ -41,6 +41,39 @@ async def _probe(url: str) -> None:
         await engine.dispose()
 
 
+_DOCKER_HOSTS = ("postgres", "redis", "ollama")
+
+
+def _diagnose(url: str, exc: BaseException) -> str:
+    """Return a single short hint pointing at the most likely root cause."""
+    msg = str(exc).lower()
+    # Hostname not resolvable (typical when the .env still uses Docker
+    # service names like "postgres" but Python is running on the host).
+    if "nodename nor servname" in msg or "name or service not known" in msg:
+        for host in _DOCKER_HOSTS:
+            if f"@{host}:" in url or f"//{host}:" in url:
+                return (
+                    f"hostname '{host}' is not resolvable on this machine. "
+                    "Looks like .env still uses Docker compose service names. "
+                    "Either:\n"
+                    "  • run inside docker compose (`make up`), or\n"
+                    "  • change the host to `localhost` in .env, or\n"
+                    "  • switch to SQLite: "
+                    "`DATABASE_URL=sqlite+aiosqlite:///./.dev.db`"
+                )
+        return "DNS lookup failed; check the host part of DATABASE_URL"
+    # Connection refused (postgres / redis not running).
+    if "connection refused" in msg or "could not connect" in msg:
+        return (
+            "connection refused — the database is not listening on that port.\n"
+            "  • for postgres: `make db.up` to start the container, then retry."
+        )
+    # Auth failed.
+    if "password authentication failed" in msg or "authentication failed" in msg:
+        return "DB authentication failed — check the user/password in DATABASE_URL"
+    return ""
+
+
 async def _check_pgvector(url: str) -> bool:
     engine = create_async_engine(url, future=True)
     try:
@@ -85,12 +118,24 @@ async def _main() -> int:
 
         url = settings.db.database_url
 
+    # Friendly nudge if we are about to use the docker default and there is
+    # no .env on disk — that's almost always the cause of "host not found".
+    if not (_ROOT / ".env").exists() and "@postgres:" in url:
+        print(
+            "[db-init] note: no .env file found; using the Docker compose "
+            "default (host=postgres). Run `cp .env.example .env` and edit if "
+            "you are running Python directly on the host."
+        )
+
     print(f"[db-init] target: {url}")
 
     try:
         await _probe(url)
     except Exception as exc:
         print(f"[db-init] ERROR: cannot reach DB: {exc}")
+        hint = _diagnose(url, exc)
+        if hint:
+            print(f"[db-init] hint: {hint}")
         return 1
     print("[db-init] connectivity: OK")
 

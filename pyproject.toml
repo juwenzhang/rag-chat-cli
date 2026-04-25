@@ -16,6 +16,16 @@ dependencies = [
     "alembic>=1.13",
     "pgvector>=0.2.5",
     "greenlet>=3.0",  # required by SQLAlchemy asyncio
+    # Auth layer (P6 add-jwt-auth): JWT + bcrypt + EmailStr validator.
+    # passlib 1.7.4 is not compatible with bcrypt>=5; pin to bcrypt 4.x.
+    "python-jose[cryptography]>=3.3",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt<5.0",
+    "email-validator>=2.1",
+    # HTTP layer (P6 add-fastapi-rest-api): FastAPI + uvicorn.
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",  # FastAPI form parsing (optional but commonly needed)
 ]
 
 [project.optional-dependencies]
@@ -41,6 +51,8 @@ dev = [
     "pre-commit>=3.7",
     # SQLite async driver — lets the DB test suite run without Postgres.
     "aiosqlite>=0.20",
+    # anyio — ships with FastAPI; pin for tests using AsyncClient lifespan.
+    "anyio>=4",
 ]
 
 [project.scripts]
@@ -88,6 +100,16 @@ ignore = [
 "scripts/**" = ["T20", "S"]
 "main.py" = ["T20"]
 "app/cli.py" = ["T20"]  # CLI stub messages legitimately go to stdout
+# S105/S106 mis-fire on the string literals "access"/"refresh"/"bearer" which
+# name *token kinds*, not secrets. Scope the exception to the two auth DTOs.
+"core/auth/tokens.py" = ["S105", "S106"]
+"core/auth/service.py" = ["S105", "S106"]
+"api/schemas/auth.py" = ["S105"]
+# `Depends(...)` in default values is the idiomatic FastAPI pattern; B008 is a
+# false positive in the context of routers / deps.
+"api/routers/**" = ["B008"]
+"api/deps.py" = ["B008"]
+"api/chat_service.py" = ["B008"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -176,6 +198,11 @@ module = [
     "aiosqlite.*",
     "alembic",
     "alembic.*",
+    # P6 auth dependencies; stubs are incomplete or absent.
+    "jose",
+    "jose.*",
+    "passlib",
+    "passlib.*",
 ]
 ignore_missing_imports = true
 

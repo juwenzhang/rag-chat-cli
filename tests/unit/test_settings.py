@@ -45,10 +45,16 @@ _MANAGED_ENV_KEYS = (
 
 
 @pytest.fixture
-def clean_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Remove every env var that ``settings.py`` reads, for a clean slate."""
+def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> Iterator[None]:
+    """Remove every env var that ``settings.py`` reads, for a clean slate.
+
+    Also ``chdir`` into an empty tmp dir so ``_parse_dotenv`` does not pick up
+    the developer's real `.env` (which would smuggle a real ``JWT_SECRET`` into
+    the test and make "no-secret" assertions silently pass).
+    """
     for key in _MANAGED_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
+    monkeypatch.chdir(tmp_path)
     yield
 
 
@@ -136,6 +142,71 @@ class TestFlatAndNestedAliasesEquivalent:
         assert cfg.auth.jwt_secret == "flat-secret"
         assert cfg.ollama.chat_model == "llama3.2"
         assert cfg.db.database_url == "postgresql+asyncpg://x:y@h/d"
+
+
+class TestDotenvFlatHoist:
+    """Regression: flat aliases written in `.env` (not in os.environ) must
+    still be hoisted to the right group. Without this we silently fell back
+    to ``dev-insecure-secret`` even when the user had set ``JWT_SECRET=...``
+    in their `.env` — and ``Settings()`` raised "auth Field required" because
+    ``AuthSettings.jwt_secret`` is required and never received the value.
+    """
+
+    def test_dotenv_flat_keys_are_hoisted(
+        self,
+        clean_env: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        import settings as s
+
+        # Write a `.env` next to where settings.py looks (process cwd).
+        dotenv = tmp_path / ".env"
+        dotenv.write_text(
+            "JWT_SECRET=from-dotenv-flat\n"
+            "DATABASE_URL=sqlite+aiosqlite:///./.x.db\n"
+            "OLLAMA_CHAT_MODEL=qwen-from-dotenv\n",
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path)
+        module = importlib.reload(s)
+        cfg = module.settings
+        assert cfg.auth.jwt_secret == "from-dotenv-flat"
+        assert cfg.db.database_url == "sqlite+aiosqlite:///./.x.db"
+        assert cfg.ollama.chat_model == "qwen-from-dotenv"
+
+    def test_os_environ_wins_over_dotenv(
+        self,
+        clean_env: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        import settings as s
+
+        (tmp_path / ".env").write_text("JWT_SECRET=from-dotenv\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("JWT_SECRET", "from-os-environ")
+        module = importlib.reload(s)
+        assert module.settings.auth.jwt_secret == "from-os-environ"
+
+    def test_dotenv_strips_inline_comments_and_quotes(
+        self,
+        clean_env: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        import settings as s
+
+        (tmp_path / ".env").write_text(
+            'JWT_SECRET="quoted-secret"  # inline comment\n'
+            "OLLAMA_CHAT_MODEL=qwen2.5:1.5b # another\n",
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path)
+        module = importlib.reload(s)
+        cfg = module.settings
+        assert cfg.auth.jwt_secret == "quoted-secret"
+        assert cfg.ollama.chat_model == "qwen2.5:1.5b"
 
     def test_nested_alias_applies(self, clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
         import settings as s

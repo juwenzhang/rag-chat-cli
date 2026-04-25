@@ -42,11 +42,16 @@ _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
     "APP_ENV": ("app", "env"),
     "LOG_LEVEL": ("app", "log_level"),
     "REQUEST_ID_HEADER": ("app", "request_id_header"),
+    "APP_HOST": ("app", "host"),
+    "APP_PORT": ("app", "port"),
+    "APP_CORS_ORIGINS": ("app", "cors_origins"),
     # auth
     "JWT_SECRET": ("auth", "jwt_secret"),
     "JWT_ALG": ("auth", "jwt_alg"),
     "ACCESS_TOKEN_TTL_MIN": ("auth", "access_token_ttl_min"),
     "REFRESH_TOKEN_TTL_DAY": ("auth", "refresh_token_ttl_day"),
+    "AUTH_BCRYPT_ROUNDS": ("auth", "bcrypt_rounds"),
+    "AUTH_REFRESH_REUSE_DETECTION": ("auth", "refresh_reuse_detection"),
     # db
     "DATABASE_URL": ("db", "database_url"),
     "DB_POOL_SIZE": ("db", "pool_size"),
@@ -59,6 +64,7 @@ _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
     "OLLAMA_CHAT_MODEL": ("ollama", "chat_model"),
     "OLLAMA_EMBED_MODEL": ("ollama", "embed_model"),
     "OLLAMA_TIMEOUT": ("ollama", "timeout"),
+    "OLLAMA_API_KEY": ("ollama", "api_key"),
     # retrieval
     "RAG_ENABLED": ("retrieval", "enabled"),
     "RAG_TOP_K": ("retrieval", "top_k"),
@@ -84,6 +90,18 @@ class AppSettings(_GroupBase):
     env: Literal["dev", "prod"] = "dev"
     log_level: str = "INFO"
     request_id_header: str = "X-Request-ID"
+    # HTTP surface (P6 add-fastapi-rest-api).
+    host: str = "0.0.0.0"  # noqa: S104 — dev convenience; prod usually reverse-proxied
+    port: int = 8000
+    # CSV env var `APP_CORS_ORIGINS=http://a,http://b` becomes `["http://a", "http://b"]`.
+    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_csv(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return v
 
 
 class AuthSettings(_GroupBase):
@@ -91,6 +109,12 @@ class AuthSettings(_GroupBase):
     jwt_alg: str = "HS256"
     access_token_ttl_min: int = 15
     refresh_token_ttl_day: int = 7
+    # bcrypt rounds — 12 is a sensible default for 2026-era hardware. See
+    # AGENTS.md §6 and openspec/changes/add-jwt-auth/design.md.
+    bcrypt_rounds: int = 12
+    # When True, detecting a re-used (already revoked) refresh token triggers
+    # mass-revocation of every live refresh token for that user. AGENTS.md §6.
+    refresh_reuse_detection: bool = True
 
 
 class DBSettings(_GroupBase):
@@ -110,6 +134,11 @@ class OllamaSettings(_GroupBase):
     chat_model: str = "qwen2.5:1.5b"
     embed_model: str = "nomic-embed-text"
     timeout: int = 120
+    # Bearer token for hosted/proxied Ollama (e.g. ollama.com cloud,
+    # or a self-hosted reverse proxy that gates `/api/*`).
+    # Sent as `Authorization: Bearer <api_key>` on every request when set.
+    # Local default `http://localhost:11434` does not require this.
+    api_key: str | None = None
 
 
 class RetrievalSettings(_GroupBase):
@@ -134,12 +163,59 @@ _DEV_INSECURE_SECRET = "dev-insecure-secret"  # noqa: S105 — 显式占位符
 _PLACEHOLDER_SECRETS = frozenset({_DEV_INSECURE_SECRET, "change-me-in-prod", ""})
 
 
+def _parse_dotenv(path: str = ".env") -> dict[str, str]:
+    """Best-effort `.env` parser (no quoting / interpolation tricks).
+
+    pydantic-settings reads `.env` itself, but it does so AFTER our
+    ``model_validator(mode="before")`` runs — which means flat aliases like
+    ``JWT_SECRET`` written in `.env` are invisible to
+    :func:`_collect_flat_env_overrides`. Re-parsing here closes that gap.
+
+    Lines starting with ``#`` and blank lines are skipped; trailing inline
+    comments after `` # `` are stripped. Quotes around values are removed.
+    """
+    try:
+        raw = open(path, encoding="utf-8").read()  # noqa: SIM115 — small file, explicit close not needed
+    except OSError:
+        return {}
+    out: dict[str, str] = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        # Strip optional inline `# comment`. Only when the `#` is preceded by
+        # whitespace, so `password=#1abc` (legit value with leading hash) survives.
+        if " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+        # Strip matching surrounding quotes.
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        if key:
+            out[key] = value
+    return out
+
+
 def _collect_flat_env_overrides() -> dict[str, dict[str, str]]:
-    """扫描环境变量，把扁平名映射成 {group: {field: value}}。"""
+    """把扁平命名（`JWT_SECRET`）合并成 ``{group: {field: value}}``。
+
+    优先级：真实 ``os.environ`` > `.env` 文件 —— 与 pydantic-settings 自身
+    对嵌套名的优先级保持一致。
+    """
+    dotenv = _parse_dotenv()
     nested: dict[str, dict[str, str]] = {}
     for flat_key, (group, field) in _FLAT_TO_NESTED.items():
         if flat_key in os.environ:
-            nested.setdefault(group, {})[field] = os.environ[flat_key]
+            value = os.environ[flat_key]
+        elif flat_key in dotenv:
+            value = dotenv[flat_key]
+        else:
+            continue
+        nested.setdefault(group, {})[field] = value
     return nested
 
 
