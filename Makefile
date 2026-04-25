@@ -57,8 +57,17 @@ env: ## 复制 .env.example → .env（不覆盖已存在）
 	fi
 
 # ─── Dev (本地直跑，不走 docker) ──────────────────────────────────────────────
-.PHONY: dev dev.api dev.worker dev.cli dev.web
-dev: ## 同时起 api + worker + web（需要 tmux，否则请分别开三个终端）
+.PHONY: dev dev.all dev.api dev.worker dev.cli dev.web
+
+# 可覆盖的端口/主机：make dev.api PORT=8001 HOST=127.0.0.1
+HOST ?= 0.0.0.0
+PORT ?= 8000
+
+dev: ## 推荐入口：跑迁移 + 起 FastAPI（一键调通后端）
+	@$(MAKE) --no-print-directory db.init
+	@$(MAKE) --no-print-directory dev.api
+
+dev.all: ## 同时起 api + worker + web（需要 tmux，否则请分别开三个终端）
 	@if command -v tmux >/dev/null 2>&1; then \
 		tmux new-session -d -s ragchat 'make dev.api'; \
 		tmux split-window -h -t ragchat 'make dev.worker'; \
@@ -69,8 +78,14 @@ dev: ## 同时起 api + worker + web（需要 tmux，否则请分别开三个终
 		exit 1; \
 	fi
 
-dev.api: ## 启动 FastAPI dev server (auto-reload)
-	$(PY) uvicorn app.server:app --reload --host 0.0.0.0 --port 8000
+dev.api: ## 启动 FastAPI dev server (auto-reload)。端口被占时打印占用进程。
+	@if lsof -nP -iTCP:$(PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
+		echo "✗ port $(PORT) is already in use:"; \
+		lsof -nP -iTCP:$(PORT) -sTCP:LISTEN | sed 's/^/    /'; \
+		echo "→ 解决: \`kill <PID>\` 或换端口: \`make dev.api PORT=8001\`"; \
+		exit 1; \
+	fi
+	$(PY) uvicorn api.app:create_app --factory --reload --host $(HOST) --port $(PORT)
 
 dev.worker: ## 启动 ARQ worker
 	$(PY) arq workers.worker.WorkerSettings --watch .
@@ -80,6 +95,16 @@ dev.cli: ## 启动交互式 CLI
 
 dev.web: ## 启动前端 vite dev server
 	$(PNPM) dev
+
+.PHONY: dev.kill
+dev.kill: ## 强制释放 dev.api 端口（默认 8000，可 PORT=xxx 覆盖）
+	@PIDS=$$(lsof -nP -iTCP:$(PORT) -sTCP:LISTEN -t 2>/dev/null); \
+	if [ -z "$$PIDS" ]; then \
+		echo "port $(PORT) is free"; \
+	else \
+		echo "killing $$PIDS on port $(PORT)"; \
+		kill $$PIDS || kill -9 $$PIDS; \
+	fi
 
 # ─── Docker ──────────────────────────────────────────────────────────────────
 .PHONY: up up.cli up.train down logs ps rebuild
@@ -109,9 +134,12 @@ rebuild: ## 不用缓存重建所有镜像
 	$(COMPOSE) build --no-cache
 
 # ─── Database ────────────────────────────────────────────────────────────────
-.PHONY: db.up db.migrate db.rev db.downgrade db.reset db.shell redis.shell
-db.up: ## 仅起 postgres + redis（用于本地直跑时依赖）
-	$(COMPOSE) up -d postgres redis
+.PHONY: db.up db.init db.migrate db.rev db.downgrade db.reset db.shell redis.shell
+db.up: ## 启动 postgres (pgvector)。P5 后会同时起 redis。
+	$(COMPOSE) --profile db up -d postgres
+
+db.init: ## 首次初始化：probe + alembic upgrade head + 校验 pgvector
+	$(PY) python scripts/db_init.py
 
 db.migrate: ## alembic upgrade head
 	$(PY) alembic upgrade head
@@ -136,8 +164,9 @@ db.reset: ## [DEV 专用] 删库重建 + 迁移（二次确认）
 db.shell: ## 进 postgres psql
 	$(COMPOSE) exec postgres psql -U rag -d ragdb
 
-redis.shell: ## 进 redis-cli
-	$(COMPOSE) exec redis redis-cli
+redis.shell: ## [P5] redis-cli — redis service lands in add-redis-and-workers.
+	@echo "[skip] redis service not in docker-compose yet (P5)."
+	@exit 2
 
 # ─── Ollama ──────────────────────────────────────────────────────────────────
 .PHONY: ollama.pull ollama.ps
@@ -149,26 +178,67 @@ ollama.ps: ## 列出 ollama 已拉取模型
 	$(COMPOSE) exec ollama ollama list
 
 # ─── Quality ─────────────────────────────────────────────────────────────────
-.PHONY: lint fmt test test.api test.web check
-lint: ## ruff check + mypy + web lint
+# 单一真相来源：与 CI workflow .github/workflows/ci.yml 对齐。
+# mypy 通过 `uvx` 运行，不依赖本地 venv 预装。
+.PHONY: lint lint-fix fmt fmt-check typecheck test test-fast test-cov test-cov-strict ci
+# Use the project's venv (`uv run`) rather than a fresh uvx environment so
+# mypy can see the real dependency set (SQLAlchemy, pgvector, etc.).
+MYPY ?= uv run mypy
+
+lint: ## ruff check（只报告，不修）
 	$(PY) ruff check .
-	-$(PY) mypy api core db cache workers settings.py 2>/dev/null || echo "mypy: 部分目标路径尚未落地，跳过"
-	$(PNPM) lint
 
-fmt: ## ruff format + prettier
+lint-fix: ## ruff check --fix
+	$(PY) ruff check . --fix
+
+fmt: ## ruff format（写入）
 	$(PY) ruff format .
-	$(PNPM) format
 
-test: ## 运行 Python 测试
+fmt-check: ## ruff format --check（不写入）
+	$(PY) ruff format --check .
+
+typecheck: ## mypy --strict（走 uv run，能解析项目所有依赖）
+	$(MYPY) --strict . --explicit-package-bases
+
+test: ## 跑所有 pytest
 	$(PY) pytest -q
 
-test.api: ## 仅运行 API 测试
+test-fast: ## 跳过 slow / pg / redis / integration 标记
+	$(PY) pytest -q -m "not slow and not pg and not redis and not integration"
+
+test-cov: ## pytest-cov（软门：只报告，不退出码）
+	uvx --with pytest-cov --with pytest-asyncio --with rich --with pydantic-settings --with prompt_toolkit --with httpx pytest --cov --cov-report=term-missing --cov-report=xml
+	python scripts/check_coverage.py --soft
+
+test-cov-strict: ## pytest-cov（硬门：未达 AGENTS.md §12 阈值则失败）
+	uvx --with pytest-cov --with pytest-asyncio --with rich --with pydantic-settings --with prompt_toolkit --with httpx pytest --cov --cov-report=term-missing --cov-report=xml
+	python scripts/check_coverage.py
+
+ci: lint fmt-check typecheck test ## 本地一把梭：与 CI 等价的组合
+
+# ─── API extras (P6 add-fastapi-rest-api) ───────────────────────────────────
+.PHONY: openapi openapi.check test.api
+openapi: ## 导出 OpenAPI schema → docs/openapi.json
+	$(PY) python scripts/dump_openapi.py
+
+openapi.check: ## 验证 docs/openapi.json 与当前代码一致（CI 用）
+	$(PY) python scripts/dump_openapi.py
+	git diff --quiet docs/openapi.json || { \
+		echo "docs/openapi.json is stale — run 'make openapi' and commit."; \
+		exit 1; \
+	}
+
+test.api: ## 只跑 tests/api（FastAPI + httpx ASGITransport）
 	$(PY) pytest tests/api -q
 
-test.web: ## 前端测试
-	$(PNPM) test
-
-check: lint test ## CI 聚合: lint + test
+# ─── Legacy / future-module shims ────────────────────────────────────────────
+# 下列 target 引用了尚未落地的模块。
+# 保留 target 让 Makefile 文档表达"未来蓝图"，实际调用时返回提示 + exit 2，
+# 避免开发者误以为失败是 bug。
+.PHONY: test.web
+test.web: ## [P10] Web tests — awaits build-web-views-auth-chat-knowledge
+	@echo "[skip] web-app/ not yet bootstrapped. See openspec/changes/build-web-views-auth-chat-knowledge/."
+	@exit 2
 
 # ─── Seed / Ingest ───────────────────────────────────────────────────────────
 .PHONY: seed.user ingest

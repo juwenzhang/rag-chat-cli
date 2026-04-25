@@ -1,36 +1,87 @@
-# ── Python ─────────────────────────────────────────────
+# ─── Python bytecode / builds ────────────────────────────
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.egg-info/
 build/
 dist/
 wheels/
-*.egg-info
-.venv
+*.whl
 
-# ── AI agent runtime dirs ──────────────────────────────
+# ─── Virtualenvs / uv ────────────────────────────────────
+.venv/
+venv/
+env/
+# uv itself is committed (see uv.lock, .python-version).
+# Only local caches / ephemerals are ignored.
+
+# ─── Test / lint / type caches (generated, never committed) ──
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
+.hypothesis/
+
+# ─── Coverage (pytest-cov outputs; see scripts/check_coverage.py) ──
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# ─── AI agent runtime dirs ───────────────────────────────
+# NOTE: .codebuddy/ is intentionally TRACKED (holds opsx/ slash-commands + skills).
 .claude/
 .codex/
 .trae/
+.codebuddy/
 
-# ── OS ─────────────────────────────────────────────────
+# ─── IDE / editor ────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ─── OS ──────────────────────────────────────────────────
 .DS_Store
+._*
+.AppleDouble
+Thumbs.db
 
-# ── Env ────────────────────────────────────────────────
+# ─── Env / secrets ───────────────────────────────────────
+# `.env.example` is tracked as the template; everything else local-only.
 .env
-.env.local
+.env.*
+!.env.example
 
-# ── Logs ───────────────────────────────────────────────
+# ─── Logs / tmp ──────────────────────────────────────────
 *.log
+*.log.*
+logs/
+tmp/
+.tmp/
+*.bak
 
-# ── Node / Frontend (web-app/) ─────────────────────────
+# ─── Node / Frontend (web-app/ lands in P8) ──────────────
 node_modules/
 .vite/
-coverage/
-# unplugin 自动生成的类型声明（每次 dev 重写）
+# Node-side coverage report directory (distinct from Python's coverage.xml).
+web-app/coverage/
+# unplugin auto-generated type declarations (regenerated on every dev start).
 auto-imports.d.ts
 components.d.ts
-# msw service worker（每个开发者本地 pnpm dlx msw init 生成）
+# msw service worker (created per-dev via `pnpm dlx msw init`).
 web-app/public/mockServiceWorker.js
 
-# ── Outputs ────────────────────────────────────────────
+# ─── Project-specific runtime artefacts ──────────────────
+# Model / inference outputs.
 outputs/
+# Conversation replay files written by the CLI at runtime (not source data).
+conversations/*.json
+# Auto-crawled knowledge snapshots (if/when knowledge/ is re-introduced).
+knowledge/articles/frontend/chat_*.json
+knowledge/articles/frontend/chat_*.md
+
+# local sqlite db (if used instead of Postgres in dev); not relevant to production.
+.dev.db
