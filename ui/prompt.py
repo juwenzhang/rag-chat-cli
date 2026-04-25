@@ -9,6 +9,7 @@ AGENTS.md §11:
 
 from __future__ import annotations
 
+import difflib
 import shlex
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -63,20 +64,44 @@ class PromptSession:
 
 
 class SlashDispatcher:
-    """Route ``/<name> <args...>`` lines to registered handlers."""
+    """Route ``/<name> <args...>`` lines to registered handlers.
 
-    def __init__(self) -> None:
+    Unknown ``/<name>`` lines are *intentionally* swallowed (not forwarded
+    upstream) so a typo like ``/ollama-ath`` never reaches the LLM with a
+    secret in the args. Set ``on_unknown`` to render a friendly suggestion.
+    """
+
+    UnknownHandler = Callable[[str, list[str]], None]
+
+    def __init__(self, on_unknown: UnknownHandler | None = None) -> None:
         self._handlers: dict[str, SlashHandler] = {}
+        self._on_unknown = on_unknown
 
     def register(self, name: str, fn: SlashHandler) -> None:
         key = name.lstrip("/")
         self._handlers[key] = fn
 
+    def set_on_unknown(self, fn: UnknownHandler) -> None:
+        """Late binding — run_legacy_chat needs the dispatcher before it
+        has a ``view`` to render the error to."""
+        self._on_unknown = fn
+
     def registered(self) -> list[str]:
         return sorted(self._handlers.keys())
 
+    def closest(self, name: str, n: int = 1) -> list[str]:
+        """Return up to ``n`` registered command names closest to ``name``."""
+        return difflib.get_close_matches(name, self.registered(), n=n, cutoff=0.5)
+
     async def dispatch(self, line: str) -> bool:
-        """Return True iff the line was handled as a slash command."""
+        """Return True iff the line started with ``/``.
+
+        - Known command → run handler, return True.
+        - Unknown command → invoke ``on_unknown`` (if set), return True.
+          The line is *consumed* either way; callers must not fall back to
+          treating it as user prose.
+        - Plain text (no leading ``/``) → return False.
+        """
 
         stripped = line.strip()
         if not stripped.startswith("/"):
@@ -86,11 +111,14 @@ class SlashDispatcher:
         except ValueError:
             parts = stripped[1:].split()
         if not parts:
-            return False
+            # bare `/` — nothing to dispatch; treat as no-op handled.
+            return True
         name, *args = parts
         handler = self._handlers.get(name)
         if handler is None:
-            return False
+            if self._on_unknown is not None:
+                self._on_unknown(name, args)
+            return True  # consumed — never forward to LLM
         result = handler(args)
         if result is not None:
             await result

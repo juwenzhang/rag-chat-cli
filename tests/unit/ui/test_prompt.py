@@ -25,9 +25,24 @@ async def test_dispatch_ignores_non_slash() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dispatch_unknown_returns_false() -> None:
+async def test_dispatch_unknown_is_consumed_not_forwarded() -> None:
+    """Unknown `/xxx` is swallowed (returns True) so the upstream loop never
+    treats it as user prose — the prime defence against typos like
+    `/ollama-ath sk-...` leaking secrets to the LLM."""
     d = SlashDispatcher()
-    assert await d.dispatch("/nope") is False
+    assert await d.dispatch("/nope") is True
+
+
+@pytest.mark.asyncio
+async def test_dispatch_unknown_invokes_callback_with_suggestion() -> None:
+    seen: list[tuple[str, list[str]]] = []
+    d = SlashDispatcher(on_unknown=lambda name, args: seen.append((name, args)))
+    d.register("ollama-auth", lambda _a: None)
+
+    assert await d.dispatch("/ollama-ath sk-secret") is True
+    assert seen == [("ollama-ath", ["sk-secret"])]
+    # And the suggestion engine offers the right correction.
+    assert d.closest("ollama-ath") == ["ollama-auth"]
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ import pytest
 
 from core.chat_service import ChatService
 from core.knowledge.base import KnowledgeHit
-from core.memory.chat_memory import ChatMemory
+from core.memory.chat_memory import FileChatMemory
 
 
 class _StaticKB:
@@ -33,7 +33,7 @@ async def _drain(gen: Any) -> list[dict[str, Any]]:
 @pytest.mark.asyncio
 async def test_happy_path_emits_tokens_then_done(tmp_path: Path, fake_llm_factory: type) -> None:
     llm = fake_llm_factory(deltas=["hel", "lo"])
-    memory = ChatMemory(root=tmp_path)
+    memory = FileChatMemory(root=tmp_path)
     service = ChatService(llm=llm, memory=memory)
     sid = await service.new_session()
 
@@ -56,7 +56,7 @@ async def test_retrieval_event_before_tokens_when_enabled(
     tmp_path: Path, fake_llm_factory: type
 ) -> None:
     llm = fake_llm_factory(deltas=["ok"])
-    memory = ChatMemory(root=tmp_path)
+    memory = FileChatMemory(root=tmp_path)
     kb = _StaticKB([KnowledgeHit(title="t", content="c", score=0.9, source="unit")])
     service = ChatService(llm=llm, memory=memory, knowledge=kb)
     sid = await service.new_session()
@@ -84,10 +84,10 @@ async def test_llm_error_is_reported_not_raised(tmp_path: Path) -> None:
         async def aclose(self) -> None:
             return None
 
-    service = ChatService(llm=_Boom(), memory=ChatMemory(root=tmp_path))
+    service = ChatService(llm=_Boom(), memory=FileChatMemory(root=tmp_path))
     sid = await service.new_session()
 
     events = await _drain(service.generate(sid, "hi"))
     assert events == [{"type": "error", "code": "llm_error", "message": "boom"}]
     # Memory should stay clean on failure.
-    assert await ChatMemory(root=tmp_path).get(sid) == []
+    assert await FileChatMemory(root=tmp_path).get(sid) == []

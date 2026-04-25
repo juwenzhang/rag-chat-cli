@@ -21,9 +21,10 @@ def test_main_help_exits_zero() -> None:
     assert "chat" in result.stdout
 
 
-def test_serve_prints_stub() -> None:
+def test_stub_subcommand_prints_not_implemented() -> None:
+    """``train`` still has no implementation; exit code must be 2."""
     result = subprocess.run(
-        [sys.executable, "main.py", "serve"],
+        [sys.executable, "main.py", "train"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -31,3 +32,17 @@ def test_serve_prints_stub() -> None:
     )
     assert result.returncode == 2
     assert "not implemented yet" in result.stdout
+
+
+def test_serve_help_exits_zero() -> None:
+    """``serve --help`` lists the flags added in P6."""
+    result = subprocess.run(
+        [sys.executable, "main.py", "serve", "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--host" in result.stdout
+    assert "--port" in result.stdout
