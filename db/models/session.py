@@ -27,3 +27,10 @@ class ChatSession(UUIDMixin, TimestampMixin, Base):
         nullable=False,
     )
     title: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # Per-session provider/model pin (Sprint 2). NULL → fall back to the
+    # user's preference, then to the user's default provider.
+    provider_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("providers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)

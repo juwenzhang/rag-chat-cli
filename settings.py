@@ -79,6 +79,8 @@ _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
     "RAG_EMBED_DIM": ("retrieval", "embed_dim"),
     # rate limit
     "RATE_LIMIT_PER_MIN": ("rate_limit", "per_min"),
+    # security (Sprint 2): Fernet key for at-rest encryption of provider API keys.
+    "PROVIDER_ENCRYPTION_KEY": ("security", "provider_encryption_key"),
 }
 
 
@@ -177,6 +179,20 @@ class RateLimitSettings(_GroupBase):
     per_min: int = 60
 
 
+class SecuritySettings(_GroupBase):
+    """At-rest secret material (Sprint 2 — provider API keys).
+
+    ``provider_encryption_key`` is a base64 urlsafe Fernet key (44 chars).
+    Generate one with ``cryptography.fernet.Fernet.generate_key()``.
+
+    ``None`` in ``env=dev`` falls back to a deterministic dev key with a
+    loud warning — convenient for first-run local dev, **never** safe in
+    prod. ``env=prod`` requires an explicit key.
+    """
+
+    provider_encryption_key: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Top-level Settings
 # ---------------------------------------------------------------------------
@@ -259,6 +275,7 @@ class Settings(BaseSettings):
     openai: OpenAISettings = Field(default_factory=OpenAISettings)
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
 
     model_config = SettingsConfigDict(
         env_file=".env",

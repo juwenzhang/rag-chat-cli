@@ -74,12 +74,17 @@ async def chat_stream(
     if owner is None or owner.user_id != user.id:
         raise HTTPException(status_code=404, detail="session not found")
 
+    # Per-session model pin (Sprint 2). NULL → ChatService uses its
+    # construction-time default.
+    session_model = owner.model
+
     async def _byte_stream() -> AsyncIterator[bytes]:
         try:
             async for raw_event in service.generate(
                 str(body.session_id),
                 body.content,
                 use_rag=body.use_rag,
+                model=session_model,
             ):
                 try:
                     event = coerce_event(raw_event)

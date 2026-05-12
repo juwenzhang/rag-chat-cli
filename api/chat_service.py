@@ -65,7 +65,7 @@ def build_chat_service() -> ChatService:
     return ChatService(llm=llm, memory=memory, knowledge=kb)
 
 
-def build_chat_service_for_user(
+async def build_chat_service_for_user(
     user: User = Depends(get_current_user),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ChatService:
@@ -77,14 +77,18 @@ def build_chat_service_for_user(
     Retrieval here is the real :class:`PgvectorKnowledgeBase` (#9 P2.1)
     scoped to the requesting user (their own documents + shared).
 
+    LLM client is resolved from the user's :class:`db.models.Provider`
+    registry (Sprint 2), falling back to legacy ``OLLAMA_*`` /
+    ``OPENAI_*`` settings when the user has none configured.
+
     The caller **must** ``await service.aclose()`` afterwards.
     """
     from core.knowledge import KnowledgeBase, PgvectorKnowledgeBase
-    from core.llm.ollama import OllamaClient
     from core.memory.chat_memory import DbChatMemory
+    from core.providers.runtime import build_llm_for_user
     from settings import settings
 
-    llm = OllamaClient.from_settings(settings)
+    llm, _default_model = await build_llm_for_user(session_factory, user.id)
     memory = DbChatMemory(session_factory=session_factory, user_id=user.id)
     kb: KnowledgeBase | None = (
         PgvectorKnowledgeBase.from_settings(
@@ -110,10 +114,10 @@ def get_chat_service() -> ChatService:
     return build_chat_service()
 
 
-def get_chat_service_for_user(
+async def get_chat_service_for_user(
     user: User = Depends(get_current_user),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ChatService:
     """Primary FastAPI dep for authenticated chat routes. Wraps
     :func:`build_chat_service_for_user` so tests can override it."""
-    return build_chat_service_for_user(user=user, session_factory=session_factory)
+    return await build_chat_service_for_user(user=user, session_factory=session_factory)

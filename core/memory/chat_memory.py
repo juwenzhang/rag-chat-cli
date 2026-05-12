@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from core.llm.client import ChatMessage, ToolCall
+from core.titles import synthesize_preview_title
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -135,22 +136,6 @@ class SessionMeta:
     updated_at: datetime | None
 
 
-def _synthesize_title(messages: list[ChatMessage], *, max_chars: int = 24) -> str:
-    """Take the first user message and return its first ``max_chars`` chars.
-
-    Used by both backends when no explicit title is stored. Returns
-    ``"(empty)"`` when there is no user message yet so the sidebar never
-    shows a blank row.
-    """
-    for msg in messages:
-        if msg.role == "user" and msg.content.strip():
-            text = msg.content.strip()
-            if len(text) <= max_chars:
-                return text
-            return text[:max_chars] + "…"
-    return "(empty)"
-
-
 # ---------------------------------------------------------------------------
 # Protocol
 # ---------------------------------------------------------------------------
@@ -172,6 +157,7 @@ class ChatMemory(Protocol):
     async def append(self, session_id: str, msg: ChatMessage) -> None: ...
     async def delete_session(self, session_id: str) -> None: ...
     async def set_title(self, session_id: str, title: str) -> None: ...
+    async def get_title(self, session_id: str) -> str | None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +283,7 @@ class FileChatMemory:
                 ]
                 if not msgs:
                     continue  # skip empty sessions
-                title = _synthesize_title(msgs)
+                title = synthesize_preview_title(msgs)
                 mtime = datetime.fromtimestamp(path.stat().st_mtime)
                 metas.append(
                     SessionMeta(
@@ -320,6 +306,11 @@ class FileChatMemory:
         gracefully when the user is not logged in.
         """
         del session_id, title  # intentionally unused
+
+    async def get_title(self, session_id: str) -> str | None:
+        """File backend doesn't store a title — always ``None``."""
+        del session_id
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -481,7 +472,7 @@ class DbChatMemory:
                     title = row.title
                 else:
                     chat_msgs = [_db_row_to_message(m) for m in msgs]
-                    title = _synthesize_title(chat_msgs)
+                    title = synthesize_preview_title(chat_msgs)
                 metas.append(
                     SessionMeta(
                         id=str(row.id),
@@ -507,3 +498,18 @@ class DbChatMemory:
                 return
             row.title = title
             await s.commit()
+
+    async def get_title(self, session_id: str) -> str | None:
+        """Return the explicitly-stored title (or ``None``).
+
+        Used by the auto-title hook in :class:`~core.chat_service.ChatService`
+        to avoid clobbering a title a user already set via ``/title``.
+        """
+        from db.models import ChatSession
+
+        sid = self._as_uuid(session_id)
+        async with self._sf() as s:
+            row = await s.get(ChatSession, sid)
+            if row is None or row.user_id != self._user_id:
+                return None
+            return row.title

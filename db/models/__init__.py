@@ -15,6 +15,8 @@ from __future__ import annotations
 from db.models.chunk import Chunk
 from db.models.document import Document
 from db.models.message import Message
+from db.models.preference import UserPreference
+from db.models.provider import Provider
 from db.models.session import ChatSession
 from db.models.token import RefreshToken
 from db.models.user import User
@@ -25,7 +27,9 @@ __all__ = [
     "Chunk",
     "Document",
     "Message",
+    "Provider",
     "RefreshToken",
     "User",
     "UserMemory",
+    "UserPreference",
 ]

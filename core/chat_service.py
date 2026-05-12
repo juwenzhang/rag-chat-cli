@@ -246,6 +246,40 @@ class ChatService:
     async def new_session(self) -> str:
         return await self._memory.new_session()
 
+    async def _maybe_generate_title(
+        self,
+        session_id: str,
+        messages: list[ChatMessage],
+        *,
+        model: str | None,
+    ) -> None:
+        """Generate a short title for ``session_id`` if it has none yet.
+
+        Soft failure on every step: this runs as a fire-and-forget task and
+        must not raise into the asyncio task queue. The session is left
+        with its preview-based fallback (see :mod:`core.titles`) on error.
+        """
+        from core.titles import generate_llm_title
+
+        try:
+            existing = await self._memory.get_title(session_id)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("auto-title: get_title failed: %s", exc)
+            return
+        if existing:
+            return  # respect any user-set or pre-existing title.
+
+        try:
+            title = await generate_llm_title(messages, self._llm, model=model)
+        except Exception as exc:
+            logger.info("auto-title: generation failed (non-fatal): %s", exc)
+            return
+
+        try:
+            await self._memory.set_title(session_id, title)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("auto-title: set_title failed: %s", exc)
+
     # ------------------------------------------------------------------
     # Core ReAct loop
     # ------------------------------------------------------------------
@@ -550,7 +584,16 @@ class ChatService:
                 tool_calls=executed_tool_msgs,
             )
 
-        # 6. Terminator.
+        # 6. Auto-title (fire-and-forget). Only on the first assistant turn
+        # of a session that does not already have a user-set title. Runs in
+        # the background so a slow / failing title call never blocks the
+        # ``done`` event.
+        if not any(m.role == "assistant" for m in history):
+            asyncio.create_task(
+                self._maybe_generate_title(session_id, messages, model=model)
+            )
+
+        # 7. Terminator.
         duration_ms = int((time.monotonic() - started) * 1000)
         done: Event = {"type": "done", "duration_ms": duration_ms}
         if usage is not None:
@@ -569,6 +612,7 @@ class ChatService:
         top_k: int = 4,
         use_tools: bool = True,
         max_steps: int | None = None,
+        model: str | None = None,
     ) -> dict[str, Any]:
         """Run :meth:`generate` to completion and return an aggregated result.
 
@@ -605,6 +649,7 @@ class ChatService:
             top_k=top_k,
             use_tools=use_tools,
             max_steps=max_steps,
+            model=model,
         ):
             etype = event.get("type")
             if etype == "token":

@@ -27,6 +27,7 @@ from api.routers import chat_ws as chat_ws_router
 from api.routers import health as health_router
 from api.routers import knowledge as knowledge_router
 from api.routers import me as me_router
+from api.routers import providers as providers_router
 
 if TYPE_CHECKING:
     from settings import Settings
@@ -110,5 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # WebSocket route is at /ws/chat (no extra prefix, see chat_ws.router).
     app.include_router(chat_ws_router.router)
     app.include_router(knowledge_router.router, prefix="/knowledge")
+    # /providers (and /providers/test, /providers/{id}/models) + /me/preferences.
+    app.include_router(providers_router.router)
 
     return app

@@ -130,6 +130,7 @@ async def chat_ws(
 
         # 2) Verify ownership of the chat session.
         sf = current_session_factory()
+        session_model: str | None = None
         async with sf() as session:
             owner = await session.get(ChatSession, session_uuid)
             if owner is None or owner.user_id != user.id:
@@ -139,6 +140,7 @@ async def chat_ws(
                 )
                 await ws.close(code=WS_CLOSE_NOT_FOUND)
                 return
+            session_model = owner.model
 
         # 3) Kick off the reader (for abort / disconnect) and start streaming.
         reader_task = asyncio.create_task(_reader())
@@ -149,6 +151,7 @@ async def chat_ws(
             content=content,
             use_rag=use_rag,
             abort_ctx=abort_ctx,
+            model=session_model,
         )
 
     finally:
@@ -171,6 +174,7 @@ async def _stream_reply(
     content: str,
     use_rag: bool,
     abort_ctx: AbortContext,
+    model: str | None = None,
 ) -> None:
     """Run :meth:`ChatService.generate` and push each event over the socket."""
 
@@ -180,6 +184,7 @@ async def _stream_reply(
             content,
             use_rag=use_rag,
             abort=abort_ctx,
+            model=model,
         ):
             try:
                 event = coerce_event(raw)
