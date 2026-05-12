@@ -65,6 +65,13 @@ _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
     "OLLAMA_EMBED_MODEL": ("ollama", "embed_model"),
     "OLLAMA_TIMEOUT": ("ollama", "timeout"),
     "OLLAMA_API_KEY": ("ollama", "api_key"),
+    # openai (P5.1)
+    "OPENAI_BASE_URL": ("openai", "base_url"),
+    "OPENAI_CHAT_MODEL": ("openai", "chat_model"),
+    "OPENAI_EMBED_MODEL": ("openai", "embed_model"),
+    "OPENAI_API_KEY": ("openai", "api_key"),
+    "OPENAI_TIMEOUT": ("openai", "timeout"),
+    "OPENAI_ORGANIZATION": ("openai", "organization"),
     # retrieval
     "RAG_ENABLED": ("retrieval", "enabled"),
     "RAG_TOP_K": ("retrieval", "top_k"),
@@ -139,6 +146,22 @@ class OllamaSettings(_GroupBase):
     # Sent as `Authorization: Bearer <api_key>` on every request when set.
     # Local default `http://localhost:11434` does not require this.
     api_key: str | None = None
+
+
+class OpenAISettings(_GroupBase):
+    """OpenAI-compatible endpoint (#20 P5.1).
+
+    Works against api.openai.com and any compatible server (vLLM, LM Studio,
+    Together, Groq, …). Override ``base_url`` to point at a local /
+    self-hosted endpoint; default points at OpenAI proper.
+    """
+
+    base_url: str = "https://api.openai.com/v1"
+    chat_model: str = "gpt-4o-mini"
+    embed_model: str = "text-embedding-3-small"
+    api_key: str | None = None
+    timeout: int = 120
+    organization: str | None = None
 
 
 class RetrievalSettings(_GroupBase):
@@ -233,6 +256,7 @@ class Settings(BaseSettings):
     db: DBSettings = Field(default_factory=DBSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
+    openai: OpenAISettings = Field(default_factory=OpenAISettings)
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
 

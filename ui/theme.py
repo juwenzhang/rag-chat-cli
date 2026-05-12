@@ -17,6 +17,7 @@ class Theme:
     role_user: str = "green"
     role_assistant: str = "bright_cyan"
     role_system: str = "grey50"
+    role_tool: str = "bright_magenta"
     banner: str = "bold white"
     divider: str = "grey37"
     error: str = "red"

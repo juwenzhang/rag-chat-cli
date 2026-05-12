@@ -18,6 +18,7 @@ from db.models.message import Message
 from db.models.session import ChatSession
 from db.models.token import RefreshToken
 from db.models.user import User
+from db.models.user_memory import UserMemory
 
 __all__ = [
     "ChatSession",
@@ -26,4 +27,5 @@ __all__ = [
     "Message",
     "RefreshToken",
     "User",
+    "UserMemory",
 ]

@@ -25,12 +25,12 @@ import json
 import os
 import secrets
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
-from core.llm.client import ChatMessage
+from core.llm.client import ChatMessage, ToolCall
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -38,6 +38,80 @@ if TYPE_CHECKING:
     from core.llm.client import Role
 
 __all__ = ["ChatMemory", "DbChatMemory", "FileChatMemory", "SessionMeta"]
+
+
+# ---------------------------------------------------------------------------
+# ChatMessage ↔ persistent dict (#7 P1.6 tool fields)
+# ---------------------------------------------------------------------------
+
+
+def _message_to_dict(msg: ChatMessage) -> dict[str, Any]:
+    """Serialize a :class:`ChatMessage` to a JSON-safe dict.
+
+    Only writes the tool-flavoured fields when they carry information so
+    pre-#7 readers (and the FileChatMemory's on-disk format) stay
+    backward-compatible: a plain user/assistant turn round-trips as
+    ``{"role": ..., "content": ...}`` exactly like before.
+    """
+    out: dict[str, Any] = {"role": msg.role, "content": msg.content}
+    if msg.tool_calls:
+        out["tool_calls"] = [
+            {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
+            for tc in msg.tool_calls
+        ]
+    if msg.tool_call_id is not None:
+        out["tool_call_id"] = msg.tool_call_id
+    return out
+
+
+def _parse_tool_calls(raw: Any) -> tuple[ToolCall, ...]:
+    """Decode a raw JSON list into a tuple of :class:`ToolCall`.
+
+    Used by both file and DB backends — kept here so the round-trip rules
+    are defined once. Malformed entries are skipped silently because the
+    upstream writer was *this* module; surfacing parse errors would block
+    a user's session over a single bad row.
+    """
+    if not isinstance(raw, list) or not raw:
+        return ()
+    out: list[ToolCall] = []
+    for tc in raw:
+        if not isinstance(tc, dict):
+            continue
+        if "id" not in tc or "name" not in tc:
+            continue
+        args = tc.get("arguments")
+        if not isinstance(args, dict):
+            args = {}
+        out.append(ToolCall(id=str(tc["id"]), name=str(tc["name"]), arguments=args))
+    return tuple(out)
+
+
+def _dict_to_message(item: dict[str, Any]) -> ChatMessage:
+    """Inverse of :func:`_message_to_dict`. Tolerates missing tool fields."""
+    tool_call_id = item.get("tool_call_id")
+    return ChatMessage(
+        role=cast("Role", item["role"]),
+        content=item.get("content") or "",
+        tool_calls=_parse_tool_calls(item.get("tool_calls")),
+        tool_call_id=tool_call_id if isinstance(tool_call_id, str) else None,
+    )
+
+
+def _db_row_to_message(row: Any) -> ChatMessage:
+    """Reconstruct a :class:`ChatMessage` from a :class:`db.models.Message` row.
+
+    Kept separate from :func:`_dict_to_message` so the SQLAlchemy ORM types
+    stay out of file-only code paths (importing :class:`db.models.Message`
+    eagerly here would drag SQLAlchemy into ``FileChatMemory`` users).
+    """
+    tool_call_id = getattr(row, "tool_call_id", None)
+    return ChatMessage(
+        role=cast("Role", row.role),
+        content=row.content,
+        tool_calls=_parse_tool_calls(getattr(row, "tool_calls", None)),
+        tool_call_id=tool_call_id if isinstance(tool_call_id, str) else None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +236,7 @@ class FileChatMemory:
             if not path.exists():
                 return []
             raw = json.loads(path.read_text(encoding="utf-8"))
-            return [ChatMessage(role=item["role"], content=item["content"]) for item in raw]
+            return [_dict_to_message(item) for item in raw]
 
         return await asyncio.to_thread(_read)
 
@@ -170,10 +244,10 @@ class FileChatMemory:
         path = self._path(session_id)
 
         def _mutate() -> None:
-            existing: list[dict[str, str]] = []
+            existing: list[dict[str, Any]] = []
             if path.exists():
                 existing = json.loads(path.read_text(encoding="utf-8"))
-            existing.append(asdict(msg))
+            existing.append(_message_to_dict(msg))
             _atomic_write(
                 path,
                 json.dumps(existing, ensure_ascii=False).encode("utf-8"),
@@ -217,7 +291,7 @@ class FileChatMemory:
                 if not isinstance(raw, list):
                     continue
                 msgs = [
-                    ChatMessage(role=cast("Role", item["role"]), content=item["content"])
+                    _dict_to_message(item)
                     for item in raw
                     if isinstance(item, dict) and "role" in item and "content" in item
                 ]
@@ -332,15 +406,30 @@ class DbChatMemory:
             rows = (await s.scalars(q)).all()
             # ``Message.role`` is a string column; ChatMessage.role is a
             # Literal union. Cast here: the DB is trusted to only hold values
-            # produced by the service layer (user / assistant / system).
-            return [ChatMessage(role=cast("Role", r.role), content=r.content) for r in rows]
+            # produced by the service layer (user / assistant / system / tool).
+            return [_db_row_to_message(r) for r in rows]
 
     async def append(self, session_id: str, msg: ChatMessage) -> None:
         from db.models import Message
 
         sid = self._as_uuid(session_id)
         async with self._sf() as s:
-            s.add(Message(session_id=sid, role=msg.role, content=msg.content))
+            s.add(
+                Message(
+                    session_id=sid,
+                    role=msg.role,
+                    content=msg.content,
+                    tool_call_id=msg.tool_call_id,
+                    tool_calls=(
+                        [
+                            {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
+                            for tc in msg.tool_calls
+                        ]
+                        if msg.tool_calls
+                        else None
+                    ),
+                )
+            )
             await s.commit()
 
     async def delete_session(self, session_id: str) -> None:
@@ -391,9 +480,7 @@ class DbChatMemory:
                 if row.title:
                     title = row.title
                 else:
-                    chat_msgs = [
-                        ChatMessage(role=cast("Role", m.role), content=m.content) for m in msgs
-                    ]
+                    chat_msgs = [_db_row_to_message(m) for m in msgs]
                     title = _synthesize_title(chat_msgs)
                 metas.append(
                     SessionMeta(

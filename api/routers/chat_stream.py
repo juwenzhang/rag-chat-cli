@@ -1,9 +1,9 @@
-"""Server-Sent Events endpoint for streaming chat (AGENTS.md §5.3).
+"""Server-Sent Events endpoint for streaming chat.
 
 One-way stream from server to client — the companion bidirectional variant
 lives in :mod:`api.routers.chat_ws`. The two share the same event schema
-(:mod:`api.streaming.protocol`) and are both backed by
-:meth:`core.chat_service.ChatService.generate`.
+(:mod:`api.streaming.protocol`, see also ``docs/STREAM_PROTOCOL.md``) and
+are both backed by :meth:`core.chat_service.ChatService.generate`.
 
 Since v1.2 the :class:`ChatService` is wired with :class:`DbChatMemory`, so
 persistence happens **inside** the service. This module no longer writes
@@ -55,7 +55,9 @@ SSE_HEADERS: dict[str, str] = {
             "content": {"text/event-stream": {}},
             "description": (
                 "Server-Sent Events stream. Each frame is `event: <type>` + `data: <json>`. "
-                "Event types: `retrieval`, `token`, `done`, `error`. See AGENTS.md §5.3."
+                "Event types: `retrieval`, `token`, `thought`, `tool_call`, `tool_result`, "
+                "`done`, `error`. Schema: `api.streaming.protocol.StreamEvent`. "
+                "Full vocabulary in `docs/STREAM_PROTOCOL.md`."
             ),
         },
     },

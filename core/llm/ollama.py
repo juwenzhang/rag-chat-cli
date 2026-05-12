@@ -11,13 +11,92 @@ client.aclose()`` at shutdown (done by ``app/chat_app.py``).
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import AsyncIterator
-from dataclasses import asdict
 from typing import Any
 
 import httpx
 
-from core.llm.client import ChatChunk, ChatMessage, LLMError
+from core.llm.client import ChatChunk, ChatMessage, LLMError, ToolCall, ToolSpec
+
+
+def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
+    """Serialize a :class:`ChatMessage` to the Ollama ``/api/chat`` shape.
+
+    Hand-rolled (instead of ``dataclasses.asdict``) so we only emit fields
+    that carry information — empty ``tool_calls`` and ``None`` ``tool_call_id``
+    are dropped. This keeps the wire payload identical to the pre-P1.1 format
+    for plain user/assistant turns.
+    """
+    out: dict[str, Any] = {"role": m.role, "content": m.content}
+    if m.tool_calls:
+        out["tool_calls"] = [
+            {
+                "id": c.id,
+                "function": {"name": c.name, "arguments": c.arguments},
+            }
+            for c in m.tool_calls
+        ]
+    if m.tool_call_id is not None:
+        out["tool_call_id"] = m.tool_call_id
+    return out
+
+
+def _tool_to_wire(t: ToolSpec) -> dict[str, Any]:
+    """Serialize a :class:`ToolSpec` to Ollama's ``tools[i]`` shape.
+
+    Ollama follows the OpenAI tool-calling JSON: every tool is wrapped in
+    ``{"type": "function", "function": {...}}``.
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": t.name,
+            "description": t.description,
+            "parameters": t.parameters,
+        },
+    }
+
+
+def _parse_tool_calls(msg: dict[str, Any]) -> tuple[ToolCall, ...]:
+    """Parse Ollama's ``message.tool_calls`` array into :class:`ToolCall` objects.
+
+    Ollama emits tool calls in the shape ``[{"function": {"name": ..., "arguments": {...}}}, ...]``
+    and historically does not include an ``id`` per call. We synthesize a
+    short uuid-based id so the ReAct orchestrator can correlate the matching
+    ``role="tool"`` reply via ``ChatMessage.tool_call_id``.
+    """
+    raw = msg.get("tool_calls")
+    if not isinstance(raw, list) or not raw:
+        return ()
+    parsed: list[ToolCall] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        fn = item.get("function")
+        if not isinstance(fn, dict):
+            continue
+        name = fn.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        args_raw = fn.get("arguments")
+        if isinstance(args_raw, str):
+            try:
+                arguments = json.loads(args_raw) if args_raw else {}
+            except json.JSONDecodeError:
+                # Surface raw string under a sentinel key so callers can
+                # still inspect what the model produced.
+                arguments = {"__raw__": args_raw}
+        elif isinstance(args_raw,
+        dict):
+            arguments = args_raw
+        else:
+            arguments = {}
+        call_id = item.get("id")
+        if not isinstance(call_id, str) or not call_id:
+            call_id = f"call_{uuid.uuid4().hex[:12]}"
+        parsed.append(ToolCall(id=call_id, name=name, arguments=arguments))
+    return tuple(parsed)
 
 __all__ = ["OllamaClient"]
 
@@ -121,8 +200,14 @@ class OllamaClient:
         messages: list[ChatMessage],
         *,
         model: str | None = None,
+        tools: list[ToolSpec] | None = None,
     ) -> AsyncIterator[ChatChunk]:
         """Stream chat completions as :class:`ChatChunk` events.
+
+        When ``tools`` is supplied, Ollama emits at most one ``tool_calls``
+        array per turn (it does not partial-stream tool-call deltas the way
+        OpenAI does). We surface each call as a single non-empty
+        ``ChatChunk.tool_calls`` immediately, before the ``done`` terminator.
 
         Raises
         ------
@@ -130,17 +215,29 @@ class OllamaClient:
             If the HTTP response is non-2xx or the body is not valid NDJSON.
         """
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": model or self._chat_model,
-            "messages": [asdict(m) for m in messages],
+            "messages": [_message_to_wire(m) for m in messages],
             "stream": True,
         }
+        if tools:
+            payload["tools"] = [_tool_to_wire(t) for t in tools]
+
         client = self._ensure_client()
         try:
             async with client.stream("POST", "/api/chat", json=payload) as resp:
                 if resp.status_code >= 400:
-                    body = await resp.aread()
-                    raise LLMError(f"ollama /api/chat failed: {resp.status_code} {body[:200]!r}")
+                    body_bytes = await resp.aread()
+                    body = body_bytes[:200].decode("utf-8", errors="replace")
+                    # Same actionable rewrite as embed(): a 404 on a missing
+                    # chat model is the single most common first-run error.
+                    if resp.status_code == 404 and "not found" in body:
+                        chat_model = payload.get("model") or self._chat_model
+                        raise LLMError(
+                            f"chat model {chat_model!r} is not pulled on this "
+                            f"Ollama instance. Run: ollama pull {chat_model}"
+                        )
+                    raise LLMError(f"ollama /api/chat failed: {resp.status_code} {body!r}")
                 async for line in resp.aiter_lines():
                     if not line:
                         continue
@@ -149,9 +246,11 @@ class OllamaClient:
                     except json.JSONDecodeError as exc:
                         raise LLMError(f"ollama returned non-JSON line: {line[:200]!r}") from exc
                     delta = ""
+                    tool_calls: tuple[ToolCall, ...] = ()
                     msg = data.get("message")
                     if isinstance(msg, dict):
                         delta = msg.get("content", "") or ""
+                        tool_calls = _parse_tool_calls(msg)
                     done = bool(data.get("done"))
                     usage: dict[str, object] | None = None
                     if done:
@@ -170,7 +269,12 @@ class OllamaClient:
                                 "eval_duration",
                             )
                         } or None
-                    yield ChatChunk(delta=delta, done=done, usage=usage)
+                    yield ChatChunk(
+                        delta=delta,
+                        done=done,
+                        usage=usage,
+                        tool_calls=tool_calls,
+                    )
                     if done:
                         return
         except httpx.HTTPError as exc:
@@ -194,8 +298,19 @@ class OllamaClient:
                     json={"model": target_model, "prompt": text},
                 )
                 if resp.status_code >= 400:
+                    body = resp.text[:200]
+                    # Ollama returns 404 + ``"model ... not found"`` when the
+                    # embed model isn't pulled. Rewrite to actionable advice
+                    # so the user reaches for ``ollama pull`` instead of
+                    # opening the source. ``try pulling it first`` is the
+                    # literal upstream phrasing we sniff for here.
+                    if resp.status_code == 404 and "not found" in body:
+                        raise LLMError(
+                            f"embed model {target_model!r} is not pulled on this "
+                            f"Ollama instance. Run: ollama pull {target_model}"
+                        )
                     raise LLMError(
-                        f"ollama /api/embeddings failed: {resp.status_code} {resp.text[:200]!r}"
+                        f"ollama /api/embeddings failed: {resp.status_code} {body!r}"
                     )
                 data = resp.json()
                 embedding = data.get("embedding")

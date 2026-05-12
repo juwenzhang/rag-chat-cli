@@ -1,23 +1,25 @@
-"""Knowledge-base abstractions.
+"""Knowledge-base contract + retrieval hit dataclass.
 
-This module intentionally stops at the minimum surface needed by
-:class:`core.chat_service.ChatService` in P2: a :class:`KnowledgeBase`
-protocol plus a :class:`FileKnowledgeBase` placeholder that always returns
-no hits. A real retriever lands in change
-``implement-rag-retrieval-pgvector`` (P7).
+The :class:`KnowledgeBase` Protocol is the integration seam between
+:class:`~core.chat_service.ChatService` and a retriever implementation.
+Two concrete impls exist today:
+
+* :class:`~core.knowledge.local.FileKnowledgeBase` — on-disk JSONL store
+  with stdlib cosine search; used in the unauthenticated CLI path.
+* :class:`~core.knowledge.pgvector.PgvectorKnowledgeBase` — production
+  retriever over Postgres + pgvector + pg_trgm; used once a DB is
+  reachable and the user is logged in.
 """
 
 from __future__ import annotations
 
-import asyncio
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from dataclasses import dataclass, field
+from typing import Protocol, runtime_checkable
 
 __all__ = [
-    "KnowledgeHit",
+    "DocumentInfo",
     "KnowledgeBase",
-    "FileKnowledgeBase",
+    "KnowledgeHit",
 ]
 
 
@@ -31,52 +33,33 @@ class KnowledgeHit:
     source: str
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentInfo:
+    """Document-level metadata, shared across all KB impls.
+
+    Both :class:`~core.knowledge.local.FileKnowledgeBase` (on-disk JSONL)
+    and :class:`~core.knowledge.pgvector.PgvectorKnowledgeBase` (Postgres
+    + pgvector) return this from their ``list_documents`` /
+    ``add_document`` admin API so REPL slash commands (``/kb``, ``/save``)
+    don't have to branch on KB type for inspection.
+
+    ``id`` is the string form of the underlying identifier — UUID hex on
+    both impls today. ``tags`` is preserved through ``meta["tags"]`` on
+    Pgvector so the same field round-trips through both stores.
+    """
+
+    id: str
+    title: str
+    source: str
+    tags: list[str] = field(default_factory=list)
+    chunk_count: int = 0
+    char_count: int = 0
+    created_at: str = ""
+
+
 @runtime_checkable
 class KnowledgeBase(Protocol):
     """Retriever contract — async to match the rest of ``core/``."""
 
-    async def search(
-        self, query: str, *, top_k: int = 4
-    ) -> list[KnowledgeHit]:
+    async def search(self, query: str, *, top_k: int = 4) -> list[KnowledgeHit]:
         ...
-
-
-class FileKnowledgeBase:
-    """Placeholder implementation returning no hits.
-
-    Kept as a valid :class:`KnowledgeBase` so :class:`ChatService` can run
-    end-to-end with ``use_rag=True`` even before real retrieval exists.
-    The real implementation (``PgvectorKnowledgeBase``) will replace this
-    one in change ``implement-rag-retrieval-pgvector``.
-    """
-
-    def __init__(
-        self,
-        root: str | Path = "./knowledge",
-        *,
-        min_score: float = 0.0,
-    ) -> None:
-        self._root = Path(root)
-        self._min_score = min_score
-
-    @classmethod
-    def from_settings(cls, s: Any | None = None) -> "FileKnowledgeBase":
-        if s is None:
-            from settings import settings as _s
-
-            s = _s
-        return cls(min_score=float(s.retrieval.min_score))
-
-    async def search(
-        self, query: str, *, top_k: int = 4
-    ) -> list[KnowledgeHit]:
-        del query, top_k  # no-op until P7 implements real retrieval
-
-        async def _noop() -> list[KnowledgeHit]:
-            return []
-
-        return await asyncio.shield(_noop())
-
-
-# class PgvectorKnowledgeBase:  # noqa: ERA001 — placeholder for P7
-#     """Will be implemented in ``implement-rag-retrieval-pgvector``."""

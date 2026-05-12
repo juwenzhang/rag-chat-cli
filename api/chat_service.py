@@ -52,14 +52,16 @@ def build_chat_service() -> ChatService:
     """
     # Imports are local on purpose: the ``api`` package should stay importable
     # from harnesses that don't ship the LLM runtime.
-    from core.knowledge.base import FileKnowledgeBase
+    from core.knowledge import FileKnowledgeBase, KnowledgeBase
     from core.llm.ollama import OllamaClient
     from core.memory.chat_memory import FileChatMemory
     from settings import settings
 
     llm = OllamaClient.from_settings(settings)
     memory = FileChatMemory.from_settings(settings)
-    kb = FileKnowledgeBase.from_settings(settings) if settings.retrieval.enabled else None
+    kb: KnowledgeBase | None = (
+        FileKnowledgeBase.from_settings(llm=llm, s=settings) if settings.retrieval.enabled else None
+    )
     return ChatService(llm=llm, memory=memory, knowledge=kb)
 
 
@@ -72,17 +74,28 @@ def build_chat_service_for_user(
     This is the primary production factory — REST / SSE / WS routes all use
     it so a user's history is persisted into ``chat_sessions`` /
     ``messages`` and is shared across clients (Web + CLI + future iOS).
+    Retrieval here is the real :class:`PgvectorKnowledgeBase` (#9 P2.1)
+    scoped to the requesting user (their own documents + shared).
 
     The caller **must** ``await service.aclose()`` afterwards.
     """
-    from core.knowledge.base import FileKnowledgeBase
+    from core.knowledge import KnowledgeBase, PgvectorKnowledgeBase
     from core.llm.ollama import OllamaClient
     from core.memory.chat_memory import DbChatMemory
     from settings import settings
 
     llm = OllamaClient.from_settings(settings)
     memory = DbChatMemory(session_factory=session_factory, user_id=user.id)
-    kb = FileKnowledgeBase.from_settings(settings) if settings.retrieval.enabled else None
+    kb: KnowledgeBase | None = (
+        PgvectorKnowledgeBase.from_settings(
+            session_factory=session_factory,
+            llm=llm,
+            user_id=user.id,
+            s=settings,
+        )
+        if settings.retrieval.enabled
+        else None
+    )
     return ChatService(llm=llm, memory=memory, knowledge=kb)
 
 

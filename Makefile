@@ -18,6 +18,7 @@ PROFILE ?= web
 SERVICE ?=
 COMPOSE ?= docker compose
 PY      ?= uv run
+PY_DEV  ?= uv run --extra dev
 PNPM    ?= pnpm --dir web-app
 
 OLLAMA_CHAT_MODEL  ?= qwen2.5:1.5b
@@ -139,17 +140,17 @@ db.up: ## 启动 postgres (pgvector)。P5 后会同时起 redis。
 	$(COMPOSE) --profile db up -d postgres
 
 db.init: ## 首次初始化：probe + alembic upgrade head + 校验 pgvector
-	$(PY) python scripts/db_init.py
+	$(PY_DEV) python scripts/db_init.py
 
 db.migrate: ## alembic upgrade head
-	$(PY) alembic upgrade head
+	$(PY_DEV) alembic upgrade head
 
 db.rev: ## 生成 alembic 迁移文件（用法: make db.rev m="add users")
 	@if [ -z "$(m)" ]; then echo "用法: make db.rev m=\"message\""; exit 1; fi
-	$(PY) alembic revision --autogenerate -m "$(m)"
+	$(PY_DEV) alembic revision --autogenerate -m "$(m)"
 
 db.downgrade: ## alembic downgrade -1
-	$(PY) alembic downgrade -1
+	$(PY_DEV) alembic downgrade -1
 
 db.reset: ## [DEV 专用] 删库重建 + 迁移（二次确认）
 	@read -p "确认要删掉本地开发库吗？输入 yes 继续: " ans; \

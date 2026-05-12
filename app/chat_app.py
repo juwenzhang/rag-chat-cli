@@ -3,29 +3,23 @@
 AGENTS.md §3: ``app/`` is the only layer allowed to import both ``ui/`` and
 ``core/``.
 
-Two entry points:
-
-* :func:`run_tui_chat` — the v1.3 default. Builds a full-screen TUI with
-  three panes (sidebar / transcript / input). Talks to a real Ollama if
-  reachable; degrades to :class:`EchoReplyProvider` otherwise.
-
-* :func:`run_legacy_chat` — the pre-v1.3 sequential REPL. Kept around for
-  the ``--legacy`` flag and for ``tests/integration/test_cli_boot.py``
-  smoke tests that can't drive a full-screen TTY.
+Single entry point :func:`run_legacy_chat` — sequential REPL with slash
+commands. The v1.3 full-screen TUI was removed in P0 cleanup (see
+openspec/changes/add-tui-three-pane-layout — abandoned).
 """
 
 from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from prompt_toolkit import prompt as _pt_prompt
 
+from core.streaming.events import Event
 from ui import ChatView, PromptSession
-from ui.chat_view import Event
 from ui.console import make_console
 
 if TYPE_CHECKING:
@@ -35,55 +29,27 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ChatServiceProvider",
-    "EchoReplyProvider",
-    "ReplyProvider",
-    "TuiServices",
     "build_default_chat_service",
     "build_default_provider",
     "run_legacy_chat",
-    "run_tui_chat",
 ]
 
 
-class ReplyProvider(Protocol):
-    """Contract between the orchestrator and the LLM service."""
-
-    def reply(self, user_text: str, history: list[dict[str, Any]]) -> AsyncIterator[Event]: ...
-
-
 # ---------------------------------------------------------------------------
-# Providers
+# Provider
 # ---------------------------------------------------------------------------
-
-
-class EchoReplyProvider:
-    """Fallback provider — echoes the user text back as streamed tokens.
-
-    Kept for two reasons:
-      * offline / CI boots (no Ollama reachable);
-      * smoke tests in ``tests/integration/test_cli_boot.py``.
-    """
-
-    async def reply(self, user_text: str, history: list[dict[str, Any]]) -> AsyncIterator[Event]:
-        del history  # intentionally unused
-        chunks = [f"echo: {user_text[:120]}"]
-        for chunk in chunks:
-            for word in chunk.split(" "):
-                yield Event(type="token", delta=word + " ")
-                await asyncio.sleep(0.01)
-        yield Event(type="done", duration_ms=0)
 
 
 class ChatServiceProvider:
-    """Adapts :class:`core.chat_service.ChatService` to :class:`ReplyProvider`.
+    """Stateful REPL adapter on top of :class:`core.chat_service.ChatService`.
 
     A ``session_id`` is minted lazily on the first call and reused across
     turns so :class:`ChatMemory` accumulates history. Switch to a different
     one with :meth:`set_session`; mint a fresh empty one with
     :meth:`reset_session`.
 
-    ``model`` is mutable at runtime so the TUI ``/model`` command can
-    swap models without rebuilding the underlying ChatService.
+    ``model`` is mutable at runtime so the ``/model`` command can swap
+    models without rebuilding the underlying ChatService.
     """
 
     def __init__(
@@ -158,8 +124,8 @@ class ChatServiceProvider:
             use_rag=self._use_rag,
             model=self._model,
         ):
-            # ChatService emits plain dicts whose shape matches Event TypedDict.
-            yield event  # type: ignore[misc]
+            # ChatService now emits ``core.streaming.events.Event`` directly.
+            yield event
 
 
 # ---------------------------------------------------------------------------
@@ -199,21 +165,55 @@ async def build_default_chat_service() -> tuple[ChatService, str, uuid.UUID | No
     """Build a :class:`ChatService` from global settings.
 
     Returns ``(service, memory_label, user_id_or_none)``.
+
+    Knowledge base wiring:
+    * No DB / no user — :class:`FileKnowledgeBase` stub (returns no hits).
+    * DB reachable + user — :class:`PgvectorKnowledgeBase` scoped to user.
     """
     from core.chat_service import ChatService
-    from core.knowledge.base import FileKnowledgeBase
+    from core.knowledge import FileKnowledgeBase, KnowledgeBase, PgvectorKnowledgeBase
     from core.llm.ollama import OllamaClient
     from settings import settings
 
     llm = OllamaClient.from_settings(settings)
-    knowledge = FileKnowledgeBase.from_settings(settings) if settings.retrieval.enabled else None
     bundle = await _build_memory()
+
+    knowledge: KnowledgeBase | None
+    if not settings.retrieval.enabled:
+        knowledge = None
+    elif bundle.user_id is not None and bundle.label.startswith("db"):
+        from db.session import current_session_factory
+
+        knowledge = PgvectorKnowledgeBase.from_settings(
+            session_factory=current_session_factory(),
+            llm=llm,
+            user_id=bundle.user_id,
+            s=settings,
+        )
+    else:
+        # Logged-out path: real on-disk KB at ~/.config/rag-chat/kb/.
+        # Same LLM client is reused for query embedding so the embed model
+        # stays consistent with whatever the user is running in Ollama.
+        knowledge = FileKnowledgeBase.from_settings(llm=llm, s=settings)
+
     service = ChatService(llm=llm, memory=bundle.memory, knowledge=knowledge)
     return service, bundle.label, bundle.user_id
 
 
 async def _resolve_local_user_id() -> uuid.UUID | None:
-    """Return the ``uuid.UUID`` of the logged-in user, or ``None``."""
+    """Return the ``uuid.UUID`` of the logged-in user, or ``None``.
+
+    Refresh flow: the access token TTL is short (15 min by default), so
+    re-opening the CLI after a coffee break would land in a logged-out
+    state if we only checked the access token. We instead:
+
+      1. Try to decode the access token.
+      2. If expired, attempt a refresh via :class:`AuthService` using the
+         stored refresh token (TTL 7 days). On success, persist the new
+         pair to ``token.json`` so subsequent runs stay logged in.
+      3. If both tokens are dead (refresh expired / revoked / DB
+         unreachable), return ``None`` — caller falls back to logged-out.
+    """
     from app import auth_local
     from core.auth.errors import TokenExpiredError, TokenInvalidError
     from core.auth.tokens import decode_token
@@ -221,18 +221,54 @@ async def _resolve_local_user_id() -> uuid.UUID | None:
     pair = auth_local.load()
     if pair is None:
         return None
+    # Happy path: access token is still valid.
     try:
         payload = decode_token(pair.access_token, expected_type="access")
-    except (TokenExpiredError, TokenInvalidError):
-        return None
-    try:
         return uuid.UUID(payload.sub)
+    except TokenExpiredError:
+        pass  # try refresh below
+    except TokenInvalidError:
+        # Tampered, malformed, or signed with a different JWT_SECRET.
+        # Refresh can't help here — wipe the bad token and treat as
+        # logged out so the user gets a clear /login prompt rather than
+        # silent confusion.
+        auth_local.clear()
+        return None
     except (ValueError, TypeError):
         return None
 
+    # Access token expired → try to refresh.
+    try:
+        from core.auth.service import AuthService
+        from db.session import current_session_factory, init_engine
 
-async def build_default_provider() -> tuple[ReplyProvider, str]:
-    """Return ``(provider, label)``. Falls back to echo if Ollama is unreachable."""
+        init_engine()
+        auth_svc = AuthService(session_factory=current_session_factory())
+        new_pair = await auth_svc.refresh(pair.refresh_token)
+    except (TokenExpiredError, TokenInvalidError):
+        # Refresh token also dead — full re-login required. Drop the
+        # stale file so /whoami / /login behave predictably.
+        auth_local.clear()
+        return None
+    except Exception:
+        # DB unreachable, user deactivated, reuse detected, etc.
+        # Stay quiet — caller sees user_id=None and goes logged-out.
+        return None
+
+    auth_local.save(new_pair)
+    try:
+        payload = decode_token(new_pair.access_token, expected_type="access")
+        return uuid.UUID(payload.sub)
+    except (TokenExpiredError, TokenInvalidError, ValueError, TypeError):
+        return None
+
+
+async def build_default_provider() -> tuple[ChatServiceProvider, str]:
+    """Return ``(provider, label)``. Fail-fast (SystemExit) if Ollama is unreachable.
+
+    P0.5 collapse removed the echo fallback — see openspec/changes archive
+    and ``memory/project_collapse_decisions.md``.
+    """
     from core.llm.ollama import OllamaClient
     from settings import settings
 
@@ -243,7 +279,11 @@ async def build_default_provider() -> tuple[ReplyProvider, str]:
         await probe.aclose()
 
     if not reachable:
-        return EchoReplyProvider(), "echo-fallback (ollama unreachable)"
+        raise SystemExit(
+            f"ollama unreachable at {settings.ollama.base_url} — "
+            "start it (e.g. `docker compose up ollama` or `ollama serve`) "
+            "or set OLLAMA_BASE_URL to a reachable endpoint."
+        )
 
     service, memory_label, _ = await build_default_chat_service()
     return (
@@ -255,6 +295,103 @@ async def build_default_provider() -> tuple[ReplyProvider, str]:
 # ===========================================================================
 # Legacy sequential mode (pre-v1.3)
 # ===========================================================================
+
+
+# Slash command catalog. Single source of truth — used by both ``/help``
+# (rendered as a Rich panel) and the prompt_toolkit completer (popup menu
+# when the user types ``/``). Keep names *without* leading slashes here;
+# the UI layer adds the slash when displaying.
+#
+# Aliases (e.g. ``exit`` for ``quit``) are intentionally omitted from this
+# list to keep the completer menu uncluttered; they still work at dispatch
+# time because each alias is ``register()``-ed separately below.
+_COMMAND_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
+    (
+        "session",
+        [
+            ("sessions [id|idx]", "list saved (with arg = jump like /switch)"),
+            ("switch [id|idx]", "pick one (no arg = list + prompt)"),
+            ("new [title]", "start a fresh conversation"),
+            ("title <text>", "rename the current conversation"),
+            ("delete", "delete the current conversation"),
+        ],
+    ),
+    (
+        "model",
+        [
+            ("model", "list pulled ollama models"),
+            ("model <name>", "switch model at runtime"),
+            ("model pull <name>", "download a new model from registry"),
+        ],
+    ),
+    (
+        "runtime",
+        [
+            ("rag [on|off]", "toggle retrieval-augmented context"),
+            ("think [on|off]", "toggle deep-thinking hint (UI only)"),
+        ],
+    ),
+    (
+        "knowledge",
+        [
+            ("kb", "knowledge base summary"),
+            ("kb list", "list documents in the active KB"),
+            ("kb show <idx|id>", "show document metadata + first chunks"),
+            ("kb search <query>", "preview retrieval (no LLM call)"),
+            ("kb delete <idx|id>", "delete a document and its chunks"),
+            ("kb sync", "push local KB into pgvector (logged-in only)"),
+            ("save [title]", "persist last Q+A turn into the active KB"),
+            ("reflect [on|off|<0..1>]", "auto-save high-quality turns (with threshold)"),
+        ],
+    ),
+    (
+        "auth",
+        [
+            ("register", "create a new account"),
+            ("login", "log in (memory switches to db on next start)"),
+            ("logout", "log out and clear local token"),
+            ("whoami", "show current user id"),
+            ("ollama-auth [key|clear|show]", "set Bearer key for cloud ollama"),
+        ],
+    ),
+    (
+        "misc",
+        [
+            ("clear", "clear the screen"),
+            ("help", "show this help"),
+            ("quit", "exit (alias: /exit)"),
+        ],
+    ),
+]
+
+_KEY_HINTS: list[tuple[str, str]] = [
+    ("Enter", "send message"),
+    ("Ctrl+J", "insert newline"),
+    ("Tab", "complete slash command"),
+    ("↑ / ↓", "input history (or navigate completion menu)"),
+    ("Ctrl+L", "clear screen"),
+]
+
+
+def _completer_specs() -> list[tuple[str, str]]:
+    """Flatten :data:`_COMMAND_GROUPS` for the prompt_toolkit completer.
+
+    The completer matches against the *bare name* (before the first
+    space in the help signature), so ``("sessions [id|idx]", "...")``
+    becomes ``("sessions", "...")``. Without this, typing ``/sessio``
+    would fail to match because ``"sessions [id|idx]".startswith("sessio")``
+    is true but tab-completing would insert ``sessions [id|idx]``.
+    """
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for _section, items in _COMMAND_GROUPS:
+        for cmd, desc in items:
+            name = cmd.split(" ", 1)[0]
+            if name in seen:
+                continue
+            seen.add(name)
+            out.append((name, desc))
+    return out
 
 
 def _human(n: int) -> str:
@@ -271,7 +408,7 @@ def _human(n: int) -> str:
 
 
 async def run_legacy_chat(
-    provider: ReplyProvider | None = None,
+    provider: ChatServiceProvider | None = None,
     model_label: str | None = None,
 ) -> int:
     """Sequential REPL with slash commands.
@@ -294,8 +431,15 @@ async def run_legacy_chat(
 
     console = make_console()
     view = ChatView(console)
-    session = PromptSession()
+    session = PromptSession(commands_provider=_completer_specs)
     history: list[dict[str, Any]] = []
+    # Last completed (user, assistant) pair — drives /save and the
+    # auto-reflect critic. Lifted up here (instead of next to /save's
+    # handler) so :func:`_resume_recent_session` can seed it from a
+    # restored session's tail. Without this seed, /save right after
+    # ``make dev.cli`` boot reports "no completed turn yet" even though
+    # the screen shows the resumed conversation.
+    last_turn: dict[str, str] = {"user": "", "assistant": ""}
 
     # Reclaim the terminal: scroll the prior shell content away so the chat
     # session feels like a dedicated workspace. Unlike the alt-screen mode
@@ -321,10 +465,13 @@ async def run_legacy_chat(
     dispatcher.set_on_unknown(_on_unknown_command)
 
     # ------------------------------------------------------------------
-    # Shared accessors (provider may be EchoReplyProvider — feature-degraded)
+    # Shared accessor — provider is always a ChatServiceProvider post-P0.5.
+    # The Optional return type and ``if cs is None`` guards in call sites
+    # below are dead defensive code; left in place to keep this collapse
+    # commit small. A follow-up task can prune them.
     # ------------------------------------------------------------------
     def _csvc() -> ChatServiceProvider | None:
-        return provider if isinstance(provider, ChatServiceProvider) else None
+        return provider
 
     def _replay_history(msgs: list[Any]) -> None:
         """Re-render past messages so the user sees what they're attaching to."""
@@ -361,6 +508,24 @@ async def run_legacy_chat(
             for m in msgs:
                 history.append({"role": m.role, "content": m.content})
             _replay_history(msgs)
+            # Seed last_turn from the tail so /save right after resume
+            # targets the just-replayed exchange. We walk the list in
+            # reverse looking for an ``assistant`` message and the
+            # nearest preceding ``user`` message; tool / system turns
+            # are skipped because /save persists the human-readable
+            # Q+A pair, not internal scratch.
+            last_asst: str | None = None
+            last_user: str | None = None
+            for m in reversed(msgs):
+                if last_asst is None and m.role == "assistant":
+                    last_asst = m.content
+                    continue
+                if last_asst is not None and m.role == "user":
+                    last_user = m.content
+                    break
+            if last_user and last_asst:
+                last_turn["user"] = last_user
+                last_turn["assistant"] = last_asst
             view.system_notice("── end of history · type to continue ──")
 
     await _resume_recent_session()
@@ -375,61 +540,15 @@ async def run_legacy_chat(
         console.clear()
 
     def _help(_: list[str]) -> None:
-        # Grouped, opencode-style. Width-aware so it lines up on narrow ttys.
-        groups: list[tuple[str, list[tuple[str, str]]]] = [
-            (
-                "session",
-                [
-                    ("/sessions [id|idx]", "list saved (with arg = jump like /switch)"),
-                    ("/switch [id|idx]", "pick one (no arg = list + prompt)"),
-                    ("/new [title]", "start a fresh conversation"),
-                    ("/title <text>", "rename the current conversation"),
-                    ("/delete", "delete the current conversation"),
-                ],
-            ),
-            (
-                "model",
-                [
-                    ("/model", "list pulled ollama models"),
-                    ("/model <name>", "switch model at runtime"),
-                    ("/model pull <name>", "download a new model from registry"),
-                ],
-            ),
-            (
-                "runtime",
-                [
-                    ("/rag [on|off]", "toggle retrieval-augmented context"),
-                    ("/think [on|off]", "toggle deep-thinking hint (UI only)"),
-                ],
-            ),
-            (
-                "auth",
-                [
-                    ("/register", "create a new account"),
-                    ("/login", "log in (memory switches to db on next start)"),
-                    ("/logout", "log out and clear local token"),
-                    ("/whoami", "show current user id"),
-                    ("/ollama-auth [key|clear|show]", "set Bearer key for cloud ollama"),
-                ],
-            ),
-            (
-                "misc",
-                [
-                    ("/clear", "clear the screen"),
-                    ("/help", "show this help"),
-                    ("/quit", "exit (alias: /exit)"),
-                ],
-            ),
+        # Single-frame Rich panel — see ChatView.help_panel.
+        # Prepend ``/`` to command signatures for the rendered output;
+        # the catalog stores bare names so the completer can match
+        # against typed prefix without stripping.
+        display_groups: list[tuple[str, list[tuple[str, str]]]] = [
+            (section, [(f"/{cmd}", desc) for cmd, desc in items])
+            for section, items in _COMMAND_GROUPS
         ]
-        # left column width: longest command + 2 spaces padding
-        col = max(len(cmd) for _, items in groups for cmd, _ in items) + 2
-        for name, items in groups:
-            view.system_notice(f"── {name} ──")
-            for cmd, desc in items:
-                view.system_notice(f"  {cmd.ljust(col)}{desc}")
-        view.system_notice("── keys ──")
-        view.system_notice("  Enter       send message    Ctrl+J       insert newline")
-        view.system_notice("  ↑/↓         input history   Ctrl+L       clear screen")
+        view.help_panel(display_groups, _KEY_HINTS)
 
     # ------------------------------------------------------------------
     # Session ops
@@ -668,6 +787,480 @@ async def run_legacy_chat(
         view.system_notice(f"think {'on' if new else 'off'} (note: not yet wired to LLM)")
 
     # ------------------------------------------------------------------
+    # /kb — knowledge base inspection
+    #
+    # Operates against the active ChatService.knowledge — either
+    # FileKnowledgeBase (logged-out, on-disk JSONL) or
+    # PgvectorKnowledgeBase (logged-in, Postgres). Both impls expose the
+    # same admin API (add_document / list_documents / get_document /
+    # delete_document) so the slash commands don't branch on type.
+    #
+    # Short-circuits with a friendly message when knowledge is None
+    # (RAG disabled in settings).
+    # ------------------------------------------------------------------
+    def _resolve_idx_or_id(arg: str, docs: list[Any]) -> Any | None:
+        """Look up a doc by numeric index (``[N]``) or id prefix.
+
+        Accepts the full UUID hex or any unique prefix ≥ 4 chars.
+        Returns ``None`` when nothing matches or when a prefix is
+        ambiguous — caller renders the error.
+        """
+        if not docs:
+            return None
+        if arg.isdigit():
+            i = int(arg)
+            if 0 <= i < len(docs):
+                return docs[i]
+            return None
+        if len(arg) < 4:
+            return None
+        matches = [d for d in docs if d.id.startswith(arg)]
+        if len(matches) == 1:
+            return matches[0]
+        return None
+
+    async def _kb_admin() -> Any:
+        """Return the active admin-capable KB or ``None`` (with notice).
+
+        Both ``FileKnowledgeBase`` and ``PgvectorKnowledgeBase`` now
+        implement the admin surface (#34), so this only filters out the
+        ``None`` (RAG disabled) case. Renamed from ``_kb_local`` since
+        "local" no longer captures what we accept.
+        """
+        cs = _csvc()
+        if cs is None:
+            view.error("kb", "feature unavailable (no chat service)")
+            return None
+        kb = cs.service.knowledge
+        if kb is None:
+            view.error("kb", "RAG is disabled (set RETRIEVAL_ENABLED=true)")
+            return None
+        return kb
+
+    def _kb_label(kb: Any) -> str:
+        """Short ``local|pgvector`` tag for status lines."""
+        from core.knowledge import FileKnowledgeBase, PgvectorKnowledgeBase
+
+        if isinstance(kb, FileKnowledgeBase):
+            return "local"
+        if isinstance(kb, PgvectorKnowledgeBase):
+            return "pgvector"
+        return type(kb).__name__
+
+    def _kb_root_hint(kb: Any) -> str:
+        """Right-hand status hint for KB summary lines."""
+        from core.knowledge import FileKnowledgeBase
+
+        if isinstance(kb, FileKnowledgeBase):
+            return f"root: {kb.root}"
+        return f"backend: {_kb_label(kb)}"
+
+    async def _kb_list(_args: list[str]) -> None:
+        kb = await _kb_admin()
+        if kb is None:
+            return
+        docs = await kb.list_documents()
+        label = _kb_label(kb)
+        if not docs:
+            view.system_notice(f"{label} kb empty · {_kb_root_hint(kb)}")
+            return
+        from rich.table import Table
+
+        t = Table(
+            title=f"{label} kb · {len(docs)} document(s) · {_kb_root_hint(kb)}",
+            title_style="bold",
+            header_style="bold",
+            border_style="grey37",
+            padding=(0, 1),
+        )
+        t.add_column("#", justify="right", style="grey50")
+        t.add_column("id", style="dim", no_wrap=True)
+        t.add_column("title")
+        t.add_column("chunks", justify="right")
+        t.add_column("chars", justify="right")
+        t.add_column("tags", style="dim")
+        for i, d in enumerate(docs):
+            t.add_row(
+                str(i),
+                d.id[:8],
+                d.title or "(untitled)",
+                str(d.chunk_count),
+                _human(d.char_count),
+                ", ".join(d.tags) if d.tags else "",
+            )
+        view.console.print(t)
+
+    async def _kb_show(args: list[str]) -> None:
+        if not args:
+            view.error("kb", "usage: /kb show <idx|id>")
+            return
+        kb = await _kb_admin()
+        if kb is None:
+            return
+        docs = await kb.list_documents()
+        doc = _resolve_idx_or_id(args[0], docs)
+        if doc is None:
+            view.error("kb", f"no document matching {args[0]!r}")
+            return
+        result = await kb.get_document(doc.id, max_chunks=3)
+        if result is None:
+            view.error("kb", f"document {doc.id[:8]} not found")
+            return
+        info, chunks = result
+        view.system_notice(
+            f"{info.id[:8]} · {info.title} · chunks={info.chunk_count} · "
+            f"chars={_human(info.char_count)}"
+        )
+        view.system_notice(
+            f"source: {info.source}  ·  created: {info.created_at[:19]}"
+            + (f"  ·  tags: {', '.join(info.tags)}" if info.tags else "")
+        )
+        for idx, content in chunks:
+            preview = content if len(content) <= 240 else content[:237] + "…"
+            view.system_notice(f"[{idx}] {preview}")
+        if info.chunk_count > len(chunks):
+            view.system_notice(
+                f"… {info.chunk_count - len(chunks)} more chunk(s) hidden"
+            )
+
+    async def _kb_search(args: list[str]) -> None:
+        if not args:
+            view.error("kb", "usage: /kb search <query>")
+            return
+        kb = await _kb_admin()
+        if kb is None:
+            return
+        from settings import settings as _s
+
+        query = " ".join(args)
+        try:
+            hits = await kb.search(query, top_k=int(_s.retrieval.top_k))
+        except Exception as exc:
+            view.error("kb", f"{type(exc).__name__}: {exc}")
+            return
+        if not hits:
+            view.system_notice(f"no hits for {query!r}")
+            return
+        view.system_notice(f"{len(hits)} hit(s) for {query!r}")
+        for i, h in enumerate(hits, start=1):
+            preview = h.content if len(h.content) <= 200 else h.content[:197] + "…"
+            view.system_notice(f"[{i}] {h.score:.3f} · {h.title} · {preview}")
+
+    async def _kb_delete(args: list[str]) -> None:
+        if not args:
+            view.error("kb", "usage: /kb delete <idx|id>")
+            return
+        kb = await _kb_admin()
+        if kb is None:
+            return
+        docs = await kb.list_documents()
+        doc = _resolve_idx_or_id(args[0], docs)
+        if doc is None:
+            view.error("kb", f"no document matching {args[0]!r}")
+            return
+        # Confirm via prompt so a misclick doesn't nuke a doc.
+        try:
+            confirm = await asyncio.get_event_loop().run_in_executor(
+                None,
+                _pt_prompt,
+                f"delete '{doc.title}' ({doc.id[:8]}, {doc.chunk_count} chunks)? [y/N] ",
+            )
+        except (EOFError, KeyboardInterrupt):
+            view.system_notice("delete cancelled")
+            return
+        if confirm.strip().lower() not in {"y", "yes"}:
+            view.system_notice("delete cancelled")
+            return
+        ok = await kb.delete_document(doc.id)
+        if ok:
+            view.system_notice(f"deleted {doc.id[:8]} · {doc.title}")
+        else:
+            view.error("kb", f"document {doc.id[:8]} not found (concurrent delete?)")
+
+    async def _kb_summary() -> None:
+        kb = await _kb_admin()
+        if kb is None:
+            return
+        docs = await kb.list_documents()
+        label = _kb_label(kb)
+        if not docs:
+            view.system_notice(f"{label} kb empty · {_kb_root_hint(kb)}")
+            view.system_notice(
+                "tip: /save after a good Q+A to start filling it, or `main ingest`"
+            )
+            return
+        total_chunks = sum(d.chunk_count for d in docs)
+        total_chars = sum(d.char_count for d in docs)
+        view.system_notice(
+            f"{label} kb · {len(docs)} doc(s) · {total_chunks} chunk(s) · "
+            f"{_human(total_chars)} · {_kb_root_hint(kb)}"
+        )
+        view.system_notice("recent:")
+        for i, d in enumerate(docs[-5:]):
+            view.system_notice(f"  [{i}] {d.id[:8]} · {d.title}")
+        view.system_notice("tip: /kb list · /kb show <idx> · /kb search <query>")
+
+    async def _kb_sync(_args: list[str]) -> None:
+        """Push every document from the on-disk FileKnowledgeBase into the
+        currently-active Pgvector KB.
+
+        Use case: user accumulated content via /save while logged out
+        (local KB), then logged in and wants those facts to live in the
+        shared Postgres-backed retriever too. Source documents stay on
+        disk — this is a copy, not a move, so a failed pg insert never
+        loses the local copy.
+        """
+        from core.knowledge import FileKnowledgeBase, PgvectorKnowledgeBase
+        from core.knowledge.local import DEFAULT_KB_ROOT
+
+        cs = _csvc()
+        if cs is None:
+            view.error("kb", "feature unavailable")
+            return
+        kb_target = cs.service.knowledge
+        if not isinstance(kb_target, PgvectorKnowledgeBase):
+            view.error(
+                "kb",
+                "sync target is not pgvector — log in first (/login) so the "
+                "active KB switches from local to pgvector.",
+            )
+            return
+
+        # Read the on-disk source independently from whatever KB is wired
+        # to ChatService. We need the LLM to embed; reuse the chat LLM
+        # since it already has the embed model configured.
+        src = FileKnowledgeBase.from_settings(llm=cs.service.llm)
+        if src.root != DEFAULT_KB_ROOT and not src.root.exists():
+            view.error("kb", f"local source not found at {src.root}")
+            return
+        try:
+            local_docs = await src.list_documents()
+        except Exception as exc:
+            view.error("kb", f"read local: {type(exc).__name__}: {exc}")
+            return
+        if not local_docs:
+            view.system_notice(f"local kb empty at {src.root} — nothing to sync")
+            return
+
+        view.system_notice(
+            f"sync · {len(local_docs)} local doc(s) → pgvector · "
+            "this re-embeds each chunk, may take a while"
+        )
+        ok = 0
+        failed = 0
+        for d in local_docs:
+            got = await src.get_document(d.id)
+            if got is None:
+                failed += 1
+                continue
+            info, chunks = got
+            # Rejoin chunks. Overlap was applied at original ingest time;
+            # the target ingestor will split + embed afresh, so we feed
+            # the rejoined content rather than the chunk-as-is to avoid
+            # double-overlap artifacts.
+            content = "\n\n".join(c for _, c in chunks)
+            try:
+                new_info = await kb_target.add_document(
+                    title=info.title,
+                    content=content,
+                    source=f"sync-from-local:{info.id[:8]}",
+                    tags=[*info.tags, "from-local"],
+                )
+            except Exception as exc:
+                view.error("kb", f"  ✗ {info.title}: {type(exc).__name__}: {exc}")
+                failed += 1
+                continue
+            view.system_notice(
+                f"  ✓ {info.title[:50]} → {new_info.id[:8]} · "
+                f"{new_info.chunk_count} chunk(s)"
+            )
+            ok += 1
+        view.system_notice(
+            f"sync done · {ok}/{len(local_docs)} OK"
+            + (f" · {failed} failed" if failed else "")
+        )
+
+    _kb_subs: dict[str, Any] = {
+        "list": _kb_list,
+        "ls": _kb_list,
+        "show": _kb_show,
+        "search": _kb_search,
+        "find": _kb_search,
+        "delete": _kb_delete,
+        "rm": _kb_delete,
+        "sync": _kb_sync,
+    }
+
+    async def _kb(args: list[str]) -> None:
+        if not args:
+            await _kb_summary()
+            return
+        sub = args[0].lower()
+        handler = _kb_subs.get(sub)
+        if handler is None:
+            view.error(
+                "kb",
+                f"unknown subcommand {sub!r} · try: list / show / search / delete",
+            )
+            return
+        await handler(args[1:])
+
+    # ------------------------------------------------------------------
+    # /save — persist the last Q+A turn into the active KB
+    #
+    # ``last_turn`` is declared up-top with the other REPL state so the
+    # session-resume path can seed it from replayed history. /save writes
+    # "fact cards" the user explicitly endorses. Works against either KB
+    # impl — FileKnowledgeBase (logged-out) or PgvectorKnowledgeBase
+    # (logged-in) — since both expose the same ``add_document`` surface.
+    # ------------------------------------------------------------------
+
+    async def _save(args: list[str]) -> None:
+        if not last_turn["user"] or not last_turn["assistant"]:
+            view.error("save", "no completed turn yet — ask something first")
+            return
+        kb_active = await _kb_admin()
+        if kb_active is None:
+            return
+
+        # Title: ``/save my title`` → "my title"; otherwise the leading
+        # snippet of the user prompt (capped at 60 cells) so list output
+        # stays one-line readable.
+        title = " ".join(args).strip()
+        if not title:
+            head = last_turn["user"].splitlines()[0] if last_turn["user"] else ""
+            title = head[:60] + ("…" if len(head) > 60 else "")
+        content = (
+            f"Q: {last_turn['user']}\n\n"
+            f"A: {last_turn['assistant']}"
+        )
+        try:
+            info = await kb_active.add_document(
+                title=title or "(untitled)",
+                content=content,
+                source="repl-save",
+                tags=["saved"],
+            )
+        except Exception as exc:
+            view.error("save", f"{type(exc).__name__}: {exc}")
+            return
+        view.system_notice(
+            f"saved → {_kb_label(kb_active)} · {info.id[:8]} · {info.title} · "
+            f"{info.chunk_count} chunk(s) · /kb show {info.id[:8]}"
+        )
+
+    # ------------------------------------------------------------------
+    # /reflect — auto-save high-quality turns
+    #
+    # When ``on``, after each successful assistant turn we run a small
+    # critic LLM call to judge whether the Q+A is worth caching to the
+    # local KB. ``save=true && confidence >= threshold`` → persist.
+    #
+    # Default off so first-time users don't see surprise side-effects.
+    # ------------------------------------------------------------------
+    reflect_state: dict[str, Any] = {"on": False, "threshold": 0.7, "critic": None}
+
+    def _reflect(args: list[str]) -> None:
+        if not args:
+            on = bool(reflect_state["on"])
+            thr = float(reflect_state["threshold"])
+            view.system_notice(
+                f"reflect {'on' if on else 'off'} · threshold {thr:.2f}"
+            )
+            return
+        first = args[0].lower()
+        if first in {"on", "off"}:
+            new = first == "on"
+            reflect_state["on"] = new
+            view.system_notice(
+                f"reflect {'on' if new else 'off'} · threshold "
+                f"{float(reflect_state['threshold']):.2f}"
+            )
+            return
+        # Numeric → set threshold (keeps reflect's on/off state untouched).
+        try:
+            val = float(first)
+        except ValueError:
+            view.error("reflect", "usage: /reflect [on|off|<0..1>]")
+            return
+        if not 0.0 <= val <= 1.0:
+            view.error("reflect", f"threshold must be in [0,1], got {val}")
+            return
+        reflect_state["threshold"] = val
+        view.system_notice(f"reflect threshold = {val:.2f}")
+
+    async def _maybe_auto_save(user_text: str, asst_text: str) -> None:
+        """Run the critic on a freshly-completed turn; persist if it clears
+        the threshold. Silently no-ops when reflect is off, no KB is
+        wired, or the critic returns no verdict. Works against both KB
+        impls — auto-saves land in pgvector for logged-in users and in
+        the local file KB otherwise."""
+        if not reflect_state["on"]:
+            return
+        if not user_text.strip() or not asst_text.strip():
+            return
+        from core.knowledge import ReflectionCritic
+
+        cs = _csvc()
+        if cs is None:
+            return
+        # Cast to Any because the read-only ``KnowledgeBase`` Protocol
+        # only exposes ``search``; both concrete impls (FileKB, Pgvector)
+        # additionally expose the admin surface used below. Adding the
+        # admin methods to the Protocol would force every future
+        # retriever (read-only / search-only) to stub them out — that
+        # asymmetry isn't worth a Protocol entry, so we narrow locally.
+        from typing import Any as _Any
+        from typing import cast as _cast
+
+        kb_active = _cast(_Any, cs.service.knowledge)
+        if kb_active is None:
+            return
+
+        critic = reflect_state.get("critic")
+        if critic is None:
+            critic = ReflectionCritic(llm=cs.service.llm)
+            reflect_state["critic"] = critic
+
+        try:
+            verdict = await critic.judge(user_text, asst_text)
+        except Exception as exc:
+            view.error("reflect", f"{type(exc).__name__}: {exc}")
+            return
+        if verdict is None:
+            return
+        if not verdict.save:
+            return
+        if verdict.confidence < float(reflect_state["threshold"]):
+            view.system_notice(
+                f"reflect: skipped (confidence {verdict.confidence:.2f} < "
+                f"threshold {float(reflect_state['threshold']):.2f})"
+            )
+            return
+        # Persist. We prefer the critic's summary over the raw Q+A because
+        # the critic distills it for retrieval — but include the original
+        # question as a header so /kb show is still self-explanatory.
+        content = (
+            f"Q: {user_text.strip()}\n\n"
+            f"Summary: {verdict.summary.strip()}\n\n"
+            f"A: {asst_text.strip()}"
+        )
+        try:
+            info = await kb_active.add_document(
+                title=verdict.title or user_text[:60],
+                content=content,
+                source="repl-reflect",
+                tags=[*verdict.tags, "auto-saved"],
+            )
+        except Exception as exc:
+            view.error("reflect", f"persist failed: {type(exc).__name__}: {exc}")
+            return
+        view.system_notice(
+            f"reflect saved → {_kb_label(kb_active)} · {info.id[:8]} · "
+            f"{info.title} · confidence {verdict.confidence:.2f}"
+        )
+
+    # ------------------------------------------------------------------
     # Auth
     # ------------------------------------------------------------------
     auth_state: dict[str, Any] = {"service": None}
@@ -832,6 +1425,9 @@ async def run_legacy_chat(
     dispatcher.register("model", _model)
     dispatcher.register("rag", _rag)
     dispatcher.register("think", _think)
+    dispatcher.register("kb", _kb)
+    dispatcher.register("save", _save)
+    dispatcher.register("reflect", _reflect)
     dispatcher.register("register", _register)
     dispatcher.register("login", _login)
     dispatcher.register("logout", _logout)
@@ -857,394 +1453,21 @@ async def run_legacy_chat(
             history.append({"role": "user", "content": line})
             full = await view.stream_assistant(provider.reply(line, history))
             history.append({"role": "assistant", "content": full})
+            # Capture for /save and the auto-reflect critic. Empty ``full``
+            # (Ctrl-C mid-stream, error) leaves last_turn at its prior
+            # value — /save then complains "no completed turn yet" rather
+            # than persisting a half-baked answer.
+            if full:
+                last_turn["user"] = line
+                last_turn["assistant"] = full
+                # Auto-reflect runs after the user-facing answer so it can
+                # never block streaming. Errors are surfaced as a sys
+                # notice rather than aborting the REPL loop.
+                await _maybe_auto_save(line, full)
 
         view.system_notice("bye")
         return 0
     finally:
-        if owned_provider and isinstance(provider, ChatServiceProvider):
+        if owned_provider:
             await provider.aclose()
 
-
-# ===========================================================================
-# v1.3 TUI mode
-# ===========================================================================
-
-
-@dataclass
-class TuiServices:
-    """Bag of dependencies passed into ``ui/commands.py`` handlers.
-
-    Each callable does the actual work; the command handler in
-    :mod:`ui.commands` only orchestrates UI state and delegates here. This
-    keeps ``ui/commands.py`` free of any DB / LLM imports and keeps this
-    module the single seam between presentation and core/db.
-    """
-
-    # mutable runtime
-    provider: ChatServiceProvider | None
-    memory: ChatMemory
-
-    # registry — set after construction so /help can list commands
-    command_registry: object | None = None
-
-    # callbacks (populated by run_tui_chat)
-    set_provider_model: Callable[[str], None] = field(default=lambda _m: None)
-    do_register: Callable[[], Awaitable[None]] = field(default=lambda: _noop())
-    do_login: Callable[[], Awaitable[None]] = field(default=lambda: _noop())
-    do_logout: Callable[[], Awaitable[None]] = field(default=lambda: _noop())
-    do_new_session: Callable[[str | None], Awaitable[None]] = field(default=lambda _t: _noop())
-    do_switch_session: Callable[[str], Awaitable[None]] = field(default=lambda _s: _noop())
-    do_set_current_title: Callable[[str], Awaitable[None]] = field(default=lambda _t: _noop())
-    do_delete_current: Callable[[], Awaitable[None]] = field(default=lambda: _noop())
-    do_refresh_sessions: Callable[[], Awaitable[None]] = field(default=lambda: _noop())
-
-
-async def _noop() -> None:
-    return None
-
-
-async def run_tui_chat() -> int:
-    """Full-screen three-pane TUI. Returns process exit code."""
-
-    from core.auth.errors import (
-        AuthError,
-        EmailAlreadyExistsError,
-    )
-    from core.auth.tokens import decode_token
-    from core.llm.ollama import OllamaClient
-    from settings import settings
-    from ui.app import build_application
-    from ui.commands import CommandContext, CommandRegistry, register_default_commands
-    from ui.state import SessionRow, TuiState
-    from ui.transcript import TranscriptBuffer
-
-    # --- Build core layer -------------------------------------------------
-    state = TuiState(current_model=settings.ollama.chat_model)
-    transcript = TranscriptBuffer()
-
-    probe = OllamaClient.from_settings(settings)
-    reachable = False
-    try:
-        reachable = await probe.ping()
-        if reachable:
-            state.available_models = await probe.list_models()
-            if state.available_models and state.current_model not in state.available_models:
-                fallback = state.available_models[0]
-                transcript.add_system(
-                    f"model {state.current_model!r} not pulled; using {fallback!r}"
-                )
-                state.current_model = fallback
-    finally:
-        await probe.aclose()
-
-    if reachable:
-        service, memory_label, user_id = await build_default_chat_service()
-        provider: ChatServiceProvider | None = ChatServiceProvider(
-            service,
-            use_rag=settings.retrieval.enabled,
-            model=state.current_model,
-        )
-        state.memory_mode = memory_label  # type: ignore[assignment]
-        if user_id is not None:
-            from app import auth_local
-
-            pair = auth_local.load()
-            if pair is not None:
-                try:
-                    decode_token(pair.access_token, expected_type="access")
-                    # We don't have the email handy; show user_id prefix instead.
-                    state.user_email = f"user:{str(user_id)[:8]}"
-                except Exception:  # noqa: S110 — best-effort label only, no security impact
-                    pass
-        memory = service.memory
-    else:
-        provider = None
-        from core.memory.chat_memory import FileChatMemory
-
-        memory = FileChatMemory.from_settings(settings)
-        state.memory_mode = "file"
-        transcript.add_error("ollama", "server unreachable; chat disabled. Try `ollama serve`.")
-
-    # --- Sidebar bootstrap -----------------------------------------------
-    async def _refresh_sessions() -> None:
-        metas = await memory.list_session_metas()
-        state.sessions = [
-            SessionRow(id=m.id, title=m.title, message_count=m.message_count) for m in metas
-        ]
-        # Anchor cursor to current session if present.
-        if state.current_session_id:
-            for i, row in enumerate(state.sessions):
-                if row.id == state.current_session_id:
-                    state.sidebar_cursor = i
-                    break
-
-    await _refresh_sessions()
-
-    # --- Resume the most-recent session on boot -------------------------
-    # So a user who exits the CLI and re-opens it lands back in the same
-    # conversation thread (sidebar shows them, transcript replays history,
-    # next message appends to the same JSON / DB row instead of forking
-    # off into a brand-new empty session). Skipped when there's no
-    # provider (ollama unreachable) or no prior sessions.
-    if provider is not None and state.sessions:
-        first = state.sessions[0]
-        provider.set_session(first.id)
-        state.current_session_id = first.id
-        try:
-            history = await memory.get(first.id)
-            for m in history:
-                if m.role == "user":
-                    transcript.add_user(m.content)
-                elif m.role == "assistant":
-                    transcript.start_assistant()
-                    transcript.append_to_assistant(m.content)
-                    transcript.end_assistant()
-                else:
-                    transcript.add_system(m.content)
-        except Exception as exc:
-            transcript.add_error("resume_failed", f"{type(exc).__name__}: {exc}")
-
-    # --- Auth helpers -----------------------------------------------------
-    auth_state: dict[str, Any] = {"service": None}
-
-    async def _auth_service() -> AuthService:
-        svc = auth_state["service"]
-        if svc is not None:
-            return svc  # type: ignore[no-any-return]
-        from core.auth.service import AuthService
-        from db.session import current_session_factory, init_engine
-
-        init_engine()
-        svc = AuthService(current_session_factory())
-        auth_state["service"] = svc
-        return svc
-
-    async def _ask(prompt: str, *, password: bool = False) -> str:
-        return await asyncio.to_thread(_pt_prompt, prompt, is_password=password)
-
-    async def _do_register() -> None:
-        try:
-            email = (await _ask("email: ")).strip()
-            if not email:
-                transcript.add_error("register", "empty email")
-                return
-            password = await _ask("password (min 8, letter+digit): ", password=True)
-            confirm = await _ask("confirm: ", password=True)
-            if password != confirm:
-                transcript.add_error("register", "passwords don't match")
-                return
-            display_name = (await _ask("display name (optional): ")).strip() or None
-            try:
-                svc = await _auth_service()
-                user = await svc.register(email, password, display_name=display_name)
-            except EmailAlreadyExistsError:
-                transcript.add_error("register", "email already registered, try /login")
-                return
-            except AuthError as exc:
-                transcript.add_error("register", str(exc) or "registration failed")
-                return
-            transcript.add_system(f"registered as {user.email}; now run /login")
-        except Exception as exc:
-            transcript.add_error("auth_unavailable", f"{type(exc).__name__}: {exc}")
-
-    async def _do_login() -> None:
-        from app import auth_local
-
-        try:
-            email = (await _ask("email: ")).strip()
-            if not email:
-                transcript.add_error("login", "empty email")
-                return
-            password = await _ask("password: ", password=True)
-            try:
-                svc = await _auth_service()
-                pair = await svc.login(email, password)
-            except AuthError as exc:
-                transcript.add_error(type(exc).__name__, str(exc) or "authentication failed")
-                return
-            auth_local.save(pair)
-            state.user_email = email
-            transcript.add_system(f"logged in as {email} — restart CLI to switch memory to db")
-        except Exception as exc:
-            transcript.add_error("auth_unavailable", f"{type(exc).__name__}: {exc}")
-
-    async def _do_logout() -> None:
-        from app import auth_local
-
-        pair = auth_local.load()
-        if pair is None:
-            transcript.add_system("not logged in")
-            return
-        try:
-            svc = await _auth_service()
-            await svc.logout(pair.refresh_token)
-        except Exception as exc:
-            transcript.add_system(
-                f"remote logout failed ({type(exc).__name__}); clearing local token"
-            )
-        auth_local.clear()
-        state.user_email = None
-        transcript.add_system("logged out — restart CLI to switch memory to file")
-
-    # --- Session ops ------------------------------------------------------
-    async def _do_new_session(title: str | None) -> None:
-        if provider is None:
-            transcript.add_error("new", "no active provider (ollama unreachable)")
-            return
-        sid = await provider.reset_session()
-        if title:
-            await memory.set_title(sid, title)
-        state.current_session_id = sid
-        await _refresh_sessions()
-        transcript.add_system(f"new session: {title or sid[:8]}")
-
-    async def _do_switch_session(sid: str) -> None:
-        if provider is None:
-            transcript.add_error("switch", "no active provider")
-            return
-        # Replay history into the transcript pane.
-        try:
-            msgs = await memory.get(sid)
-        except Exception as exc:
-            transcript.add_error("switch", f"{type(exc).__name__}: {exc}")
-            return
-        provider.set_session(sid)
-        state.current_session_id = sid
-        transcript.clear()
-        for m in msgs:
-            if m.role == "user":
-                transcript.add_user(m.content)
-            elif m.role == "assistant":
-                transcript.start_assistant()
-                transcript.append_to_assistant(m.content)
-                transcript.end_assistant()
-            else:
-                transcript.add_system(m.content)
-        await _refresh_sessions()
-
-    async def _do_set_title(title: str) -> None:
-        if state.current_session_id is None:
-            transcript.add_error("title", "no current session")
-            return
-        await memory.set_title(state.current_session_id, title)
-        await _refresh_sessions()
-        transcript.add_system(f"title → {title}")
-
-    async def _do_delete_current() -> None:
-        sid = state.current_session_id
-        if sid is None:
-            row = state.session_at_cursor()
-            sid = row.id if row else None
-        if sid is None:
-            transcript.add_error("delete", "no session selected")
-            return
-        await memory.delete_session(sid)
-        if provider is not None and provider.session_id == sid:
-            # Drop the in-memory pointer so the next reply mints a fresh one.
-            provider._session_id = None
-        if state.current_session_id == sid:
-            state.current_session_id = None
-            transcript.clear()
-        await _refresh_sessions()
-        transcript.add_system(f"deleted {sid[:8]}")
-
-    def _set_provider_model(name: str) -> None:
-        if provider is not None:
-            provider.set_model(name)
-
-    services = TuiServices(
-        provider=provider,
-        memory=memory,
-        set_provider_model=_set_provider_model,
-        do_register=_do_register,
-        do_login=_do_login,
-        do_logout=_do_logout,
-        do_new_session=_do_new_session,
-        do_switch_session=_do_switch_session,
-        do_set_current_title=_do_set_title,
-        do_delete_current=_do_delete_current,
-        do_refresh_sessions=_refresh_sessions,
-    )
-
-    registry = CommandRegistry()
-    register_default_commands(registry)
-    services.command_registry = registry
-
-    cmd_ctx = CommandContext(state=state, transcript=transcript, services=services)
-
-    # --- Send pipeline ----------------------------------------------------
-    async def _on_send(text: str) -> None:
-        if text.startswith("/"):
-            await registry.dispatch(cmd_ctx, text)
-            return
-        if provider is None:
-            transcript.add_error("chat", "no active provider")
-            return
-        transcript.add_user(text)
-        transcript.start_assistant()
-        try:
-            async for evt in provider.reply(text, []):
-                etype = evt.get("type")
-                if etype == "token":
-                    transcript.append_to_assistant(evt.get("delta", ""))
-                elif etype == "retrieval":
-                    hits = evt.get("hits") or []
-                    if hits:  # silence empty retrieval events (RAG off / no hits)
-                        transcript.add_system(f"retrieved {len(hits)} chunk(s)")
-                elif etype == "done":
-                    transcript.end_assistant(duration_ms=evt.get("duration_ms"))
-                elif etype == "error":
-                    transcript.add_error(evt.get("code", "error"), evt.get("message", ""))
-        except Exception as exc:
-            transcript.add_error("unexpected", f"{type(exc).__name__}: {exc}")
-        # Sidebar may have a new session row + bumped count.
-        await _refresh_sessions()
-        if provider.session_id is not None and state.current_session_id != provider.session_id:
-            state.current_session_id = provider.session_id
-
-    async def _on_switch(sid: str) -> None:
-        await _do_switch_session(sid)
-
-    async def _on_new() -> None:
-        await _do_new_session(None)
-
-    async def _on_delete() -> None:
-        await _do_delete_current()
-
-    # --- Run --------------------------------------------------------------
-    app = build_application(
-        state,
-        transcript,
-        on_send=_on_send,
-        on_switch=_on_switch,
-        on_new_session=_on_new,
-        on_delete_current=_on_delete,
-    )
-
-    # ---- Welcome / quick-start ------------------------------------------
-    transcript.add_system(
-        f"rag-chat · ollama:{state.current_model} · memory:{state.memory_mode} · ready"
-    )
-    transcript.add_system("─── quick-start ───────────────────────────────────────")
-    if state.user_email is None:
-        transcript.add_system(
-            "  not logged in — type /register or /login (memory uses local files)"
-        )
-    else:
-        transcript.add_system(f"  logged in as {state.user_email} (memory: {state.memory_mode})")
-    transcript.add_system("  /help        all commands")
-    transcript.add_system("  /model       list / switch ollama models")
-    transcript.add_system("  /new [title] start a new conversation")
-    transcript.add_system("  /switch <id> jump to a session (or Tab → ↑↓ → Enter on sidebar)")
-    transcript.add_system("  Enter        send message · Alt+Enter newline")
-    transcript.add_system("  Ctrl+P/N     scroll 1 line · Ctrl+U/F half page · Home/End top/bottom")
-    transcript.add_system("  (macOS Terminal eats PgUp/PgDn — use Ctrl+P/N instead)")
-    transcript.add_system("  Ctrl+R rag · Ctrl+T think · Ctrl+B sidebar · Ctrl+Q quit")
-    transcript.add_system("───────────────────────────────────────────────────────")
-
-    try:
-        await app.run_async()
-    finally:
-        if provider is not None:
-            await provider.aclose()
-    return 0

@@ -11,16 +11,31 @@ from __future__ import annotations
 
 import difflib
 import shlex
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from pathlib import Path
 
 from prompt_toolkit import PromptSession as _PTSession
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.document import Document
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
 
-__all__ = ["PromptSession", "SlashDispatcher", "SlashHandler"]
+__all__ = [
+    "CommandSpec",
+    "PromptSession",
+    "SlashCompleter",
+    "SlashDispatcher",
+    "SlashHandler",
+]
 
 SlashHandler = Callable[[list[str]], Awaitable[None] | None]
+CommandSpec = tuple[str, str]
+"""``(name, description)`` pair — what the completer popup shows.
+
+Name has no leading ``/``. Aliases that duplicate another command (e.g.
+``exit`` for ``quit``) are typically omitted from the completer to keep
+the menu uncluttered; they still work at dispatch time.
+"""
 
 
 def _default_history_path() -> Path:
@@ -45,18 +60,76 @@ def _build_keybindings() -> KeyBindings:
     return kb
 
 
+class SlashCompleter(Completer):
+    """Pop a menu of slash commands while the user is typing.
+
+    Triggers only when the *first token of the first line* starts with
+    ``/``. Anything else (regular chat input, or arguments after the
+    command name) yields no completions so the menu doesn't get in the
+    way of normal typing.
+
+    The provider is a callable returning the current command list, so
+    callers can register commands lazily (after :class:`PromptSession`
+    has been constructed) without rebuilding the completer.
+    """
+
+    def __init__(
+        self,
+        commands_provider: Callable[[], Iterable[CommandSpec]],
+    ) -> None:
+        self._provider = commands_provider
+
+    def get_completions(  # type: ignore[no-untyped-def]
+        self, document: Document, complete_event
+    ):
+        text = document.text_before_cursor
+        # Only complete on the first line — multi-line user prose
+        # shouldn't surface a command popup.
+        first_line, _, _ = text.partition("\n")
+        if "\n" in text:
+            # cursor is past the first line
+            return
+        if not first_line.startswith("/"):
+            return
+        # Once the user types a space, they're past the command name;
+        # leave completions to the (future) per-command arg completer.
+        if " " in first_line:
+            return
+        prefix = first_line[1:]
+        for name, desc in self._provider():
+            if name.startswith(prefix):
+                yield Completion(
+                    text=name,
+                    start_position=-len(prefix),
+                    display=f"/{name}",
+                    display_meta=desc,
+                )
+
+
 class PromptSession:
     """Thin wrapper around :class:`prompt_toolkit.PromptSession`."""
 
-    def __init__(self, history_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        history_path: Path | None = None,
+        *,
+        commands_provider: Callable[[], Sequence[CommandSpec]] | None = None,
+    ) -> None:
         path = history_path or _default_history_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch(exist_ok=True)
+        completer: Completer | None = (
+            SlashCompleter(commands_provider) if commands_provider is not None else None
+        )
         self._session: _PTSession[str] = _PTSession(
             history=FileHistory(str(path)),
             multiline=True,
             key_bindings=_build_keybindings(),
-            bottom_toolbar=lambda: "Enter send · ↑↓ history · /help",
+            completer=completer,
+            complete_while_typing=True,
+            bottom_toolbar=lambda: (
+                "Enter send · / commands · Tab complete · ↑↓ history · Ctrl+L clear"
+            ),
         )
 
     async def prompt_async(self, prompt: str = "› ") -> str:

@@ -12,7 +12,6 @@ services:
     restart: unless-stopped
     networks:
       - ragchat-network
-    profiles: ["ollama", "web"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 30s
@@ -21,9 +20,6 @@ services:
       start_period: 60s
 
   postgres:
-    # pgvector/pgvector ships Postgres 16 with the `vector` extension baked in.
-    # AGENTS.md §4 requires pgvector for RAG; `pg_trgm` is enabled by the
-    # init migration (0001_init.py).
     image: pgvector/pgvector:pg16
     container_name: rag_postgres
     ports:
@@ -37,7 +33,6 @@ services:
     restart: unless-stopped
     networks:
       - ragchat-network
-    profiles: ["db", "web"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rag -d ragdb"]
       interval: 5s

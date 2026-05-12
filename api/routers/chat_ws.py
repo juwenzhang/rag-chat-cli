@@ -1,4 +1,4 @@
-"""WebSocket endpoint for bidirectional streaming chat (AGENTS.md §5.3).
+"""WebSocket endpoint for bidirectional streaming chat.
 
 Wire protocol (JSON frames):
 
@@ -6,11 +6,16 @@ Wire protocol (JSON frames):
     ``{"type": "user_message", "session_id": "<uuid>", "content": "...", "use_rag": false}``
     ``{"type": "abort"}``   # stop the current generation
 
-* server → client:
-    ``{"type": "retrieval", "hits": [...]}``
-    ``{"type": "token",     "delta": "..."}``
-    ``{"type": "done",      "message_id": "...", "usage": {...}}``
-    ``{"type": "error",     "code": "...", "message": "..."}``
+* server → client (all event types from :mod:`api.streaming.protocol`):
+    ``{"type": "retrieval",   "hits": [...]}``
+    ``{"type": "token",       "delta": "..."}``
+    ``{"type": "thought",     "text": "..."}``                # P1.5 — model reasoning
+    ``{"type": "tool_call",   "tool_call_id": ..., "tool_name": ..., "arguments": {...}}``
+    ``{"type": "tool_result", "tool_call_id": ..., "tool_name": ..., "content": "...", "is_error": false}``
+    ``{"type": "done",        "message_id": "...", "usage": {...}}``
+    ``{"type": "error",       "code": "...", "message": "..."}``
+
+See ``docs/STREAM_PROTOCOL.md`` for the full vocabulary and field rules.
 
 One generation per connection for now — the client is expected to close
 after ``done`` / ``error``. Keeping it minimal makes reasoning about abort

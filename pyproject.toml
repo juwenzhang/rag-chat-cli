@@ -26,6 +26,8 @@ dependencies = [
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",  # FastAPI form parsing (optional but commonly needed)
+    # Workers (#23 P5.4): async Redis client for background job queue.
+    "redis>=5.0",
 ]
 
 [project.optional-dependencies]
@@ -70,7 +72,12 @@ extend-exclude = [
     "openspec/changes/archive",
     ".venv",
     "conversations",
-    "knowledge",
+    # Path-anchored: only the ROOT-level ``knowledge/`` (user-provided
+    # ingestion targets), NOT the source dir ``core/knowledge/``. The
+    # bare pattern ``knowledge`` would match any directory of that name
+    # anywhere — silently hiding ``core/knowledge/`` from lint, which
+    # is what we DO want linted.
+    "/knowledge",
 ]
 
 [tool.ruff.lint]
