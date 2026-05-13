@@ -23,8 +23,10 @@ goes through this module. The API layer never touches Fernet directly.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -33,7 +35,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Provider
+from db.models import ModelMetadata, Provider
 
 logger = logging.getLogger(__name__)
 
@@ -42,17 +44,83 @@ __all__ = [
     "ProviderNotFoundError",
     "ProviderType",
     "ProviderValidationError",
+    "classify_model_kind",
     "create_provider",
     "decrypt_api_key",
+    "delete_ollama_model",
     "delete_provider",
     "encrypt_api_key",
     "get_provider",
+    "is_cloud_model_tag",
+    "is_embedding_model_tag",
+    "list_model_meta_for_provider",
     "list_models",
     "list_providers",
+    "pull_ollama_model",
+    "running_ollama_models",
     "seed_default_ollama_for_user",
+    "show_ollama_model",
     "test_connectivity",
     "update_provider",
+    "upsert_model_meta",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Model classification (chat vs embedding)
+# ---------------------------------------------------------------------------
+
+#: Family prefixes that denote an embedding-only model and don't carry the
+#: word "embed" in their tag. The list is conservative on purpose — false
+#: positives would cause a chat model to silently disappear from the chat
+#: dropdown, which is worse than the opposite.
+_EMBEDDING_PREFIXES: tuple[str, ...] = (
+    "bge-",
+    "e5-",
+    "gte-",
+    "all-minilm",
+    "instructor",
+    "paraphrase-",
+    "stella-",
+    "text-embedding-",
+    "jina-embed",
+)
+
+
+def is_embedding_model_tag(tag: str) -> bool:
+    """Heuristic: is ``tag`` an embedding model rather than a chat model?
+
+    Matches by:
+
+    * the substring ``embed`` anywhere in the tag (catches the common
+      naming convention used by ``nomic-embed-text``, ``mxbai-embed-large``,
+      ``snowflake-arctic-embed``, ``granite-embedding``, etc.);
+    * known family prefixes that don't carry "embed" in the tag (``bge-``,
+      ``e5-``, ``gte-``, ``all-minilm``, ``instructor``, ``paraphrase-``,
+      ``stella-``, ``text-embedding-``, ``jina-embed``).
+
+    The check is leaf-aware: ``library/bge-m3:latest`` matches because we
+    strip the namespace before testing the prefix list.
+    """
+    t = tag.lower()
+    if "embed" in t:
+        return True
+    leaf = t.rsplit("/", 1)[-1]
+    return leaf.startswith(_EMBEDDING_PREFIXES)
+
+
+def classify_model_kind(tag: str) -> Literal["chat", "embedding"]:
+    return "embedding" if is_embedding_model_tag(tag) else "chat"
+
+
+def is_cloud_model_tag(tag: str) -> bool:
+    """Heuristic: an Ollama tag is ``cloud`` when it ends in ``-cloud``.
+
+    Cloud models are remote-hosted by Ollama; ``ollama pull`` registers the
+    metadata in seconds rather than downloading multi-GB layers. The UI uses
+    this to decide whether to skip the "confirm large download" prompt.
+    """
+    return tag.lower().endswith("-cloud")
 
 
 ProviderType = Literal["ollama", "openai"]
@@ -384,7 +452,11 @@ async def list_models(
             r.raise_for_status()
             payload = r.json()
             return [
-                {"id": m.get("name", ""), "size": m.get("size")}
+                {
+                    "id": m.get("name", ""),
+                    "size": m.get("size"),
+                    "kind": classify_model_kind(m.get("name", "")),
+                }
                 for m in payload.get("models", [])
                 if m.get("name")
             ]
@@ -395,10 +467,167 @@ async def list_models(
         r.raise_for_status()
         payload = r.json()
         return [
-            {"id": m.get("id", ""), "size": None}
+            {
+                "id": m.get("id", ""),
+                "size": None,
+                "kind": classify_model_kind(m.get("id", "")),
+            }
             for m in payload.get("data", [])
             if m.get("id")
         ]
+
+
+# ---------------------------------------------------------------------------
+# Ollama pull — stream NDJSON progress
+# ---------------------------------------------------------------------------
+
+
+async def pull_ollama_model(
+    *, base_url: str, api_key: str | None, model: str
+) -> AsyncIterator[dict[str, Any]]:
+    """Stream Ollama's ``/api/pull`` NDJSON progress as plain dicts.
+
+    Ollama emits one JSON object per line, each like::
+
+        {"status": "pulling manifest"}
+        {"status": "pulling deadbeef", "digest": "...", "total": 1234, "completed": 456}
+        {"status": "success"}
+
+    Each iteration yields the parsed dict so the API edge can re-encode it as
+    an SSE / WS event. Errors (HTTP, parse, transport) are converted into a
+    single terminal ``{"error": "<msg>"}`` yield so the caller has a uniform
+    contract — no try/except around the iteration.
+
+    Cloud-flagged tags (see :func:`is_cloud_model_tag`) complete near-instantly
+    because there are no GB-sized layers to download; this generator yields the
+    same shape regardless, so the caller doesn't need to branch.
+    """
+    _validate_base_url(base_url)
+    url = base_url.rstrip("/") + "/api/pull"
+    payload = {"name": model, "stream": True}
+    headers = {"Content-Type": "application/json", **_auth_headers(api_key)}
+    timeout = httpx.Timeout(None, connect=10.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST", url, json=payload, headers=headers
+            ) as resp:
+                if resp.status_code >= 400:
+                    body = (await resp.aread()).decode("utf-8", errors="replace")
+                    yield {"error": f"HTTP {resp.status_code}: {body[:300]}"}
+                    return
+                async for line in resp.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        yield json.loads(line)
+                    except json.JSONDecodeError:
+                        logger.warning("ollama pull: unparseable line %r", line[:120])
+                        continue
+    except httpx.HTTPError as exc:
+        yield {"error": f"{type(exc).__name__}: {exc}"}
+
+
+async def delete_ollama_model(
+    *, base_url: str, api_key: str | None, model: str
+) -> None:
+    """Delete an Ollama model via ``DELETE /api/delete``.
+
+    Raises :class:`httpx.HTTPError` on transport / non-2xx upstream failure;
+    the API edge maps that to 502 / 404 / 400 depending on status.
+    """
+    _validate_base_url(base_url)
+    headers = {"Content-Type": "application/json", **_auth_headers(api_key)}
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        r = await client.request(
+            "DELETE",
+            base_url.rstrip("/") + "/api/delete",
+            headers=headers,
+            json={"name": model},
+        )
+        r.raise_for_status()
+
+
+async def show_ollama_model(
+    *, base_url: str, api_key: str | None, model: str
+) -> dict[str, Any]:
+    """Fetch Ollama model details via ``POST /api/show``.
+
+    Returns the raw JSON dict (license, modelfile, parameters, template,
+    details — including ``parameter_size`` and ``family``). The API edge can
+    pass this through or project a narrower shape.
+    """
+    _validate_base_url(base_url)
+    headers = {"Content-Type": "application/json", **_auth_headers(api_key)}
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        r = await client.post(
+            base_url.rstrip("/") + "/api/show",
+            headers=headers,
+            json={"name": model},
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+async def running_ollama_models(
+    *, base_url: str, api_key: str | None
+) -> list[dict[str, Any]]:
+    """Return currently-loaded models via ``GET /api/ps``.
+
+    Each entry includes ``name``, ``size``, ``size_vram``, ``digest`` and an
+    ``expires_at`` timestamp. UI can render "X loaded, expires in Ym".
+    """
+    _validate_base_url(base_url)
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        r = await client.get(
+            base_url.rstrip("/") + "/api/ps",
+            headers=_auth_headers(api_key),
+        )
+        r.raise_for_status()
+        return list(r.json().get("models", []))
+
+
+# ---------------------------------------------------------------------------
+# Model metadata (user descriptions per (provider, model))
+# ---------------------------------------------------------------------------
+
+
+async def list_model_meta_for_provider(
+    session: AsyncSession, *, provider_id: uuid.UUID
+) -> dict[str, str | None]:
+    """Return ``{model_tag: description}`` for every metadata row tied to
+    ``provider_id``. Missing rows (most models) simply don't appear; the
+    caller treats absence as "no description"."""
+    q = select(ModelMetadata).where(ModelMetadata.provider_id == provider_id)
+    rows = (await session.scalars(q)).all()
+    return {r.model: r.description for r in rows}
+
+
+async def upsert_model_meta(
+    session: AsyncSession,
+    *,
+    provider_id: uuid.UUID,
+    model: str,
+    description: str | None,
+) -> None:
+    """Insert-or-update one ``(provider_id, model)`` row.
+
+    A ``description=None`` *and* no existing row leaves the table alone —
+    we don't create empty rows. To remove an existing description, pass
+    an empty string or call this with ``description=None`` after the row
+    already exists (which sets the column to NULL).
+    """
+    row = await session.get(ModelMetadata, (provider_id, model))
+    if row is None:
+        if description is None or description == "":
+            return
+        row = ModelMetadata(
+            provider_id=provider_id, model=model, description=description
+        )
+        session.add(row)
+    else:
+        row.description = description or None
+    await session.commit()
 
 
 # ---------------------------------------------------------------------------

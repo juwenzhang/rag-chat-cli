@@ -34,7 +34,7 @@ from core.auth.tokens import (
     create_refresh_token,
     decode_token,
 )
-from db.models import RefreshToken, User
+from db.models import Org, OrgMember, RefreshToken, User
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -88,6 +88,31 @@ class AuthService:
                 is_active=True,
             )
             session.add(user)
+            # Flush so ``user.id`` is populated before we reference it
+            # below for the personal-org bootstrap.
+            await session.flush()
+
+            # Every user lands with a personal org. Slug is
+            # ``personal-<12 hex>`` derived from their UUID so it's
+            # collision-free without an extra round-trip. The org is
+            # marked ``is_personal=True`` so the API refuses delete on
+            # it — users can't accidentally orphan their default space.
+            slug = "personal-" + user.id.hex[:12]
+            org_name = (display_name or normalized.split("@", 1)[0]) + "'s workspace"
+            org = Org(
+                slug=slug,
+                name=org_name,
+                owner_id=user.id,
+                is_personal=True,
+            )
+            session.add(org)
+            await session.flush()
+            session.add(OrgMember(org_id=org.id, user_id=user.id, role="owner"))
+
+            # No default wiki — the user creates wikis explicitly. The
+            # ``wikis`` schema is in place but a fresh workspace lands
+            # empty so RAG / knowledge-base scoping stays intentional.
+
             await session.commit()
             await session.refresh(user)
             return user

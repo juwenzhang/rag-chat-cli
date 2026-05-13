@@ -16,9 +16,11 @@ __all__ = [
     "ConnectivityTestIn",
     "ConnectivityTestOut",
     "ModelListItem",
+    "ModelMetaIn",
     "ProviderCreateIn",
     "ProviderOut",
     "ProviderUpdateIn",
+    "PullModelIn",
     "UserPreferenceIn",
     "UserPreferenceOut",
 ]
@@ -75,15 +77,45 @@ class ConnectivityTestOut(BaseModel):
 class ModelListItem(BaseModel):
     id: str
     size: int | None = None
+    #: ``"chat"`` (the default) or ``"embedding"``. The UI uses this to keep
+    #: embed-only models out of the chat model dropdown — they belong to a
+    #: separate per-user preference managed in Settings.
+    kind: Literal["chat", "embedding"] = "chat"
+    #: User-authored free-text note, joined from ``model_metadata``. ``None``
+    #: when the user hasn't attached one.
+    description: str | None = None
+
+
+class ModelMetaIn(BaseModel):
+    """Body for ``POST /providers/{id}/models/meta``.
+
+    ``description=None`` or empty string clears the existing description (if
+    a row exists) or no-ops (if none).
+    """
+
+    model: Annotated[str, Field(min_length=1, max_length=256)]
+    description: Annotated[str, Field(max_length=2000)] | None = None
+
+
+class PullModelIn(BaseModel):
+    """Body for ``POST /providers/{id}/models/pull``.
+
+    ``model`` is the Ollama tag, e.g. ``qwen2.5:7b`` or ``gpt-oss:120b-cloud``.
+    """
+
+    model: Annotated[str, Field(min_length=1, max_length=256)]
 
 
 class UserPreferenceIn(BaseModel):
     default_provider_id: uuid.UUID | None = None
     default_model: Annotated[str, Field(max_length=128)] | None = None
+    default_embedding_model: Annotated[str, Field(max_length=128)] | None = None
     default_use_rag: bool | None = None
-    # Sentinel: pass True to wipe the existing default_provider_id pin.
+    # Sentinel: pass True to wipe the existing pin. ``None`` on the value
+    # field means "don't touch"; an explicit value sets, and ``clear_*`` wipes.
     clear_default_provider: bool = False
     clear_default_model: bool = False
+    clear_default_embedding_model: bool = False
 
 
 class UserPreferenceOut(BaseModel):
@@ -91,4 +123,5 @@ class UserPreferenceOut(BaseModel):
 
     default_provider_id: uuid.UUID | None
     default_model: str | None
+    default_embedding_model: str | None
     default_use_rag: bool

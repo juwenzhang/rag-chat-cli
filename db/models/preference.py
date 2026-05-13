@@ -35,4 +35,11 @@ class UserPreference(TimestampMixin, Base):
         nullable=True,
     )
     default_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Separate slot for the user's embedding model — kept distinct from
+    # ``default_model`` because the two are picked from disjoint sets (a chat
+    # model can't embed and vice versa). Only consulted by the RAG / KB
+    # ingest path; ``None`` means "fall back to env config".
+    default_embedding_model: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
     default_use_rag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

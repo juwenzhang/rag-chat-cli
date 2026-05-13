@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.base import Base
@@ -34,3 +34,6 @@ class ChatSession(UUIDMixin, TimestampMixin, Base):
         nullable=True,
     )
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )

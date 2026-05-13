@@ -38,12 +38,10 @@ class RetrievalHit(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    # Source field name is ``content`` inside :class:`core.knowledge.base.KnowledgeHit`,
-    # but the wire name is ``snippet``. The router does the rename when it
-    # builds the event dict; this schema is therefore stable on the wire.
     document_id: str | None = None
+    chunk_id: str | None = None
     title: str | None = None
-    snippet: str
+    content: str
     score: float
     source: str | None = None
 
@@ -93,6 +91,11 @@ class DoneEvent(BaseModel):
     message_id: str | None = None
     duration_ms: int | None = None
     usage: dict[str, Any] | None = None
+    # The model + provider that actually produced the reply. Surfaced so the
+    # UI can show ground-truth "this answer came from qwen2.5:7b on local-ollama"
+    # in the message footer (and so users can verify a model switch took effect).
+    model: str | None = None
+    provider_name: str | None = None
 
 
 class ErrorEvent(BaseModel):

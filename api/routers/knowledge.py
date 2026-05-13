@@ -9,9 +9,10 @@ consume without another migration.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,6 +88,42 @@ async def list_documents(
         size=size,
         total=total,
     )
+
+
+@router.get(
+    "/documents/{document_id}",
+    response_model=DocumentOut,
+    summary="Fetch a single document",
+)
+async def get_document(
+    document_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> DocumentOut:
+    doc = await session.get(Document, document_id)
+    if doc is None or doc.user_id != user.id:
+        # 404 for both branches — don't leak existence to non-owners.
+        raise HTTPException(status_code=404, detail="document not found")
+    return DocumentOut.model_validate(doc)
+
+
+@router.delete(
+    "/documents/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a document (also drops any chunks referencing it)",
+)
+async def delete_document(
+    document_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    doc = await session.get(Document, document_id)
+    if doc is None or doc.user_id != user.id:
+        raise HTTPException(status_code=404, detail="document not found")
+    # ``Chunk`` rows reference ``Document`` via FK ON DELETE CASCADE, so
+    # they go away with the document — no manual fan-out needed.
+    await session.delete(doc)
+    await session.commit()
 
 
 @router.post(

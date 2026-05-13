@@ -294,6 +294,7 @@ class ChatService:
         max_steps: int | None = None,
         abort: AbortContext | None = None,
         model: str | None = None,
+        persist_user: bool = True,
     ) -> AsyncIterator[Event]:
         """Stream the full reply loop as UI-facing events.
 
@@ -361,6 +362,8 @@ class ChatService:
                 "type": "retrieval",
                 "hits": [
                     {
+                        "document_id": getattr(h, "document_id", None),
+                        "chunk_id": getattr(h, "chunk_id", None),
                         "title": h.title,
                         "content": h.content,
                         "score": h.score,
@@ -381,17 +384,21 @@ class ChatService:
                 memories = []
 
         # 3. Persist the user turn immediately so a mid-loop failure doesn't
-        # lose the question.
+        # lose the question. ``persist_user=False`` skips this — the
+        # regenerate / continue-from-history paths rely on a user
+        # message that's already in the transcript (an assistant reply
+        # was either deleted or never produced).
         user_msg = ChatMessage(role="user", content=user_text)
-        try:
-            await self._memory.append(session_id, user_msg)
-        except Exception as exc:
-            yield {
-                "type": "error",
-                "code": "memory_write_failed",
-                "message": str(exc),
-            }
-            return
+        if persist_user:
+            try:
+                await self._memory.append(session_id, user_msg)
+            except Exception as exc:
+                yield {
+                    "type": "error",
+                    "code": "memory_write_failed",
+                    "message": str(exc),
+                }
+                return
 
         # 4. ReAct loop.
         # Prompt order (oldest → newest):
@@ -405,7 +412,14 @@ class ChatService:
             memories=memories or None,
             hits=hits or None,
         )
-        messages: list[ChatMessage] = [*prelude, *history, user_msg]
+        # When we *did* persist the user msg above, ``history`` was
+        # loaded before the persist so ``user_msg`` is not yet inside
+        # it — we append it explicitly. When ``persist_user=False`` the
+        # caller has guaranteed ``history`` already ends in this user
+        # turn, so duplicating would double-count.
+        messages: list[ChatMessage] = (
+            [*prelude, *history, user_msg] if persist_user else [*prelude, *history]
+        )
         usage: dict[str, Any] | None = None
         tools_for_call: list[ToolSpec] | None = None
         if use_tools and self._tools is not None and len(self._tools) > 0:
@@ -595,9 +609,12 @@ class ChatService:
 
         # 7. Terminator.
         duration_ms = int((time.monotonic() - started) * 1000)
+        effective_model = model or getattr(self._llm, "chat_model", None)
         done: Event = {"type": "done", "duration_ms": duration_ms}
         if usage is not None:
             done["usage"] = usage
+        if effective_model:
+            done["model"] = effective_model
         yield done
 
     # ------------------------------------------------------------------

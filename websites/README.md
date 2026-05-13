@@ -1,4 +1,4 @@
-# RAG-AI Web (websites/)
+# lhx-rag Web (websites/)
 
 Next.js 16 frontend for the [rag-chat-cli](../) FastAPI backend.
 

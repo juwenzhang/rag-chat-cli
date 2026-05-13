@@ -19,8 +19,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "RAG-AI — Local ReAct agent with hybrid retrieval",
-    template: "%s · RAG-AI",
+    default: "lhx-rag — Local ReAct agent with hybrid retrieval",
+    template: "%s · lhx-rag",
   },
   description:
     "A local-first ReAct agent with hybrid RAG, persistent memory, and a streaming chat UI.",

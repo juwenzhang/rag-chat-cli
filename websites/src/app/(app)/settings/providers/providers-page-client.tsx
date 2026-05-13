@@ -3,7 +3,11 @@
 import {
   ArrowLeft,
   Check,
+  CloudDownload,
+  Download,
+  ExternalLink,
   Loader2,
+  Pencil,
   Plus,
   RefreshCcw,
   Save,
@@ -25,9 +29,23 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import {
+  VirtualTable,
+  type VirtualTableColumn,
+} from "@/components/ui/virtual-table";
+import { PullModelDialog } from "@/components/providers/pull-model-dialog";
 import type {
   ModelListItem,
   ProviderOut,
@@ -284,18 +302,35 @@ function AddProviderForm({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="api_key">
-              API key{" "}
-              <span className="text-xs text-muted-foreground">
-                ({type === "ollama" ? "optional for local" : "usually required"})
-              </span>
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="api_key">
+                API key{" "}
+                <span className="text-xs text-muted-foreground">
+                  ({type === "ollama"
+                    ? "optional for local · required for cloud"
+                    : "usually required"})
+                </span>
+              </Label>
+              {type === "ollama" && (
+                <a
+                  href="https://ollama.com/settings/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  Get your Ollama key
+                  <ExternalLink className="size-3" />
+                </a>
+              )}
+            </div>
             <Input
               id="api_key"
               type="password"
               autoComplete="off"
               placeholder={
-                type === "ollama" ? "Leave empty for local Ollama" : "sk-…"
+                type === "ollama"
+                  ? "Leave empty for local Ollama · paste key for cloud"
+                  : "sk-…"
               }
               value={apiKey}
               onChange={(e) => {
@@ -378,6 +413,10 @@ function ProviderCard({
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [pullOpen, setPullOpen] = useState(false);
+  const [modelToDelete, setModelToDelete] = useState<string | null>(null);
+  const [modelToEdit, setModelToEdit] = useState<ModelListItem | null>(null);
 
   const fetchModels = useCallback(async () => {
     setModelsLoading(true);
@@ -425,8 +464,7 @@ function ProviderCard({
     }
   };
 
-  const remove = async () => {
-    if (!confirm(`Delete provider "${provider.name}"?`)) return;
+  const doDelete = async () => {
     setBusy(true);
     try {
       const r = await fetch(`/api/providers/${provider.id}`, {
@@ -446,6 +484,28 @@ function ProviderCard({
       setBusy(false);
     }
   };
+
+  const doDeleteModel = useCallback(async () => {
+    if (!modelToDelete) return;
+    try {
+      const r = await fetch(`/api/providers/${provider.id}/models/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: modelToDelete }),
+      });
+      if (!r.ok) {
+        const payload = await r.json().catch(() => ({}));
+        throw new Error(
+          (payload as { message?: string }).message || `HTTP ${r.status}`
+        );
+      }
+      toast.success(`Removed ${modelToDelete}`);
+      setModelToDelete(null);
+      void fetchModels();
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  }, [modelToDelete, provider.id, fetchModels]);
 
   return (
     <Card>
@@ -508,7 +568,7 @@ function ProviderCard({
           <Button
             variant="ghost"
             size="icon"
-            onClick={remove}
+            onClick={() => setConfirmDelete(true)}
             disabled={busy}
             aria-label="Delete provider"
           >
@@ -516,23 +576,68 @@ function ProviderCard({
           </Button>
         </div>
       </CardHeader>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete provider "${provider.name}"?`}
+        description={
+          <>
+            This will remove the saved endpoint and any encrypted API key. Chat
+            sessions pinned to this provider will fall back to your user default.
+          </>
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={doDelete}
+      />
+      <PullModelDialog
+        providerId={provider.id}
+        providerName={provider.name}
+        open={pullOpen}
+        onOpenChange={setPullOpen}
+        onPulled={() => {
+          void fetchModels();
+          onChanged();
+        }}
+      />
+      <ConfirmDialog
+        open={modelToDelete !== null}
+        onOpenChange={(o) => !o && setModelToDelete(null)}
+        title={`Remove "${modelToDelete}" from Ollama?`}
+        description={
+          <>
+            This calls Ollama&apos;s <code className="font-mono">/api/delete</code>{" "}
+            and frees the disk space the model layers occupied. Pulling it
+            again later will re-download.
+          </>
+        }
+        confirmLabel="Remove"
+        destructive
+        onConfirm={doDeleteModel}
+      />
+      <EditDescriptionDialog
+        providerId={provider.id}
+        model={modelToEdit}
+        onOpenChange={(o) => !o && setModelToEdit(null)}
+        onSaved={() => {
+          setModelToEdit(null);
+          void fetchModels();
+        }}
+      />
       <CardContent className="pt-0">
-        <button
-          type="button"
-          className="flex w-full items-center justify-between text-sm text-muted-foreground hover:text-foreground"
-          onClick={() => setModelsOpen((v) => !v)}
-        >
-          <span>
+        <div className="flex w-full items-center justify-between gap-2 text-sm">
+          <button
+            type="button"
+            className="flex-1 text-left text-muted-foreground hover:text-foreground"
+            onClick={() => setModelsOpen((v) => !v)}
+          >
             {modelsOpen ? "Hide models" : "Show models"}
             {models ? ` (${models.length})` : ""}
-          </span>
+          </button>
           {modelsOpen && (
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                void fetchModels();
-              }}
+              onClick={() => void fetchModels()}
               className="rounded p-1 text-muted-foreground/70 hover:bg-foreground/5 hover:text-foreground"
               aria-label="Refresh models"
             >
@@ -541,7 +646,19 @@ function ProviderCard({
               />
             </button>
           )}
-        </button>
+          {provider.type === "ollama" && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setPullOpen(true)}
+              className="h-7 gap-1.5 text-xs"
+            >
+              <Download className="size-3.5" />
+              Pull model
+            </Button>
+          )}
+        </div>
         {modelsOpen && (
           <div className="mt-3">
             {modelsError ? (
@@ -555,21 +672,12 @@ function ProviderCard({
                 <Loader2 className="size-3 animate-spin" /> Loading models…
               </div>
             ) : models && models.length > 0 ? (
-              <ul className="grid gap-1 sm:grid-cols-2">
-                {models.map((m) => (
-                  <li
-                    key={m.id}
-                    className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-2.5 py-1.5"
-                  >
-                    <span className="truncate text-xs font-mono">{m.id}</span>
-                    {m.size != null && (
-                      <span className="text-[10px] text-muted-foreground">
-                        {formatSize(m.size)}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <ModelTable
+                models={models}
+                providerType={provider.type}
+                onEdit={(m) => setModelToEdit(m)}
+                onDelete={(id) => setModelToDelete(id)}
+              />
             ) : (
               <p className="text-xs text-muted-foreground">
                 No models exposed by this endpoint.
@@ -599,12 +707,16 @@ function PreferencesCard({
     pref.default_provider_id
   );
   const [modelName, setModelName] = useState(pref.default_model ?? "");
+  const [embeddingModel, setEmbeddingModel] = useState(
+    pref.default_embedding_model ?? ""
+  );
   const [useRag, setUseRag] = useState(pref.default_use_rag);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setProviderId(pref.default_provider_id);
     setModelName(pref.default_model ?? "");
+    setEmbeddingModel(pref.default_embedding_model ?? "");
     setUseRag(pref.default_use_rag);
   }, [pref]);
 
@@ -619,6 +731,10 @@ function PreferencesCard({
           clear_default_provider: providerId === null,
           default_model: modelName.trim() ? modelName.trim() : undefined,
           clear_default_model: !modelName.trim(),
+          default_embedding_model: embeddingModel.trim()
+            ? embeddingModel.trim()
+            : undefined,
+          clear_default_embedding_model: !embeddingModel.trim(),
           default_use_rag: useRag,
         }),
       });
@@ -641,6 +757,8 @@ function PreferencesCard({
   const dirty =
     providerId !== pref.default_provider_id ||
     (modelName.trim() || null) !== (pref.default_model || null) ||
+    (embeddingModel.trim() || null) !==
+      (pref.default_embedding_model || null) ||
     useRag !== pref.default_use_rag;
 
   return (
@@ -674,7 +792,7 @@ function PreferencesCard({
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="default_model">Default model</Label>
+            <Label htmlFor="default_model">Default chat model</Label>
             <Input
               id="default_model"
               placeholder="qwen2.5:1.5b"
@@ -684,12 +802,33 @@ function PreferencesCard({
             />
           </div>
         </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="default_embedding_model">
+            Default embedding model{" "}
+            <span className="text-xs font-normal text-muted-foreground">
+              (used for RAG ingest &amp; retrieval, not chat)
+            </span>
+          </Label>
+          <EmbeddingModelSelect
+            providers={providers}
+            value={embeddingModel}
+            onChange={setEmbeddingModel}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Auto-populated from your providers — only models classified as
+            embedding (e.g. <code className="font-mono">nomic-embed-text</code>,{" "}
+            <code className="font-mono">bge-m3</code>) appear. Pull one from the
+            provider card below if the list is empty.
+          </p>
+        </div>
         <Separator />
         <label className="flex items-center justify-between text-sm">
           <div>
             <p className="font-medium">RAG by default</p>
             <p className="text-xs text-muted-foreground">
-              Toggle retrieval for new chat sessions automatically.
+              Toggle retrieval for new chat sessions. Note: web upload UI lands
+              in the next sprint — until then the toggle has no effect on chat
+              from the web.
             </p>
           </div>
           <input
@@ -707,6 +846,320 @@ function PreferencesCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Model list table — modern, virtualised, dynamic row heights
+// ---------------------------------------------------------------------------
+
+function ModelTable({
+  models,
+  providerType,
+  onEdit,
+  onDelete,
+}: {
+  models: ModelListItem[];
+  providerType: string;
+  onEdit: (model: ModelListItem) => void;
+  onDelete: (modelId: string) => void;
+}) {
+  const isOllama = providerType === "ollama";
+
+  const columns: VirtualTableColumn<ModelListItem>[] = [
+    {
+      key: "name",
+      header: "Model",
+      width: "minmax(220px, 2.5fr)",
+      cell: (m) => (
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-mono text-[13px] text-foreground">
+            {m.id}
+          </span>
+          {m.kind === "embedding" && (
+            <Badge
+              variant="secondary"
+              className="shrink-0 px-1 py-0 text-[9px] uppercase tracking-wide"
+            >
+              embed
+            </Badge>
+          )}
+          {m.id.toLowerCase().endsWith("-cloud") && (
+            <Badge
+              variant="outline"
+              className="shrink-0 gap-1 px-1 py-0 text-[9px] uppercase tracking-wide text-primary"
+            >
+              <CloudDownload className="size-2.5" />
+              cloud
+            </Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "size",
+      header: "Size",
+      width: "84px",
+      align: "right",
+      cell: (m) =>
+        m.size != null ? (
+          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+            {formatSize(m.size)}
+          </span>
+        ) : (
+          <span className="text-[11px] text-muted-foreground/50">—</span>
+        ),
+    },
+    {
+      key: "desc",
+      header: "Description",
+      width: "minmax(0, 3fr)",
+      cell: (m) =>
+        m.description ? (
+          <span
+            className="line-clamp-2 text-[12px] leading-snug text-muted-foreground"
+            title={m.description}
+          >
+            {m.description}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onEdit(m)}
+            className="text-[11px] italic text-muted-foreground/60 underline-offset-2 hover:text-foreground hover:underline"
+          >
+            add a note…
+          </button>
+        ),
+    },
+    {
+      key: "actions",
+      header: "",
+      width: isOllama ? "76px" : "44px",
+      align: "right",
+      cell: (m) => (
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(m);
+            }}
+            aria-label={`Edit description for ${m.id}`}
+            className="rounded-md p-1.5 text-muted-foreground/70 transition-colors hover:bg-foreground/10 hover:text-foreground"
+          >
+            <Pencil className="size-3.5" />
+          </button>
+          {isOllama && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(m.id);
+              }}
+              aria-label={`Delete model ${m.id}`}
+              className="rounded-md p-1.5 text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          )}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <VirtualTable
+      rows={models}
+      rowKey={(m) => m.id}
+      columns={columns}
+      estimatedRowHeight={48}
+      maxHeight={420}
+      density="comfortable"
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Edit-description dialog (per (provider, model))
+// ---------------------------------------------------------------------------
+
+function EditDescriptionDialog({
+  providerId,
+  model,
+  onOpenChange,
+  onSaved,
+}: {
+  providerId: string;
+  model: ModelListItem | null;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setText(model?.description ?? "");
+  }, [model]);
+
+  const save = async () => {
+    if (!model) return;
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/providers/${providerId}/models/meta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: model.id,
+          description: text.trim() || null,
+        }),
+      });
+      if (!r.ok) {
+        const payload = await r.json().catch(() => ({}));
+        throw new Error(
+          (payload as { message?: string }).message || `HTTP ${r.status}`
+        );
+      }
+      toast.success("Description saved");
+      onSaved();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={model !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit description</DialogTitle>
+          <DialogDescription>
+            Free text shown on hover in the model picker. Empty clears it.
+          </DialogDescription>
+        </DialogHeader>
+        {model && (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="model_desc" className="font-mono text-xs">
+                {model.id}
+              </Label>
+              <Textarea
+                id="model_desc"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                rows={4}
+                maxLength={2000}
+                placeholder="What is this model for?"
+                className="resize-none"
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onOpenChange(false)}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <Button onClick={save} disabled={saving}>
+                {saving ? <Loader2 className="animate-spin" /> : <Save />}
+                Save
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Embedding-model dropdown — only lists models with `kind === "embedding"`
+// across the user's enabled providers, in one round-trip per provider.
+// ---------------------------------------------------------------------------
+
+function EmbeddingModelSelect({
+  providers,
+  value,
+  onChange,
+}: {
+  providers: ProviderOut[];
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [grouped, setGrouped] = useState<
+    Array<{ providerName: string; models: ModelListItem[] }>
+  >([]);
+
+  useEffect(() => {
+    const enabled = providers.filter((p) => p.enabled);
+    if (enabled.length === 0) {
+      setGrouped([]);
+      return;
+    }
+    setLoading(true);
+    void (async () => {
+      try {
+        const results = await Promise.all(
+          enabled.map(async (p) => {
+            const r = await fetch(`/api/providers/${p.id}/models`, {
+              cache: "no-store",
+            });
+            const data = (await r.json()) as ModelListItem[] | { error: string };
+            const items = Array.isArray(data) ? data : [];
+            return {
+              providerName: p.name,
+              models: items.filter((m) => m.kind === "embedding"),
+            };
+          })
+        );
+        setGrouped(results.filter((g) => g.models.length > 0));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [providers]);
+
+  const totalCount = grouped.reduce((sum, g) => sum + g.models.length, 0);
+  // Show free-text fallback when the typed value isn't in the discovered list
+  // (e.g. user pasted a tag the provider hasn't pulled yet).
+  const valueInList = grouped.some((g) =>
+    g.models.some((m) => m.id === value)
+  );
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={cn(
+        "flex h-10 w-full rounded-lg border border-input bg-background px-3 text-sm",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      )}
+    >
+      <option value="">
+        {loading
+          ? "— Loading… —"
+          : totalCount === 0
+            ? "— No embedding models found — pull one first —"
+            : "— None (fall back to env) —"}
+      </option>
+      {value && !valueInList && (
+        <option value={value}>{value} (not installed)</option>
+      )}
+      {grouped.map((g) => (
+        <optgroup key={g.providerName} label={g.providerName}>
+          {g.models.map((m) => (
+            <option key={`${g.providerName}::${m.id}`} value={m.id}>
+              {m.id}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
   );
 }
 

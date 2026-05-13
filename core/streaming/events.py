@@ -62,6 +62,9 @@ class Event(TypedDict, total=False):
     duration_ms: int
     code: str
     message: str
+    # done — Sprint 2: reveal resolved model + provider for the answer footer
+    model: str
+    provider_name: str
     # thought — P1.5
     text: str
     # tool_call / tool_result — P1.5

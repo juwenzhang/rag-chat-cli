@@ -81,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     worker.add_argument(
         "--queue",
         default=None,
-        help="queue name (default: rag-ai-cli:jobs)",
+        help="queue name (default: lhx-rag-cli:jobs)",
     )
     worker.add_argument(
         "--poll-timeout",

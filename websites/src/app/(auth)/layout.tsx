@@ -35,7 +35,7 @@ export default function AuthLayout({
           <div className="flex size-8 items-center justify-center rounded-lg bg-brand-gradient text-white shadow-lg shadow-primary/20">
             <span className="font-bold">R</span>
           </div>
-          <span>RAG-AI</span>
+          <span>lhx-rag</span>
         </Link>
         <ThemeToggle />
       </header>

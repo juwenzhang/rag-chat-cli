@@ -2,17 +2,25 @@
 
 import {
   AlertCircle,
+  Bookmark,
+  BookmarkCheck,
   BookOpen,
-  Check,
   ChevronDown,
-  Copy,
+  Clock,
+  Cpu,
+  ExternalLink,
+  Hash,
   RefreshCw,
+  Share2,
   Sparkles,
   Wrench,
+  Check,
+  Copy
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { ShareDialog } from "@/components/share/share-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,16 +29,43 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import type { ShareOut } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 import { Markdown } from "./markdown";
 import type { UIMessage } from "./types";
 
-export function MessageView({ message }: { message: UIMessage }) {
+interface MessageViewProps {
+  message: UIMessage;
+  /**
+   * Server id of the user message that precedes this turn. Required for
+   * Share / Bookmark actions on an assistant message — both endpoints key
+   * on the (user_message_id, assistant_message_id) pair.
+   */
+  prevUserMessageId?: string;
+  /**
+   * Set on the most recent assistant message when it's safe to
+   * regenerate (stream finished, message persisted, no other stream
+   * in flight). Triggers the chat view's regenerate pipeline.
+   */
+  onRegenerate?: () => void;
+}
+
+export function MessageView({
+  message,
+  prevUserMessageId,
+  onRegenerate,
+}: MessageViewProps) {
   if (message.role === "user") {
     return <UserMessage message={message} />;
   }
-  return <AssistantMessage message={message} />;
+  return (
+    <AssistantMessage
+      message={message}
+      prevUserMessageId={prevUserMessageId}
+      onRegenerate={onRegenerate}
+    />
+  );
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -49,7 +84,20 @@ function UserMessage({ message }: { message: UIMessage }) {
 /* ─────────────────────────────────────────────────────────────────
    Assistant message — small logo + full-width markdown + action row
    ───────────────────────────────────────────────────────────────── */
-function AssistantMessage({ message }: { message: UIMessage }) {
+function AssistantMessage({
+  message,
+  prevUserMessageId,
+  onRegenerate,
+}: {
+  message: UIMessage;
+  prevUserMessageId?: string;
+  onRegenerate?: () => void;
+}) {
+  // Share / Bookmark need both server IDs. Optimistic rows during the
+  // active stream lack them (and the preceding user row is also still local).
+  const canPersistAction =
+    !!message.persisted && !!prevUserMessageId && !!message.id;
+
   return (
     <div className="group flex w-full gap-3">
       <AssistantLogo />
@@ -77,19 +125,125 @@ function AssistantMessage({ message }: { message: UIMessage }) {
           </span>
         )}
 
-        {message.error && (
-          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
-            <span>{message.error}</span>
-          </div>
-        )}
+        {message.error && <MessageErrorBlock error={message.error} />}
 
         {!message.streaming && message.content && (
-          <ActionRow text={message.content} />
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <ActionRow
+              text={message.content}
+              messageId={canPersistAction ? message.id : undefined}
+              userMessageId={canPersistAction ? prevUserMessageId : undefined}
+              onRegenerate={onRegenerate}
+            />
+            <MessageFooter message={message} />
+          </div>
         )}
       </div>
     </div>
   );
+}
+
+/**
+ * Recognises upstream-provider conditions worth their own CTA — currently
+ * just Ollama Cloud subscription paywalls. The detection is text-based on
+ * the LLMError message (e.g. ``"this model requires a subscription, upgrade
+ * for access: https://ollama.com/upgrade ..."``) because the backend hands
+ * us the message verbatim without a structured code today.
+ */
+function MessageErrorBlock({ error }: { error: string }) {
+  const subscriptionUrl = extractSubscriptionUpgradeUrl(error);
+  if (subscriptionUrl) {
+    return (
+      <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm">
+        <div className="flex items-start gap-2 text-foreground">
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-warning" />
+          <span>
+            This model requires a paid Ollama subscription. Open the upgrade
+            page to enable cloud access, then try again.
+          </span>
+        </div>
+        <a
+          href={subscriptionUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-md border border-warning/40 bg-warning/15 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-warning/25"
+        >
+          Open Ollama upgrade
+          <ExternalLink className="size-3" />
+        </a>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      <AlertCircle className="mt-0.5 size-4 shrink-0" />
+      <span className="whitespace-pre-wrap break-words">{error}</span>
+    </div>
+  );
+}
+
+function extractSubscriptionUpgradeUrl(msg: string): string | null {
+  // Match a URL on https://ollama.com/upgrade* — the error text often has
+  // additional trailing context like "(ref: <uuid>)" which we must not capture.
+  const m = msg.match(/https?:\/\/ollama\.com\/upgrade[^\s")]*/i);
+  if (m) return m[0];
+  if (/requires a subscription/i.test(msg)) return "https://ollama.com/upgrade";
+  return null;
+}
+
+function MessageFooter({ message }: { message: UIMessage }) {
+  const parts: React.ReactNode[] = [];
+  if (message.model || message.provider) {
+    parts.push(
+      <span key="model" className="inline-flex items-center gap-1">
+        <Cpu className="size-3" />
+        {message.provider && message.model
+          ? `${message.provider} · ${message.model}`
+          : message.model || message.provider}
+      </span>
+    );
+  }
+  const totalTokens =
+    message.usage?.total_tokens ??
+    (message.usage?.prompt_tokens != null && message.usage?.completion_tokens != null
+      ? (message.usage.prompt_tokens ?? 0) + (message.usage.completion_tokens ?? 0)
+      : undefined);
+  if (totalTokens != null) {
+    parts.push(
+      <span key="tokens" className="inline-flex items-center gap-1">
+        <Hash className="size-3" />
+        {formatTokens(totalTokens)} tok
+      </span>
+    );
+  }
+  if (message.durationMs != null) {
+    parts.push(
+      <span key="duration" className="inline-flex items-center gap-1">
+        <Clock className="size-3" />
+        {formatDuration(message.durationMs)}
+      </span>
+    );
+  }
+  if (parts.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 text-[11px] text-muted-foreground">
+      {parts}
+    </div>
+  );
+}
+
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
+  const m = Math.floor(s / 60);
+  const r = Math.round(s - m * 60);
+  return `${m}m${r}s`;
 }
 
 function AssistantLogo() {
@@ -122,8 +276,27 @@ function PulsingDot() {
   );
 }
 
-function ActionRow({ text }: { text: string }) {
+function ActionRow({
+  text,
+  messageId,
+  userMessageId,
+  onRegenerate,
+}: {
+  text: string;
+  /** Server id of the assistant message — present once persisted. */
+  messageId?: string;
+  /** Server id of the preceding user message — paired with ``messageId``. */
+  userMessageId?: string;
+  /** Set by ChatView on the trailing assistant turn when re-streaming
+   *  is allowed (no in-flight stream, message persisted). */
+  onRegenerate?: () => void;
+}) {
   const [copied, setCopied] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [share, setShare] = useState<ShareOut | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarking, setBookmarking] = useState(false);
 
   const onCopy = async () => {
     try {
@@ -136,38 +309,147 @@ function ActionRow({ text }: { text: string }) {
     }
   };
 
+  const onShare = async () => {
+    if (!messageId || !userMessageId) return;
+    setSharing(true);
+    try {
+      const res = await fetch("/api/shares", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_message_id: userMessageId,
+          assistant_message_id: messageId,
+        }),
+      });
+      if (!res.ok) {
+        toast.error("Failed to create share link");
+        return;
+      }
+      const data = (await res.json()) as ShareOut;
+      setShare(data);
+      setShareOpen(true);
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const onBookmark = async () => {
+    if (!messageId || !userMessageId) return;
+    setBookmarking(true);
+    try {
+      const res = await fetch("/api/bookmarks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_message_id: userMessageId,
+          assistant_message_id: messageId,
+        }),
+      });
+      if (!res.ok) {
+        toast.error("Failed to bookmark");
+        return;
+      }
+      setBookmarked(true);
+      toast.success("Saved to bookmarks");
+    } finally {
+      setBookmarking(false);
+    }
+  };
+
+  const canPersist = !!messageId && !!userMessageId;
+
   return (
-    <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-      <TooltipProvider delayDuration={200}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={onCopy}
-              className="size-7 text-muted-foreground hover:text-foreground"
-            >
-              {copied ? <Check /> : <Copy />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{copied ? "Copied" : "Copy"}</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              disabled
-              className="size-7 text-muted-foreground hover:text-foreground"
-              aria-label="Regenerate"
-            >
-              <RefreshCw />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Regenerate (coming soon)</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </div>
+    <>
+      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={onCopy}
+                className="size-7 text-muted-foreground hover:text-foreground"
+                aria-label="Copy"
+              >
+                {copied ? <Check /> : <Copy />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{copied ? "Copied" : "Copy"}</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={onShare}
+                disabled={!canPersist || sharing}
+                className="size-7 text-muted-foreground hover:text-foreground"
+                aria-label="Share"
+              >
+                <Share2 />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {canPersist ? "Share this Q&A" : "Available after refresh"}
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={onBookmark}
+                disabled={!canPersist || bookmarking || bookmarked}
+                className={cn(
+                  "size-7 text-muted-foreground hover:text-foreground",
+                  bookmarked && "text-primary"
+                )}
+                aria-label="Bookmark"
+              >
+                {bookmarked ? <BookmarkCheck /> : <Bookmark />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {bookmarked
+                ? "Saved"
+                : canPersist
+                  ? "Save to bookmarks"
+                  : "Available after refresh"}
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                disabled={!onRegenerate}
+                onClick={onRegenerate}
+                className="size-7 text-muted-foreground hover:text-foreground"
+                aria-label="Regenerate"
+              >
+                <RefreshCw />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {onRegenerate ? "Regenerate this answer" : "Regenerate"}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+
+      <ShareDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        share={share}
+        onRevoked={() => {
+          setShare(null);
+          setShareOpen(false);
+        }}
+      />
+    </>
   );
 }
 

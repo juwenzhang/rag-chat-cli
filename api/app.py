@@ -21,13 +21,17 @@ from api.middleware.errors import install_exception_handlers
 from api.middleware.logging import AccessLogMiddleware
 from api.middleware.request_id import RequestIDMiddleware
 from api.routers import auth as auth_router
+from api.routers import bookmarks as bookmarks_router
 from api.routers import chat as chat_router
 from api.routers import chat_stream as chat_stream_router
 from api.routers import chat_ws as chat_ws_router
 from api.routers import health as health_router
 from api.routers import knowledge as knowledge_router
 from api.routers import me as me_router
+from api.routers import orgs as orgs_router
 from api.routers import providers as providers_router
+from api.routers import shares as shares_router
+from api.routers import wiki as wiki_router
 
 if TYPE_CHECKING:
     from settings import Settings
@@ -113,5 +117,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(knowledge_router.router, prefix="/knowledge")
     # /providers (and /providers/test, /providers/{id}/models) + /me/preferences.
     app.include_router(providers_router.router)
+    # /shares (public token-based view + owner CRUD) + /bookmarks (private).
+    app.include_router(shares_router.router)
+    app.include_router(bookmarks_router.router)
+    # /orgs (workspaces) + /wiki (BlockNote pages scoped to an org).
+    app.include_router(orgs_router.router)
+    app.include_router(wiki_router.router)
 
     return app

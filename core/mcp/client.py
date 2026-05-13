@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # stable MCP version as of early 2026 and is what nearly every public
 # server in the wild supports.
 _CLIENT_PROTOCOL_VERSION = "2024-11-05"
-_CLIENT_INFO = {"name": "rag-ai-cli", "version": "1.4"}
+_CLIENT_INFO = {"name": "lhx-rag-cli", "version": "1.4"}
 _INIT_TIMEOUT_S = 10.0
 _DEFAULT_CALL_TIMEOUT_S = 30.0
 

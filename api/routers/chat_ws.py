@@ -41,7 +41,7 @@ from api.deps import authenticate_ws
 from api.streaming.protocol import ErrorEvent, coerce_event
 from core.chat_service import ChatService
 from core.streaming.abort import AbortContext
-from db.models import ChatSession
+from db.models import ChatSession, Provider, UserPreference
 from db.session import current_session_factory
 
 __all__ = ["router"]
@@ -128,9 +128,10 @@ async def chat_ws(
 
         use_rag = bool(first.get("use_rag", False))
 
-        # 2) Verify ownership of the chat session.
+        # 2) Verify ownership of the chat session and resolve provider name.
         sf = current_session_factory()
         session_model: str | None = None
+        provider_name: str | None = None
         async with sf() as session:
             owner = await session.get(ChatSession, session_uuid)
             if owner is None or owner.user_id != user.id:
@@ -141,6 +142,15 @@ async def chat_ws(
                 await ws.close(code=WS_CLOSE_NOT_FOUND)
                 return
             session_model = owner.model
+            pid = owner.provider_id
+            if pid is None:
+                pref = await session.get(UserPreference, user.id)
+                if pref is not None:
+                    pid = pref.default_provider_id
+            if pid is not None:
+                prov = await session.get(Provider, pid)
+                if prov is not None and prov.user_id == user.id:
+                    provider_name = prov.name
 
         # 3) Kick off the reader (for abort / disconnect) and start streaming.
         reader_task = asyncio.create_task(_reader())
@@ -152,6 +162,7 @@ async def chat_ws(
             use_rag=use_rag,
             abort_ctx=abort_ctx,
             model=session_model,
+            provider_name=provider_name,
         )
 
     finally:
@@ -175,6 +186,7 @@ async def _stream_reply(
     use_rag: bool,
     abort_ctx: AbortContext,
     model: str | None = None,
+    provider_name: str | None = None,
 ) -> None:
     """Run :meth:`ChatService.generate` and push each event over the socket."""
 
@@ -186,6 +198,9 @@ async def _stream_reply(
             abort=abort_ctx,
             model=model,
         ):
+            # Stamp provider_name onto the done event (mirror of chat_stream).
+            if raw.get("type") == "done" and provider_name:
+                raw = {**raw, "provider_name": provider_name}
             try:
                 event = coerce_event(raw)
             except Exception:

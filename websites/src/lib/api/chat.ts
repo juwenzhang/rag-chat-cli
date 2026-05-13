@@ -42,6 +42,7 @@ export interface UpdateSessionBody {
   model?: string;
   clear_provider_id?: boolean;
   clear_model?: boolean;
+  pinned?: boolean;
 }
 
 export async function updateSession(
@@ -53,6 +54,26 @@ export async function updateSession(
     method: "PATCH",
     token,
     body,
+  });
+}
+
+export async function deleteSession(
+  token: string,
+  sessionId: string
+): Promise<void> {
+  await apiFetch<void>(`/chat/sessions/${sessionId}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export async function sessionFromWiki(
+  token: string,
+  pageId: string
+): Promise<SessionMeta> {
+  return apiFetch<SessionMeta>(`/chat/sessions/from-wiki/${pageId}`, {
+    method: "POST",
+    token,
   });
 }
 
@@ -82,6 +103,27 @@ export async function openChatStream(
   body: ChatStreamParams
 ): Promise<Response> {
   return apiStream("/chat/stream", {
+    method: "POST",
+    token,
+    body,
+  });
+}
+
+export interface RegenerateStreamParams {
+  session_id: string;
+  use_rag?: boolean;
+}
+
+/**
+ * Re-stream the trailing assistant reply (or fire the first reply for
+ * a session that was seeded with only a user message). Same SSE event
+ * vocabulary as ``openChatStream``.
+ */
+export async function openRegenerateStream(
+  token: string,
+  body: RegenerateStreamParams
+): Promise<Response> {
+  return apiStream("/chat/stream/regenerate", {
     method: "POST",
     token,
     body,

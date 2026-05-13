@@ -33,7 +33,7 @@
 
 ```
 ┌───────────────────────────────────────────────────┐
-│  RAG-AI Server (Daemon)                           │
+│  lhx-rag Server (Daemon)                           │
 │  FastAPI + ChatService + LLM/KB/Memory/Tools      │
 │  本地 :8000 或远程 https://rag.example.com         │
 └──────┬─────────────┬─────────────┬───────────────┘

@@ -36,7 +36,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_QUEUE_NAME = "rag-ai-cli:jobs"
+DEFAULT_QUEUE_NAME = "lhx-rag-cli:jobs"
 
 
 @dataclass(frozen=True, slots=True)

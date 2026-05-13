@@ -42,14 +42,18 @@ function subscribe(cb: () => void): () => void {
 
 const ONE_YEAR_S = 60 * 60 * 24 * 365;
 
-export function ThemeToggle() {
-  const isDark = useSyncExternalStore(subscribe, getIsDark, getServerSnapshot);
+export function setTheme(next: boolean) {
+  document.documentElement.classList.toggle("dark", next);
+  document.cookie = `theme=${next ? "dark" : "light"}; path=/; max-age=${ONE_YEAR_S}; samesite=lax`;
+}
 
-  const toggle = () => {
-    const next = !isDark;
-    document.documentElement.classList.toggle("dark", next);
-    document.cookie = `theme=${next ? "dark" : "light"}; path=/; max-age=${ONE_YEAR_S}; samesite=lax`;
-  };
+/** Subscribe to the live `dark`-class state on <html>. SSR-safe. */
+export function useIsDark(): boolean {
+  return useSyncExternalStore(subscribe, getIsDark, getServerSnapshot);
+}
+
+export function ThemeToggle() {
+  const isDark = useIsDark();
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -58,7 +62,7 @@ export function ThemeToggle() {
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={toggle}
+            onClick={() => setTheme(!isDark)}
             aria-label="Toggle theme"
           >
             <Sun className="size-4 dark:hidden" />

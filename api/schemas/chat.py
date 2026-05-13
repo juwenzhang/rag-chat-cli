@@ -40,6 +40,7 @@ class ChatSessionUpdateIn(BaseModel):
     model: Annotated[str, Field(max_length=128)] | None = None
     clear_provider_id: bool = False
     clear_model: bool = False
+    pinned: bool | None = None
 
 
 class ChatSessionOut(BaseModel):
@@ -51,6 +52,7 @@ class ChatSessionOut(BaseModel):
     title: str | None
     provider_id: uuid.UUID | None = None
     model: str | None = None
+    pinned: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -74,3 +76,13 @@ class MessageOut(BaseModel):
     content: str
     tokens: int | None = None
     created_at: datetime
+
+
+class MessageUpdateIn(BaseModel):
+    """Body for ``PATCH /chat/messages/{id}`` — edit a stored message.
+
+    Only ``content`` is mutable today. We don't expose role / tokens
+    since they're identity / metering attributes.
+    """
+
+    content: Annotated[str, Field(min_length=1, max_length=32_000)]

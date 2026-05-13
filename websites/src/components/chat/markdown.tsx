@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, Copy } from "lucide-react";
+import { all } from "lowlight";
 import { memo, useState, type ComponentProps, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -17,7 +18,10 @@ interface Props {
  * Renders an assistant turn's content as Markdown.
  *
  * - remark-gfm  : tables, strikethrough, taskboxes, autolinks
- * - rehype-highlight: syntax highlighting via highlight.js
+ * - rehype-highlight: syntax highlighting via highlight.js. We pass the
+ *   ``all`` grammar set from lowlight so every language hljs ships with
+ *   is registered (Dart, Elixir, Haskell, Scala, Julia, Dockerfile,
+ *   Nginx, …) — not just the 37-language ``common`` default.
  *
  * We deliberately avoid raw HTML — a malicious model can't smuggle in
  * <script>, <iframe>, etc. Custom renderers add a language badge and
@@ -29,7 +33,10 @@ function MarkdownImpl({ children, className }: Props) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[
-          [rehypeHighlight, { detect: true, ignoreMissing: true }],
+          [
+            rehypeHighlight,
+            { detect: true, ignoreMissing: true, languages: all },
+          ],
         ]}
         components={{
           a: ({ href, children, ...rest }) => (
@@ -41,6 +48,40 @@ function MarkdownImpl({ children, className }: Props) {
             >
               {children}
             </a>
+          ),
+          // Slug-attach heading renderers. Used by the wiki TOC so a
+          // user can click an outline entry and scroll the rendered
+          // preview to the matching heading. The slug logic must
+          // match ``parseToc`` in components/wiki/wiki-toc.tsx.
+          h1: ({ children, ...rest }) => (
+            <h1 id={headingId(children)} {...rest}>
+              {children}
+            </h1>
+          ),
+          h2: ({ children, ...rest }) => (
+            <h2 id={headingId(children)} {...rest}>
+              {children}
+            </h2>
+          ),
+          h3: ({ children, ...rest }) => (
+            <h3 id={headingId(children)} {...rest}>
+              {children}
+            </h3>
+          ),
+          h4: ({ children, ...rest }) => (
+            <h4 id={headingId(children)} {...rest}>
+              {children}
+            </h4>
+          ),
+          h5: ({ children, ...rest }) => (
+            <h5 id={headingId(children)} {...rest}>
+              {children}
+            </h5>
+          ),
+          h6: ({ children, ...rest }) => (
+            <h6 id={headingId(children)} {...rest}>
+              {children}
+            </h6>
           ),
           pre: CodeBlock,
           table: ({ children, ...rest }) => (
@@ -120,4 +161,21 @@ function extractText(node: ReactNode): string {
     );
   }
   return "";
+}
+
+/**
+ * GitHub-style slug from a heading's children. Must stay in lock-step
+ * with ``parseToc``'s ``slugify`` (components/wiki/wiki-toc.tsx) so
+ * the outline anchors match the rendered ids.
+ */
+function headingId(children: ReactNode): string {
+  const text = extractText(children).trim();
+  return (
+    text
+      .toLowerCase()
+      .replace(/[ -⁯⸀-⹿\\'!"#$%&()*+,./:;<=>?@[\]^`{|}~]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "section"
+  );
 }

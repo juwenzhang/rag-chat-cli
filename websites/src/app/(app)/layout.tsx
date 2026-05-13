@@ -1,12 +1,19 @@
 import { redirect } from "next/navigation";
 
-import { SessionSidebar } from "@/components/chat/session-sidebar";
-import { chatApi, providerApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
+import { GlobalRail } from "@/components/shell/global-rail";
+import { resolveActiveOrg } from "@/lib/active-org";
+import { orgApi, providerApi } from "@/lib/api";
+import { ApiError, type OrgOut } from "@/lib/api/types";
 import { getAccessToken, getCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Thin app shell — just authenticates the request and renders the
+ * global navigation rail. Per-module sidebars (chat sessions, wiki
+ * page tree, …) live inside their own route-group layouts so they
+ * don't bleed into unrelated pages.
+ */
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -16,11 +23,9 @@ export default async function AppLayout({
   const token = await getAccessToken();
   if (!token) redirect("/api/auth/clear-and-login");
 
-  // Trigger the backend onboarding seed eagerly: the first /providers call
-  // for a user with no UserPreference row seeds a starter Ollama provider
-  // from env. Done server-side so the chat toolbar's model selector picks
-  // up the seeded entry on its very first render (no race with the
-  // lazy fetch inside the dropdown).
+  // Eagerly trigger the provider-seed onboarding so the chat toolbar's
+  // model selector picks up the starter Ollama provider on first
+  // render. The /providers list is cheap on a hot DB connection.
   try {
     await providerApi.listProviders(token);
   } catch (err) {
@@ -28,20 +33,21 @@ export default async function AppLayout({
     console.warn("provider bootstrap skipped:", err.message);
   }
 
-  let sessions: Awaited<ReturnType<typeof chatApi.listSessions>> = [];
+  let orgs: OrgOut[] = [];
   try {
-    sessions = await chatApi.listSessions(token);
+    orgs = await orgApi.listOrgs(token);
   } catch (err) {
     if (err instanceof ApiError) {
-      console.warn("listSessions failed:", err.message);
+      console.warn("listOrgs failed:", err.message);
     } else {
       throw err;
     }
   }
+  const activeOrg = await resolveActiveOrg(orgs);
 
   return (
     <div className="flex h-screen w-full overflow-hidden">
-      <SessionSidebar user={user} sessions={sessions} />
+      <GlobalRail user={user} orgs={orgs} activeOrgId={activeOrg?.id ?? null} />
       <main className="flex-1 overflow-hidden">{children}</main>
     </div>
   );

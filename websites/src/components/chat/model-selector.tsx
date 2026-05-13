@@ -176,13 +176,24 @@ export function ModelSelector({
         setProviderId(nextProviderId);
         setModel(nextModel);
         onChange?.({ provider_id: nextProviderId, model: nextModel });
+        if (nextProviderId === null && nextModel === null) {
+          toast.success("Reverted to user default");
+        } else {
+          const providerName =
+            providers.find((p) => p.id === nextProviderId)?.name ?? "provider";
+          toast.success(
+            nextModel
+              ? `Switched to ${providerName} · ${nextModel}`
+              : `Switched to ${providerName}`
+          );
+        }
       } catch (err) {
         toast.error(`Failed to switch model: ${(err as Error).message}`);
       } finally {
         setSaving(false);
       }
     },
-    [sessionId, onChange]
+    [sessionId, onChange, providers]
   );
 
   const effectiveProviderId = providerId ?? pref?.default_provider_id ?? null;
@@ -289,36 +300,76 @@ export function ModelSelector({
                     Loading models…
                   </div>
                 ) : p.models && p.models.length > 0 ? (
-                  p.models.map((m) => {
-                    const active =
-                      providerId === p.id && model === m.id;
-                    return (
-                      <DropdownMenuItem
-                        key={m.id}
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          void applyPin(p.id, m.id);
-                          setOpen(false);
-                        }}
-                        className={cn(
-                          "pl-3 text-[12.5px]",
-                          active && "bg-accent/60"
-                        )}
-                      >
-                        <Cpu
-                          className={cn(
-                            active ? "text-primary" : "text-muted-foreground"
-                          )}
-                        />
-                        <span className="truncate">{m.id}</span>
-                        {m.size != null && (
-                          <span className="ml-auto text-[10px] text-muted-foreground">
-                            {formatSize(m.size)}
-                          </span>
-                        )}
-                      </DropdownMenuItem>
+                  (() => {
+                    const chatModels = p.models.filter(
+                      (m) => m.kind !== "embedding"
                     );
-                  })
+                    const embedCount = p.models.length - chatModels.length;
+                    return (
+                      <>
+                        {chatModels.length === 0 ? (
+                          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                            No chat models — only embedding models are
+                            installed.
+                          </div>
+                        ) : (
+                          chatModels.map((m) => {
+                            const active =
+                              providerId === p.id && model === m.id;
+                            return (
+                              <DropdownMenuItem
+                                key={m.id}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  void applyPin(p.id, m.id);
+                                  setOpen(false);
+                                }}
+                                title={m.description ?? undefined}
+                                className={cn(
+                                  "flex-col items-start gap-0.5 pl-3 text-[12.5px]",
+                                  active && "bg-accent/60"
+                                )}
+                              >
+                                <div className="flex w-full items-center gap-2">
+                                  <Cpu
+                                    className={cn(
+                                      "size-3.5",
+                                      active
+                                        ? "text-primary"
+                                        : "text-muted-foreground"
+                                    )}
+                                  />
+                                  <span className="truncate">{m.id}</span>
+                                  {m.size != null && (
+                                    <span className="ml-auto text-[10px] text-muted-foreground">
+                                      {formatSize(m.size)}
+                                    </span>
+                                  )}
+                                </div>
+                                {m.description && (
+                                  <span className="line-clamp-2 pl-5 text-[10.5px] font-normal text-muted-foreground">
+                                    {m.description}
+                                  </span>
+                                )}
+                              </DropdownMenuItem>
+                            );
+                          })
+                        )}
+                        {embedCount > 0 && (
+                          <div className="px-3 py-1 text-[10px] text-muted-foreground/80">
+                            +{embedCount} embedding model
+                            {embedCount === 1 ? "" : "s"} hidden — set under{" "}
+                            <Link
+                              href="/settings/providers"
+                              className="underline hover:text-foreground"
+                            >
+                              Settings
+                            </Link>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()
                 ) : (
                   <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
                     No models exposed.

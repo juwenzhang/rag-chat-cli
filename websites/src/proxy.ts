@@ -10,6 +10,11 @@ const PUBLIC_PREFIXES = [
   // Auth helpers — must be reachable while logged-out / with a stale cookie
   // so we don't trap users in a redirect loop.
   "/api/auth",
+  // Per-Q&A shares are public by design — viewers don't need to log in.
+  // The owner-only sub-routes (POST/DELETE) guard themselves at the BFF
+  // layer via ``withAuth``, so it's safe to skip the proxy gate here.
+  "/share",
+  "/api/shares",
 ];
 
 const SESSION_COOKIE = process.env.SESSION_COOKIE_NAME || "rag_session";
@@ -40,8 +45,17 @@ function hasValidSession(req: NextRequest): boolean {
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Forward the current pathname as a request header so server
+  // components can read it (Next 16 strips the URL from
+  // RouteSegmentConfig). Used by /wiki/layout to derive the active
+  // wiki id from the URL while staying a server component.
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", pathname);
+
   for (const p of PUBLIC_PREFIXES) {
-    if (pathname.startsWith(p)) return NextResponse.next();
+    if (pathname.startsWith(p)) {
+      return NextResponse.next({ request: { headers: requestHeaders } });
+    }
   }
 
   const validSession = hasValidSession(req);
@@ -75,7 +89,7 @@ export function proxy(req: NextRequest) {
     return res;
   }
 
-  return NextResponse.next();
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {

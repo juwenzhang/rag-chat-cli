@@ -4,30 +4,34 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ─────────────────────────────────────────────────────────────────
-   Palette — soft warm white + muted blue accent. Doubao-inspired.
+   Palette — washed strawberry-cream pink. Modelled on the avatar
+   image the user shared: a watercolour-style rose with VERY low
+   chroma (≤ 0.07 for primary surfaces) and a slight cool-warm cast.
+   Hue ≈ 12 (rose), brand gradient drifts toward 22 (dusty peach)
+   for the shadow/highlight feel.
    ───────────────────────────────────────────────────────────────── */
 
 :root {
-  --background: oklch(0.985 0.003 247);
-  --foreground: oklch(0.22 0.012 252);
+  --background: oklch(0.985 0.004 12);
+  --foreground: oklch(0.24 0.012 12);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.012 252);
+  --card-foreground: oklch(0.24 0.012 12);
 
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.012 252);
+  --popover-foreground: oklch(0.24 0.012 12);
 
-  --primary: oklch(0.55 0.16 256);
-  --primary-foreground: oklch(0.99 0 0);
+  --primary: oklch(0.78 0.07 12);
+  --primary-foreground: oklch(0.26 0.012 12);
 
-  --secondary: oklch(0.96 0.005 247);
-  --secondary-foreground: oklch(0.28 0.012 252);
+  --secondary: oklch(0.965 0.010 12);
+  --secondary-foreground: oklch(0.30 0.012 12);
 
-  --muted: oklch(0.965 0.005 247);
-  --muted-foreground: oklch(0.5 0.012 252);
+  --muted: oklch(0.97 0.008 12);
+  --muted-foreground: oklch(0.52 0.013 12);
 
-  --accent: oklch(0.95 0.012 252);
-  --accent-foreground: oklch(0.28 0.012 252);
+  --accent: oklch(0.95 0.016 12);
+  --accent-foreground: oklch(0.30 0.012 12);
 
   --destructive: oklch(0.6 0.21 28);
   --destructive-foreground: oklch(0.99 0 0);
@@ -35,45 +39,45 @@
   --success: oklch(0.62 0.15 152);
   --warning: oklch(0.75 0.16 80);
 
-  --border: oklch(0.92 0.005 247);
-  --input: oklch(0.93 0.005 247);
-  --ring: oklch(0.55 0.16 256);
+  --border: oklch(0.92 0.012 12);
+  --input: oklch(0.93 0.010 12);
+  --ring: oklch(0.78 0.07 12);
 
   --radius: 0.75rem;
 
-  --user-bubble: oklch(0.93 0.03 252);
-  --user-bubble-foreground: oklch(0.22 0.012 252);
+  --user-bubble: oklch(0.94 0.022 12);
+  --user-bubble-foreground: oklch(0.24 0.012 12);
 
-  --code-bg: oklch(0.965 0.005 247);
-  --code-fg: oklch(0.25 0.012 252);
-  --code-border: oklch(0.9 0.005 247);
+  --code-bg: oklch(0.97 0.008 12);
+  --code-fg: oklch(0.26 0.012 12);
+  --code-border: oklch(0.9 0.012 12);
 
-  --brand-from: oklch(0.58 0.15 256);
-  --brand-via: oklch(0.6 0.13 232);
-  --brand-to: oklch(0.62 0.12 210);
+  --brand-from: oklch(0.68 0.10 10);
+  --brand-via: oklch(0.74 0.09 22);
+  --brand-to: oklch(0.80 0.07 40);
 }
 
 .dark {
-  --background: oklch(0.18 0.008 252);
-  --foreground: oklch(0.93 0.005 247);
+  --background: oklch(0.18 0.008 12);
+  --foreground: oklch(0.93 0.006 12);
 
-  --card: oklch(0.22 0.008 252);
-  --card-foreground: oklch(0.93 0.005 247);
+  --card: oklch(0.22 0.010 12);
+  --card-foreground: oklch(0.93 0.006 12);
 
-  --popover: oklch(0.22 0.008 252);
-  --popover-foreground: oklch(0.93 0.005 247);
+  --popover: oklch(0.22 0.010 12);
+  --popover-foreground: oklch(0.93 0.006 12);
 
-  --primary: oklch(0.7 0.13 254);
-  --primary-foreground: oklch(0.18 0.008 252);
+  --primary: oklch(0.80 0.08 12);
+  --primary-foreground: oklch(0.20 0.010 12);
 
-  --secondary: oklch(0.25 0.008 252);
-  --secondary-foreground: oklch(0.93 0.005 247);
+  --secondary: oklch(0.25 0.012 12);
+  --secondary-foreground: oklch(0.93 0.006 12);
 
-  --muted: oklch(0.24 0.008 252);
-  --muted-foreground: oklch(0.66 0.012 252);
+  --muted: oklch(0.24 0.012 12);
+  --muted-foreground: oklch(0.66 0.014 12);
 
-  --accent: oklch(0.28 0.013 252);
-  --accent-foreground: oklch(0.93 0.005 247);
+  --accent: oklch(0.30 0.025 12);
+  --accent-foreground: oklch(0.93 0.006 12);
 
   --destructive: oklch(0.68 0.2 28);
   --destructive-foreground: oklch(0.97 0 0);
@@ -81,20 +85,20 @@
   --success: oklch(0.72 0.15 152);
   --warning: oklch(0.8 0.16 80);
 
-  --border: oklch(0.3 0.01 252);
-  --input: oklch(0.26 0.008 252);
-  --ring: oklch(0.7 0.13 254);
+  --border: oklch(0.32 0.014 12);
+  --input: oklch(0.27 0.012 12);
+  --ring: oklch(0.80 0.08 12);
 
-  --user-bubble: oklch(0.33 0.04 252);
-  --user-bubble-foreground: oklch(0.96 0.005 247);
+  --user-bubble: oklch(0.34 0.030 12);
+  --user-bubble-foreground: oklch(0.96 0.006 12);
 
-  --code-bg: oklch(0.14 0.008 252);
-  --code-fg: oklch(0.88 0.005 247);
-  --code-border: oklch(0.28 0.01 252);
+  --code-bg: oklch(0.14 0.010 12);
+  --code-fg: oklch(0.88 0.006 12);
+  --code-border: oklch(0.28 0.014 12);
 
-  --brand-from: oklch(0.72 0.13 256);
-  --brand-via: oklch(0.72 0.11 232);
-  --brand-to: oklch(0.72 0.1 210);
+  --brand-from: oklch(0.74 0.11 10);
+  --brand-via: oklch(0.78 0.10 22);
+  --brand-to: oklch(0.82 0.09 40);
 }
 
 @theme inline {
@@ -446,3 +450,66 @@ body {
 .dark .markdown-body .hljs-deletion { color: #ffdcd7; background-color: #67060c; }
 .dark .markdown-body .hljs-addition { color: #aff5b4; background-color: #033a16; }
 .dark .markdown-body .hljs-link { color: #a5d6ff; }
+
+
+/* ───────────────────────────────────────────────────────────────────
+   Wiki TipTap editor — minimal polish on top of ``.markdown-body``.
+
+   The contenteditable surface inherits the chat renderer's typography
+   (we attach ``markdown-body`` to it) so authoring and reading look
+   identical. The bits below are only what TipTap surfaces in the
+   editor mode and the read renderer never sees:
+
+   * placeholder text for empty doc / empty blocks
+   * checkbox row styling for task lists
+   * code-block UI is the same — lowlight renders into the same
+     ``.hljs-*`` classes our chat renderer already styles.
+   ─────────────────────────────────────────────────────────────────── */
+.wiki-tiptap {
+  min-height: 60vh;
+}
+
+/* Empty-line placeholder — TipTap's Placeholder extension sets
+   ``data-placeholder`` on the first empty block. */
+.wiki-tiptap p.is-editor-empty:first-child::before,
+.wiki-tiptap h1.is-editor-empty:first-child::before,
+.wiki-tiptap h2.is-editor-empty:first-child::before,
+.wiki-tiptap h3.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Task list — TipTap renders ``<ul data-type="taskList"><li><label><input ...></label><div>…</div></li></ul>``. */
+.wiki-tiptap ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0.25em;
+}
+.wiki-tiptap ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+  margin: 0.2em 0;
+}
+.wiki-tiptap ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.35em;
+}
+.wiki-tiptap ul[data-type="taskList"] input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+.wiki-tiptap ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}
+
+/* Selection — TipTap renders selection inside an outer wrapper that
+   intercepts the default browser styling. Brand it consistently. */
+.wiki-tiptap ::selection {
+  background: color-mix(in oklch, var(--primary) 30%, transparent);
+}

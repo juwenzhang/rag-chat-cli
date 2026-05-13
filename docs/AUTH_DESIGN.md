@@ -188,7 +188,7 @@ SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=noreply@example.com
 SMTP_PASSWORD=...
-SMTP_FROM_NAME=RAG-AI
+SMTP_FROM_NAME=lhx-rag
 SMTP_TLS=true
 
 # Cookie 配置

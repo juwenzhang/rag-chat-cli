@@ -11,3 +11,14 @@ export async function PATCH(
   const body = await readJson<UpdateSessionBody>(req);
   return withAuth((token) => chatApi.updateSession(token, sessionId, body));
 }
+
+export async function DELETE(
+  _req: Request,
+  ctx: { params: Promise<{ sessionId: string }> }
+) {
+  const { sessionId } = await ctx.params;
+  return withAuth(async (token) => {
+    await chatApi.deleteSession(token, sessionId);
+    return { ok: true };
+  });
+}

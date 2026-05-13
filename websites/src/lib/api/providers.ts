@@ -1,6 +1,6 @@
 import "server-only";
 
-import { apiFetch } from "@/lib/api/client";
+import { apiFetch, apiStream } from "@/lib/api/client";
 import type {
   ConnectivityTestOut,
   ModelListItem,
@@ -35,9 +35,11 @@ export interface ConnectivityTestBody {
 export interface UserPreferenceBody {
   default_provider_id?: string | null;
   default_model?: string | null;
+  default_embedding_model?: string | null;
   default_use_rag?: boolean;
   clear_default_provider?: boolean;
   clear_default_model?: boolean;
+  clear_default_embedding_model?: boolean;
 }
 
 export async function listProviders(token: string): Promise<ProviderOut[]> {
@@ -79,6 +81,70 @@ export async function listProviderModels(
   id: string
 ): Promise<ModelListItem[]> {
   return apiFetch<ModelListItem[]>(`/providers/${id}/models`, { token });
+}
+
+/** Open the SSE pull stream from FastAPI — Response is forwarded verbatim. */
+export async function openPullModelStream(
+  token: string,
+  id: string,
+  body: { model: string }
+): Promise<Response> {
+  return apiStream(`/providers/${id}/models/pull`, {
+    method: "POST",
+    token,
+    body,
+  });
+}
+
+export async function deleteProviderModel(
+  token: string,
+  id: string,
+  model: string
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/providers/${id}/models/delete`, {
+    method: "POST",
+    token,
+    body: { model },
+  });
+}
+
+export async function upsertModelMeta(
+  token: string,
+  id: string,
+  body: { model: string; description: string | null }
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/providers/${id}/models/meta`, {
+    method: "POST",
+    token,
+    body,
+  });
+}
+
+export async function showProviderModel(
+  token: string,
+  id: string,
+  model: string
+): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>(`/providers/${id}/models/show`, {
+    method: "POST",
+    token,
+    body: { model },
+  });
+}
+
+export interface RunningModel {
+  name: string;
+  size?: number;
+  size_vram?: number;
+  digest?: string;
+  expires_at?: string;
+}
+
+export async function listRunningModels(
+  token: string,
+  id: string
+): Promise<RunningModel[]> {
+  return apiFetch<RunningModel[]>(`/providers/${id}/ps`, { token });
 }
 
 export async function testProvider(

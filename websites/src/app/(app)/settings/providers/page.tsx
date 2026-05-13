@@ -8,7 +8,7 @@ import { ProvidersPageClient } from "./providers-page-client";
 
 export const dynamic = "force-dynamic";
 export const metadata = {
-  title: "Providers · RAG-AI",
+  title: "Providers · lhx-rag",
 };
 
 export default async function ProvidersPage() {
@@ -19,6 +19,7 @@ export default async function ProvidersPage() {
   let preferences: Awaited<ReturnType<typeof providerApi.getPreferences>> = {
     default_provider_id: null,
     default_model: null,
+    default_embedding_model: null,
     default_use_rag: false,
   };
   try {
