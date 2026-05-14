@@ -2,21 +2,17 @@
 
 import {
   Book,
-  ChevronDown,
-  ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   ChevronsUpDown,
-  FileText,
   Lock,
-  MoreHorizontal,
   Plus,
   Search,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,16 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Tooltip,
@@ -46,13 +33,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type {
-  OrgOut,
-  WikiOut,
-  WikiPageListOut,
-  WikiVisibility,
-} from "@/lib/api/types";
-import { cn } from "@/lib/utils";
+import { api } from "@/lib/api/browser";
+import type { OrgOut, WikiOut, WikiPageListOut } from "@/lib/api/types";
+
+import { CreateWikiDialog } from "./create-wiki-dialog";
+import { PageRow } from "./page-row";
+import { TreeBranch } from "./tree-branch";
+import { buildTree } from "./tree";
 
 interface Props {
   activeOrg: OrgOut;
@@ -61,41 +48,26 @@ interface Props {
   pages: WikiPageListOut[];
 }
 
-interface TreeNode {
-  page: WikiPageListOut;
-  children: TreeNode[];
-}
-
-function buildTree(pages: WikiPageListOut[]): TreeNode[] {
-  const byId = new Map<string, TreeNode>();
-  for (const p of pages) byId.set(p.id, { page: p, children: [] });
-  const roots: TreeNode[] = [];
-  for (const node of byId.values()) {
-    const parentId = node.page.parent_id;
-    if (parentId && byId.has(parentId)) {
-      byId.get(parentId)!.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-  const sort = (nodes: TreeNode[]) => {
-    nodes.sort((a, b) => {
-      if (a.page.position !== b.page.position) {
-        return a.page.position - b.page.position;
-      }
-      return b.page.updated_at.localeCompare(a.page.updated_at);
-    });
-    for (const n of nodes) sort(n.children);
-  };
-  sort(roots);
-  return roots;
-}
-
+/** Two-level wiki sidebar — workspace/wiki switcher above the page tree. */
 export function WikiSidebar({ activeOrg, wikis, activeWiki, pages }: Props) {
   const router = useRouter();
   const params = useParams();
   const activePageId =
     typeof params.pageId === "string" ? params.pageId : null;
+  const urlWikiId =
+    typeof params.wikiId === "string" ? params.wikiId : null;
+
+  // This sidebar lives in `wiki/layout.tsx`, which the App Router keeps
+  // mounted across navigations within `/wiki/*` — so `activeWiki` /
+  // `pages` go stale the moment you switch wikis client-side. When the
+  // URL's wiki diverges from the layout-provided prop, force a refresh
+  // so the layout re-runs and hands down the correct tree. Guarded on
+  // `wikis` membership so an unresolvable id can't spin a refresh loop.
+  useEffect(() => {
+    if (!urlWikiId || urlWikiId === activeWiki?.id) return;
+    if (!wikis.some((w) => w.id === urlWikiId)) return;
+    router.refresh();
+  }, [urlWikiId, activeWiki?.id, wikis, router]);
 
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -106,32 +78,59 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages }: Props) {
     useState<WikiOut | null>(null);
   const [createWikiOpen, setCreateWikiOpen] = useState(false);
 
+  // Optimistic title overrides, keyed by page id. The wiki editor lives
+  // in a sibling subtree with no shared state, so it broadcasts title
+  // edits on a `window` event; we fold them in here for instant feedback
+  // (the server-fetched `pages` prop catches up on the next layout run).
+  const [titleOverrides, setTitleOverrides] = useState<
+    Record<string, string>
+  >({});
+  useEffect(() => {
+    const onTitle = (e: Event) => {
+      const detail = (e as CustomEvent<{ pageId: string; title: string }>)
+        .detail;
+      if (!detail?.pageId) return;
+      setTitleOverrides((prev) => ({ ...prev, [detail.pageId]: detail.title }));
+    };
+    window.addEventListener("wiki:page-title", onTitle);
+    return () => window.removeEventListener("wiki:page-title", onTitle);
+  }, []);
+
   const canEditWiki = activeWiki && activeWiki.role !== "viewer";
   const orgCanCreateWiki = activeOrg.role !== "viewer";
 
-  const tree = useMemo(() => buildTree(pages), [pages]);
+  // Fold optimistic title overrides onto the server-fetched pages once,
+  // up front — `buildTree` and search then render the live titles for
+  // free, no prop-threading down to `PageRow`.
+  const effectivePages = useMemo(
+    () =>
+      pages.map((p) =>
+        titleOverrides[p.id] != null
+          ? { ...p, title: titleOverrides[p.id] }
+          : p
+      ),
+    [pages, titleOverrides]
+  );
+
+  const tree = useMemo(() => buildTree(effectivePages), [effectivePages]);
   const searchHits = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return null;
-    return pages.filter((p) => p.title.toLowerCase().includes(q));
-  }, [pages, query]);
+    return effectivePages.filter((p) => p.title.toLowerCase().includes(q));
+  }, [effectivePages, query]);
 
   const createPage = async (parentId?: string) => {
     if (!activeWiki || creating) return;
     setCreating(true);
     try {
-      const res = await fetch(`/api/wikis/${activeWiki.id}/pages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parentId ? { parent_id: parentId } : {}),
-      });
-      if (!res.ok) {
-        toast.error("Failed to create page");
-        return;
-      }
-      const page = (await res.json()) as WikiPageListOut;
+      const page = await api.wikis.createPage(
+        activeWiki.id,
+        parentId ? { parent_id: parentId } : {}
+      );
       router.push(`/wiki/${activeWiki.id}/p/${page.id}`);
       router.refresh();
+    } catch {
+      toast.error("Failed to create page");
     } finally {
       setCreating(false);
     }
@@ -139,12 +138,11 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages }: Props) {
 
   const onDeletePage = async () => {
     if (!pendingDelete) return;
-    const res = await fetch(`/api/wiki-pages/${pendingDelete.id}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
+    try {
+      await api.wikiPages.remove(pendingDelete.id);
+    } catch (err) {
       toast.error("Failed to delete page");
-      throw new Error("delete failed");
+      throw err;
     }
     toast.success("Page deleted");
     if (activePageId === pendingDelete.id && activeWiki) {
@@ -155,13 +153,11 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages }: Props) {
 
   const onDeleteWiki = async () => {
     if (!pendingWikiDelete) return;
-    const res = await fetch(`/api/wikis/${pendingWikiDelete.id}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { message?: string };
-      toast.error(body.message || "Failed to delete wiki");
-      throw new Error("delete failed");
+    try {
+      await api.wikis.remove(pendingWikiDelete.id);
+    } catch (err) {
+      toast.error((err as Error).message || "Failed to delete wiki");
+      throw err;
     }
     toast.success("Wiki deleted");
     router.push("/wiki");
@@ -440,263 +436,5 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages }: Props) {
         }}
       />
     </aside>
-  );
-}
-
-function TreeBranch({
-  wikiId,
-  node,
-  depth,
-  activePageId,
-  canEdit,
-  onAddChild,
-  onRequestDelete,
-}: {
-  wikiId: string;
-  node: TreeNode;
-  depth: number;
-  activePageId: string | null;
-  canEdit: boolean;
-  onAddChild: (parentId: string) => void;
-  onRequestDelete: (page: WikiPageListOut) => void;
-}) {
-  const [open, setOpen] = useState(true);
-  const hasChildren = node.children.length > 0;
-  return (
-    <li>
-      <PageRow
-        wikiId={wikiId}
-        page={node.page}
-        depth={depth}
-        active={node.page.id === activePageId}
-        canEdit={canEdit}
-        expanded={hasChildren ? open : undefined}
-        onToggleExpand={hasChildren ? () => setOpen((v) => !v) : undefined}
-        onAddChild={() => onAddChild(node.page.id)}
-        onRequestDelete={() => onRequestDelete(node.page)}
-      />
-      {hasChildren && open && (
-        <ul className="flex flex-col gap-0.5">
-          {node.children.map((c) => (
-            <TreeBranch
-              key={c.page.id}
-              wikiId={wikiId}
-              node={c}
-              depth={depth + 1}
-              activePageId={activePageId}
-              canEdit={canEdit}
-              onAddChild={onAddChild}
-              onRequestDelete={onRequestDelete}
-            />
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-}
-
-function PageRow({
-  wikiId,
-  page,
-  depth,
-  active,
-  canEdit,
-  expanded,
-  onToggleExpand,
-  onAddChild,
-  onRequestDelete,
-}: {
-  wikiId: string;
-  page: WikiPageListOut;
-  depth: number;
-  active: boolean;
-  canEdit: boolean;
-  expanded?: boolean;
-  onToggleExpand?: () => void;
-  onAddChild: () => void;
-  onRequestDelete: () => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "group relative flex items-center rounded-md transition-colors",
-        "hover:bg-accent/60",
-        active && "bg-accent text-accent-foreground"
-      )}
-      style={{ paddingLeft: 8 + depth * 14 }}
-    >
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onToggleExpand?.();
-        }}
-        disabled={onToggleExpand === undefined}
-        className={cn(
-          "flex size-4 items-center justify-center rounded text-muted-foreground transition-colors",
-          onToggleExpand && "hover:bg-muted hover:text-foreground"
-        )}
-        aria-label={expanded ? "Collapse" : "Expand"}
-      >
-        {expanded === undefined ? null : expanded ? (
-          <ChevronDown className="size-3" />
-        ) : (
-          <ChevronRight className="size-3" />
-        )}
-      </button>
-
-      <Link
-        href={`/wiki/${wikiId}/p/${page.id}`}
-        className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-1 pr-1 text-sm"
-      >
-        <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="truncate">{page.title || "Untitled"}</span>
-      </Link>
-
-      {canEdit && (
-        <div className="flex items-center pr-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onAddChild();
-            }}
-            aria-label="Add child page"
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Plus className="size-3" />
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                aria-label="Page menu"
-                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <MoreHorizontal className="size-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem
-                onSelect={() => onRequestDelete()}
-                className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-              >
-                <Trash2 />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CreateWikiDialog({
-  open,
-  onOpenChange,
-  orgId,
-  onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  orgId: string;
-  onCreated: (w: WikiOut) => void;
-}) {
-  const [name, setName] = useState("");
-  const [visibility, setVisibility] = useState<WikiVisibility>("org_wide");
-  const [busy, setBusy] = useState(false);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/wikis`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), visibility }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          message?: string;
-        };
-        toast.error(body.message || "Failed to create wiki");
-        return;
-      }
-      const wiki = (await res.json()) as WikiOut;
-      toast.success("Wiki created");
-      setName("");
-      setVisibility("org_wide");
-      onOpenChange(false);
-      onCreated(wiki);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <form onSubmit={onSubmit}>
-          <DialogHeader>
-            <DialogTitle>New wiki</DialogTitle>
-            <DialogDescription>
-              A wiki is a named knowledge base inside this workspace. Its
-              pages can be shared org-wide or restricted to specific
-              members.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="wiki-name">Name</Label>
-              <Input
-                id="wiki-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Engineering notes"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="wiki-vis">Visibility</Label>
-              <select
-                id="wiki-vis"
-                value={visibility}
-                onChange={(e) =>
-                  setVisibility(e.target.value as WikiVisibility)
-                }
-                className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-              >
-                <option value="org_wide">
-                  Workspace-wide (any member can read)
-                </option>
-                <option value="private">
-                  Private (only members you invite)
-                </option>
-              </select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!name.trim() || busy}>
-              {busy ? "Creating…" : "Create"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

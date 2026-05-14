@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { shareApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
 
-import { withAuth } from "../../_bff";
+import { bffErrorFrom, withAuth } from "../../_bff";
 
 /** Public — no auth header. Anyone with the token can read the share. */
 export async function GET(
@@ -12,19 +11,9 @@ export async function GET(
 ) {
   const { token: shareToken } = await ctx.params;
   try {
-    const data = await shareApi.fetchSharePublic(shareToken);
-    return NextResponse.json(data);
+    return NextResponse.json(await shareApi.fetchSharePublic(shareToken));
   } catch (err) {
-    if (err instanceof ApiError) {
-      return NextResponse.json(
-        { error: err.code, message: err.message },
-        { status: err.status }
-      );
-    }
-    return NextResponse.json(
-      { error: "UPSTREAM_ERROR", message: (err as Error).message },
-      { status: 502 }
-    );
+    return bffErrorFrom(err);
   }
 }
 

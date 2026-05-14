@@ -36,6 +36,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { api } from "@/lib/api/browser";
 import type { OrgOut, UserOut } from "@/lib/api/types";
 import { cn, initials } from "@/lib/utils";
 
@@ -101,12 +102,9 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
 
   const switchOrg = async (orgId: string) => {
     if (orgId === activeOrg?.id) return;
-    const res = await fetch("/api/active-org", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ org_id: orgId }),
-    });
-    if (!res.ok) {
+    try {
+      await api.activeOrg.set(orgId);
+    } catch {
       toast.error("Failed to switch workspace");
       return;
     }
@@ -130,7 +128,12 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
 
   const logout = () =>
     startLogout(async () => {
-      await fetch("/api/auth/logout", { method: "POST" });
+      try {
+        await api.auth.logout();
+      } catch {
+        // Best-effort: even if revocation fails, fall through to /login —
+        // the cookie is cleared server-side and a stale token is harmless.
+      }
       toast.success("Signed out");
       router.push("/login");
       router.refresh();

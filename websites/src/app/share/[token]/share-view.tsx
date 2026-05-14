@@ -15,7 +15,8 @@ import { toast } from "sonner";
 import { QACard } from "@/components/share/qa-card";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Button } from "@/components/ui/button";
-import type { SessionMeta, SharePublicOut } from "@/lib/api/types";
+import { api } from "@/lib/api/browser";
+import type { SharePublicOut } from "@/lib/api/types";
 import { formatRelative } from "@/lib/utils";
 
 interface Props {
@@ -31,18 +32,11 @@ export function ShareView({ share, isAuthed, isOwner }: Props) {
   const onFork = async () => {
     setForking(true);
     try {
-      const res = await fetch("/api/chat/sessions/from-share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: share.token }),
-      });
-      if (!res.ok) {
-        toast.error("Failed to fork");
-        return;
-      }
-      const meta = (await res.json()) as SessionMeta;
+      const meta = await api.chat.sessionFromShare(share.token);
       toast.success("Forked to your conversations");
       router.push(`/chat/${meta.id}`);
+    } catch {
+      toast.error("Failed to fork");
     } finally {
       setForking(false);
     }

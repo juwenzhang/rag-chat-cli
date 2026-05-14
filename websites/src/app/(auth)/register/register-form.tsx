@@ -1,15 +1,13 @@
 "use client";
 
-import { Loader2, Send, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import Link from "next/link";
-import { useActionState, useEffect, useRef, useState } from "react";
-import { useFormStatus } from "react-dom";
+import { useActionState, useRef } from "react";
 
+import { SubmitButton } from "@/components/auth/submit-button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 
 import {
   registerAction,
@@ -17,30 +15,7 @@ import {
   type RegisterState,
   type SendCodeState,
 } from "./actions";
-
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button
-      type="submit"
-      size="lg"
-      className="w-full"
-      disabled={pending}
-    >
-      {pending ? (
-        <>
-          <Loader2 className="animate-spin" />
-          Creating account…
-        </>
-      ) : (
-        <>
-          <Sparkles />
-          Create account
-        </>
-      )}
-    </Button>
-  );
-}
+import { CountdownButton } from "./countdown-button";
 
 export function RegisterForm() {
   const [state, formAction] = useActionState<RegisterState | undefined, FormData>(
@@ -155,7 +130,11 @@ export function RegisterForm() {
         </Alert>
       )}
 
-      <SubmitButton />
+      <SubmitButton
+        idleLabel="Create account"
+        pendingLabel="Creating account…"
+        icon={<Sparkles />}
+      />
 
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{" "}
@@ -167,37 +146,5 @@ export function RegisterForm() {
         </Link>
       </p>
     </form>
-  );
-}
-
-function CountdownButton({
-  initialSeconds,
-  formAction,
-}: {
-  initialSeconds: number;
-  formAction: (formData: FormData) => void;
-}) {
-  const [remaining, setRemaining] = useState(initialSeconds);
-
-  useEffect(() => {
-    if (remaining <= 0) return;
-    const id = setInterval(
-      () => setRemaining((n) => Math.max(0, n - 1)),
-      1000
-    );
-    return () => clearInterval(id);
-  }, [remaining]);
-
-  return (
-    <Button
-      type="submit"
-      variant="outline"
-      formAction={formAction}
-      disabled={remaining > 0}
-      className={cn("shrink-0", remaining > 0 && "min-w-[110px]")}
-    >
-      <Send className="size-3.5" />
-      {remaining > 0 ? `${remaining}s` : "Send code"}
-    </Button>
   );
 }

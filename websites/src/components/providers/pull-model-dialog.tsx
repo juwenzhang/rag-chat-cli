@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { api } from "@/lib/api/browser";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -78,11 +79,7 @@ export function PullModelDialog({
     async (modelTag: string, desc: string) => {
       if (!desc.trim()) return;
       try {
-        await fetch(`/api/providers/${providerId}/models/meta`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: modelTag, description: desc.trim() }),
-        });
+        await api.providers.upsertModelMeta(providerId, modelTag, desc.trim());
       } catch {
         // Description save is non-fatal — pull already succeeded.
       }
@@ -98,18 +95,12 @@ export function PullModelDialog({
       abortRef.current = controller;
 
       try {
-        const r = await fetch(`/api/providers/${providerId}/models/pull`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: modelTag }),
-          signal: controller.signal,
-        });
-        if (!r.ok || !r.body) {
-          const payload = await r.json().catch(() => ({}));
-          throw new Error(
-            (payload as { message?: string }).message || `HTTP ${r.status}`
-          );
-        }
+        const r = await api.providers.pullModel(
+          providerId,
+          modelTag,
+          controller.signal
+        );
+        if (!r.body) throw new Error("No response stream");
         const reader = r.body.getReader();
         const decoder = new TextDecoder("utf-8");
         let buffer = "";

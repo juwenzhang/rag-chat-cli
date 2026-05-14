@@ -1,40 +1,15 @@
 "use client";
 
-import { Loader2, LogIn } from "lucide-react";
+import { LogIn } from "lucide-react";
 import Link from "next/link";
 import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
 
+import { SubmitButton } from "@/components/auth/submit-button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import { loginAction, type LoginState } from "./actions";
-
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button
-      type="submit"
-      size="lg"
-      className="w-full"
-      disabled={pending}
-    >
-      {pending ? (
-        <>
-          <Loader2 className="animate-spin" />
-          Signing in…
-        </>
-      ) : (
-        <>
-          <LogIn />
-          Sign in
-        </>
-      )}
-    </Button>
-  );
-}
 
 export function LoginForm({ next }: { next: string }) {
   const [state, formAction] = useActionState<LoginState | undefined, FormData>(
@@ -91,7 +66,11 @@ export function LoginForm({ next }: { next: string }) {
         </Alert>
       )}
 
-      <SubmitButton />
+      <SubmitButton
+        idleLabel="Sign in"
+        pendingLabel="Signing in…"
+        icon={<LogIn />}
+      />
 
       <p className="text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}

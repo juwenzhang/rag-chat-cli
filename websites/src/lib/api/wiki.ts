@@ -21,7 +21,8 @@ export interface CreateWikiBody {
 
 export interface UpdateWikiBody {
   name?: string;
-  description?: string;
+  /** `null` clears the description; `undefined` leaves it untouched. */
+  description?: string | null;
   visibility?: WikiVisibility;
 }
 

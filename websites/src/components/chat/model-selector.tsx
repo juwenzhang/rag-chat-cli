@@ -21,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { api } from "@/lib/api/browser";
 import type {
   ModelListItem,
   ProviderOut,
@@ -64,21 +65,14 @@ export function ModelSelector({
   const loadProviders = useCallback(async () => {
     setBootstrapLoading(true);
     try {
-      const [provRes, prefRes] = await Promise.all([
-        fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/me/preferences", { cache: "no-store" }),
+      const [provData, prefData] = await Promise.all([
+        api.providers.list(),
+        api.me.getPreferences(),
       ]);
-      const provData = (await provRes.json()) as ProviderOut[] | { error: string };
-      const prefData = (await prefRes.json()) as
-        | UserPreferenceOut
-        | { error: string };
-      if (Array.isArray(provData)) {
-        setProviders(provData.map((p) => ({ ...p })));
-      } else {
-        setProviders([]);
-      }
-      if ("default_provider_id" in prefData) setPref(prefData);
+      setProviders(provData.map((p) => ({ ...p })));
+      setPref(prefData);
     } catch (err) {
+      setProviders([]);
       toast.error(`Failed to load providers: ${(err as Error).message}`);
     } finally {
       setBootstrapLoading(false);
@@ -94,55 +88,32 @@ export function ModelSelector({
     if (!loadedOnceRef.current) void loadProviders();
   }, [loadProviders]);
 
-  // Lazy-load each provider's model list on first time its section becomes visible.
-  const fetchModels = useCallback(
-    async (pid: string, force = false) => {
+  // Lazy-load each provider's model list the first time its section
+  // becomes visible. `bff` is always `no-store`, so the "refresh" button
+  // and the lazy first load share one path.
+  const fetchModels = useCallback(async (pid: string) => {
+    setProviders((prev) =>
+      prev.map((p) => (p.id === pid ? { ...p, modelsLoading: true } : p))
+    );
+    try {
+      const data = await api.providers.listModels(pid);
       setProviders((prev) =>
-        prev.map((p) => (p.id === pid ? { ...p, modelsLoading: true } : p))
+        prev.map((p) =>
+          p.id === pid
+            ? { ...p, models: data, modelsLoading: false, modelsError: undefined }
+            : p
+        )
       );
-      try {
-        const r = await fetch(`/api/providers/${pid}/models`, {
-          cache: force ? "no-store" : "default",
-        });
-        const data = (await r.json()) as ModelListItem[] | { error: string };
-        if (Array.isArray(data)) {
-          setProviders((prev) =>
-            prev.map((p) =>
-              p.id === pid
-                ? { ...p, models: data, modelsLoading: false, modelsError: undefined }
-                : p
-            )
-          );
-        } else {
-          setProviders((prev) =>
-            prev.map((p) =>
-              p.id === pid
-                ? {
-                    ...p,
-                    modelsLoading: false,
-                    modelsError:
-                      (data as { message?: string }).message || "Failed to load",
-                  }
-                : p
-            )
-          );
-        }
-      } catch (err) {
-        setProviders((prev) =>
-          prev.map((p) =>
-            p.id === pid
-              ? {
-                  ...p,
-                  modelsLoading: false,
-                  modelsError: (err as Error).message,
-                }
-              : p
-          )
-        );
-      }
-    },
-    []
-  );
+    } catch (err) {
+      setProviders((prev) =>
+        prev.map((p) =>
+          p.id === pid
+            ? { ...p, modelsLoading: false, modelsError: (err as Error).message }
+            : p
+        )
+      );
+    }
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -157,22 +128,12 @@ export function ModelSelector({
     async (nextProviderId: string | null, nextModel: string | null) => {
       setSaving(true);
       try {
-        const r = await fetch(`/api/chat/sessions/${sessionId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            provider_id: nextProviderId ?? undefined,
-            model: nextModel ?? undefined,
-            clear_provider_id: nextProviderId === null,
-            clear_model: nextModel === null,
-          }),
+        await api.chat.updateSession(sessionId, {
+          provider_id: nextProviderId ?? undefined,
+          model: nextModel ?? undefined,
+          clear_provider_id: nextProviderId === null,
+          clear_model: nextModel === null,
         });
-        if (!r.ok) {
-          const payload = await r.json().catch(() => ({}));
-          throw new Error(
-            (payload as { message?: string }).message || `HTTP ${r.status}`
-          );
-        }
         setProviderId(nextProviderId);
         setModel(nextModel);
         onChange?.({ provider_id: nextProviderId, model: nextModel });
@@ -277,7 +238,7 @@ export function ModelSelector({
                     type="button"
                     onClick={(e) => {
                       e.preventDefault();
-                      void fetchModels(p.id, true);
+                      void fetchModels(p.id);
                     }}
                     aria-label="Refresh models"
                     className="rounded p-0.5 text-muted-foreground/70 hover:bg-foreground/5 hover:text-foreground"

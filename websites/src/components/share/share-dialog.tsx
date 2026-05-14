@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { api } from "@/lib/api/browser";
 import type { ShareOut } from "@/lib/api/types";
 
 export interface ShareDialogProps {
@@ -53,15 +54,11 @@ export function ShareDialog({
     if (!share) return;
     setRevoking(true);
     try {
-      const res = await fetch(`/api/shares/${share.token}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        toast.error("Failed to revoke");
-        return;
-      }
+      await api.shares.remove(share.token);
       toast.success("Share link revoked");
       onRevoked();
+    } catch {
+      toast.error("Failed to revoke");
     } finally {
       setRevoking(false);
     }

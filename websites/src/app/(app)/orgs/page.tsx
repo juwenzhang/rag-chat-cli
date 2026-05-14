@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 
+import { OrgsPageClient } from "@/components/orgs/orgs-page-client";
 import { orgApi } from "@/lib/api";
 import { getAccessToken, getCurrentUser } from "@/lib/session";
-
-import { OrgsPageClient } from "./orgs-page-client";
 
 export const dynamic = "force-dynamic";
 

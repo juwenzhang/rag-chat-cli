@@ -6,7 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import type { WikiPageDetailOut } from "@/lib/api/types";
+import { api } from "@/lib/api/browser";
 
 export function NewPageButton({ wikiId }: { wikiId: string }) {
   const router = useRouter();
@@ -16,18 +16,11 @@ export function NewPageButton({ wikiId }: { wikiId: string }) {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/wikis/${wikiId}/pages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      if (!res.ok) {
-        toast.error("Failed to create page");
-        return;
-      }
-      const page = (await res.json()) as WikiPageDetailOut;
+      const page = await api.wikis.createPage(wikiId, {});
       router.push(`/wiki/${wikiId}/p/${page.id}`);
       router.refresh();
+    } catch {
+      toast.error("Failed to create page");
     } finally {
       setBusy(false);
     }

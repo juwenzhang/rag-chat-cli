@@ -4,27 +4,15 @@ import {
   ChevronsLeft,
   ChevronsRight,
   MessageSquarePlus,
-  MoreHorizontal,
-  Pencil,
-  Pin,
-  PinOff,
   Search,
-  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -33,8 +21,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { api } from "@/lib/api/browser";
 import type { SessionMeta, UserOut } from "@/lib/api/types";
-import { cn, formatRelative } from "@/lib/utils";
+
+import { SessionRow } from "./session-row";
 
 interface Props {
   user: UserOut;
@@ -46,7 +36,8 @@ function activeSessionId(pathname: string): string | null {
   return m ? m[1] : null;
 }
 
-export function SessionSidebar({ user, sessions }: Props) {
+/** Chat module sidebar — conversation list with create / rename / pin / delete. */
+export function SessionSidebar({ user: _user, sessions }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const currentId = activeSessionId(pathname);
@@ -79,18 +70,13 @@ export function SessionSidebar({ user, sessions }: Props) {
 
   const createNew = () =>
     startCreating(async () => {
-      const res = await fetch("/api/chat/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
+      try {
+        const meta = await api.chat.createSession();
+        router.push(`/chat/${meta.id}`);
+        router.refresh();
+      } catch {
         toast.error("Failed to create conversation");
-        return;
       }
-      const meta = (await res.json()) as SessionMeta;
-      router.push(`/chat/${meta.id}`);
-      router.refresh();
     });
 
   const commitRename = async (s: SessionMeta, nextRaw: string) => {
@@ -99,39 +85,32 @@ export function SessionSidebar({ user, sessions }: Props) {
     // No-op if unchanged or empty (empty title falls back to the message preview,
     // which is rarely what the user means by an explicit rename).
     if (!next || next === (s.title ?? "")) return;
-    const res = await fetch(`/api/chat/sessions/${s.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: next }),
-    });
-    if (!res.ok) {
+    try {
+      await api.chat.updateSession(s.id, { title: next });
+      toast.success("Renamed");
+      router.refresh();
+    } catch {
       toast.error("Failed to rename");
-      return;
     }
-    toast.success("Renamed");
-    router.refresh();
   };
 
   const togglePin = async (s: SessionMeta) => {
     const next = !s.pinned;
-    const res = await fetch(`/api/chat/sessions/${s.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pinned: next }),
-    });
-    if (!res.ok) {
+    try {
+      await api.chat.updateSession(s.id, { pinned: next });
+      toast.success(next ? "Pinned to top" : "Unpinned");
+      router.refresh();
+    } catch {
       toast.error(next ? "Failed to pin" : "Failed to unpin");
-      return;
     }
-    toast.success(next ? "Pinned to top" : "Unpinned");
-    router.refresh();
   };
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
     const id = pendingDelete.id;
-    const res = await fetch(`/api/chat/sessions/${id}`, { method: "DELETE" });
-    if (!res.ok) {
+    try {
+      await api.chat.deleteSession(id);
+    } catch {
       toast.error("Failed to delete conversation");
       throw new Error("delete failed");
     }
@@ -211,11 +190,7 @@ export function SessionSidebar({ user, sessions }: Props) {
       {/* New conversation — module-scoped action, stays here since
           this sidebar is chat-specific. */}
       <div className="p-3">
-        <Button
-          onClick={createNew}
-          disabled={creating}
-          className="w-full"
-        >
+        <Button onClick={createNew} disabled={creating} className="w-full">
           <MessageSquarePlus />
           {creating ? "Creating…" : "New conversation"}
         </Button>
@@ -288,190 +263,6 @@ export function SessionSidebar({ user, sessions }: Props) {
         destructive
         onConfirm={confirmDelete}
       />
-
     </aside>
   );
 }
-
-function SessionRow({
-  session,
-  active,
-  renaming,
-  onOpen,
-  onTogglePin,
-  onRequestRename,
-  onCommitRename,
-  onCancelRename,
-  onRequestDelete,
-}: {
-  session: SessionMeta;
-  active: boolean;
-  renaming: boolean;
-  onOpen: () => void;
-  onTogglePin: () => void;
-  onRequestRename: () => void;
-  onCommitRename: (next: string) => void;
-  onCancelRename: () => void;
-  onRequestDelete: () => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "group relative flex items-center rounded-md transition-all",
-        !renaming && "hover:bg-accent/60",
-        active && !renaming && "bg-accent text-accent-foreground shadow-sm",
-        renaming && "bg-primary/10 ring-1 ring-primary/30"
-      )}
-    >
-      {renaming ? (
-        <RenameInput
-          initial={session.title ?? ""}
-          onCommit={onCommitRename}
-          onCancel={onCancelRename}
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={onOpen}
-          onDoubleClick={(e) => {
-            e.preventDefault();
-            onRequestRename();
-          }}
-          className="min-w-0 flex-1 px-3 py-2 text-left"
-        >
-          <div className="flex items-center gap-1.5">
-            {session.pinned && (
-              <Pin
-                aria-hidden
-                className="size-3 shrink-0 text-primary"
-                strokeWidth={2.5}
-              />
-            )}
-            <span
-              className={cn(
-                "truncate text-sm font-medium",
-                active ? "text-foreground" : "text-foreground/85"
-              )}
-            >
-              {session.title || "Untitled"}
-            </span>
-          </div>
-          <div className="mt-0.5 text-xs text-muted-foreground">
-            {formatRelative(session.updated_at)}
-          </div>
-        </button>
-      )}
-      {!renaming && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Conversation actions"
-              onClick={(e) => e.stopPropagation()}
-              className={cn(
-                "mr-1 size-7 shrink-0 text-muted-foreground opacity-0 transition-opacity",
-                "group-hover:opacity-100 focus-visible:opacity-100",
-                "data-[state=open]:opacity-100",
-                (active || session.pinned) && "opacity-70"
-              )}
-            >
-              <MoreHorizontal className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem
-              onSelect={(e) => {
-                e.preventDefault();
-                onRequestRename();
-              }}
-            >
-              <Pencil />
-              Rename
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={(e) => {
-                e.preventDefault();
-                onTogglePin();
-              }}
-            >
-              {session.pinned ? (
-                <>
-                  <PinOff />
-                  Unpin
-                </>
-              ) : (
-                <>
-                  <Pin />
-                  Pin to top
-                </>
-              )}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={(e) => {
-                e.preventDefault();
-                onRequestDelete();
-              }}
-              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-            >
-              <Trash2 />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-    </div>
-  );
-}
-
-function RenameInput({
-  initial,
-  onCommit,
-  onCancel,
-}: {
-  initial: string;
-  onCommit: (next: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(initial);
-  const inputRef = useRef<HTMLInputElement>(null);
-  // Guard against double-fire (Enter then blur).
-  const committed = useRef(false);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
-
-  const commit = () => {
-    if (committed.current) return;
-    committed.current = true;
-    onCommit(value);
-  };
-
-  return (
-    <div className="min-w-0 flex-1 px-2 py-1.5">
-      <Input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            commit();
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            committed.current = true;
-            onCancel();
-          }
-        }}
-        onBlur={commit}
-        maxLength={256}
-        aria-label="Rename conversation"
-        className="h-8 text-sm"
-      />
-    </div>
-  );
-}
-

@@ -14,11 +14,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { api } from "@/lib/api/browser";
 import type { MemberOut, OrgOut, Role } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 const ROLES: Role[] = ["owner", "editor", "viewer"];
 
+/** Org membership dialog — invite by email, change roles, remove members. */
 export function MembersDialog({
   org,
   currentUserId,
@@ -38,12 +40,9 @@ export function MembersDialog({
   const refresh = useCallback(async (orgId: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/orgs/${orgId}/members`);
-      if (!res.ok) {
-        toast.error("Failed to load members");
-        return;
-      }
-      setMembers((await res.json()) as MemberOut[]);
+      setMembers(await api.orgs.listMembers(orgId));
+    } catch {
+      toast.error("Failed to load members");
     } finally {
       setLoading(false);
     }
@@ -63,24 +62,15 @@ export function MembersDialog({
     if (!org || !inviteEmail.trim() || inviting) return;
     setInviting(true);
     try {
-      const res = await fetch(`/api/orgs/${org.id}/members`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: inviteEmail.trim(),
-          role: inviteRole,
-        }),
+      await api.orgs.addMember(org.id, {
+        email: inviteEmail.trim(),
+        role: inviteRole,
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          message?: string;
-        };
-        toast.error(body.message || "Failed to invite");
-        return;
-      }
       toast.success("Member added");
       setInviteEmail("");
       await refresh(org.id);
+    } catch (err) {
+      toast.error((err as Error).message || "Failed to invite");
     } finally {
       setInviting(false);
     }
@@ -88,27 +78,20 @@ export function MembersDialog({
 
   const changeRole = async (userId: string, role: Role) => {
     if (!org) return;
-    const res = await fetch(`/api/orgs/${org.id}/members/${userId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { message?: string };
-      toast.error(body.message || "Failed to update role");
-      return;
+    try {
+      await api.orgs.updateMemberRole(org.id, userId, { role });
+      await refresh(org.id);
+    } catch (err) {
+      toast.error((err as Error).message || "Failed to update role");
     }
-    await refresh(org.id);
   };
 
   const remove = async (userId: string) => {
     if (!org) return;
-    const res = await fetch(`/api/orgs/${org.id}/members/${userId}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { message?: string };
-      toast.error(body.message || "Failed to remove");
+    try {
+      await api.orgs.removeMember(org.id, userId);
+    } catch (err) {
+      toast.error((err as Error).message || "Failed to remove");
       return;
     }
     toast.success("Member removed");

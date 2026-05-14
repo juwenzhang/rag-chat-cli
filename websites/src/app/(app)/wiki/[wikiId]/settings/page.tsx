@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 
+import { WikiSettingsClient } from "@/components/wiki/wiki-settings-client";
 import { wikiApi } from "@/lib/api";
 import { ApiError } from "@/lib/api/types";
 import { getAccessToken, getCurrentUser } from "@/lib/session";
-
-import { WikiSettingsClient } from "./wiki-settings-client";
 
 export const dynamic = "force-dynamic";
 

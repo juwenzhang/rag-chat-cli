@@ -9,8 +9,9 @@ import { cn } from "@/lib/utils";
 export interface TocItem {
   level: 1 | 2 | 3 | 4 | 5 | 6;
   text: string;
-  /** stable slug derived from text, used as the anchor id on rendered
-   *  headings (we inject these into the rendered preview). */
+  /** Stable slug derived from the heading text. Used as the React list
+   *  key (collision-suffixed so it's unique); the actual scroll jump
+   *  goes by document index, not this id — see `WikiToc.onJump`. */
   id: string;
 }
 
@@ -58,15 +59,17 @@ function slugify(s: string): string {
 }
 
 /**
- * TOC sidebar. Sits to the right of the editor, collapsible. Clicks
- * scroll the rendered preview to the matching anchor.
+ * TOC sidebar. Sits to the right of the editor, collapsible. Clicking an
+ * entry scrolls the editor to that heading — addressed by its document
+ * index (`onJump(index)`), since the editor DOM is owned by ProseMirror
+ * and won't keep imperatively-set anchor ids.
  */
 export function WikiToc({
   items,
   onJump,
 }: {
   items: TocItem[];
-  onJump: (id: string) => void;
+  onJump: (index: number) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -108,11 +111,11 @@ export function WikiToc({
       ) : (
         <nav className="overflow-y-auto p-2">
           <ul className="space-y-0.5">
-            {items.map((it) => (
+            {items.map((it, index) => (
               <li key={it.id}>
                 <button
                   type="button"
-                  onClick={() => onJump(it.id)}
+                  onClick={() => onJump(index)}
                   className={cn(
                     "block w-full truncate rounded px-2 py-1 text-left text-xs transition-colors",
                     "text-muted-foreground hover:bg-accent hover:text-foreground",

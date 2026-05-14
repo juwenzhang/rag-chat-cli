@@ -1,10 +1,9 @@
 "use client";
 
+import type { Editor } from "@tiptap/react";
 import {
   ArrowLeft,
-  Check,
   Copy,
-  Loader2,
   MessageSquare,
   MoreHorizontal,
   Move,
@@ -12,25 +11,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,16 +23,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Label } from "@/components/ui/label";
 import { TipTapEditor } from "@/components/wiki/tiptap-editor";
 import { parseToc, WikiToc } from "@/components/wiki/wiki-toc";
-import type {
-  EffectiveWikiRole,
-  OrgOut,
-  WikiOut,
-  WikiPageDetailOut,
+import { api } from "@/lib/api/browser";
+import {
+  ApiError,
+  type EffectiveWikiRole,
+  type OrgOut,
+  type WikiOut,
+  type WikiPageDetailOut,
 } from "@/lib/api/types";
-import { cn, formatRelative } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+
+import { MovePageDialog } from "./move-page-dialog";
+import { SaveIndicator, type WikiSaveStatus } from "./save-indicator";
 
 interface Props {
   page: WikiPageDetailOut;
@@ -56,8 +45,6 @@ interface Props {
   orgs: OrgOut[];
   writableWikis: WikiOut[];
 }
-
-type Status = "idle" | "dirty" | "saving" | "saved" | "conflict";
 
 const AUTOSAVE_MS = 1500;
 
@@ -69,7 +56,7 @@ const AUTOSAVE_MS = 1500;
  *     every keystroke via ``onChange``; we mirror that into ``body``
  *     state and kick a debounced PATCH.
  *   - <WikiToc> on the right rail rebuilds itself from the current
- *     markdown body; clicks scroll the rendered preview by anchor id.
+ *     markdown body; clicks scroll the editor by heading index.
  *   - Title is a plain ``<input>`` above the editor — Feishu's title
  *     lives outside the doc body and it composes more cleanly than
  *     forcing an H1 into TipTap's content.
@@ -88,7 +75,7 @@ export function WikiEditorClient({
   const pageRef = useRef(initialPage);
   const [title, setTitle] = useState(initialPage.title);
   const [body, setBody] = useState(initialPage.body);
-  const [status, setStatus] = useState<Status>("idle");
+  const [status, setStatus] = useState<WikiSaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -111,34 +98,27 @@ export function WikiEditorClient({
     dirtyRef.current = false;
     setStatus("saving");
     try {
-      const res = await fetch(`/api/wiki-pages/${pageRef.current.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: titleRef.current,
-          body: bodyRef.current,
-          revision: pageRef.current.revision,
-        }),
+      const updated = await api.wikiPages.update(pageRef.current.id, {
+        title: titleRef.current,
+        body: bodyRef.current,
+        revision: pageRef.current.revision,
       });
-      if (res.status === 409) {
-        setStatus("conflict");
-        toast.error("This page changed elsewhere — refetching.");
-        const fresh = await fetch(`/api/wiki-pages/${pageRef.current.id}`);
-        if (fresh.ok) {
-          pageRef.current = (await fresh.json()) as WikiPageDetailOut;
-        }
-        return;
-      }
-      if (!res.ok) {
-        setStatus("dirty");
-        toast.error("Failed to save");
-        return;
-      }
-      const updated = (await res.json()) as WikiPageDetailOut;
       pageRef.current = updated;
       setLastSavedAt(new Date());
       setStatus(dirtyRef.current ? "dirty" : "saved");
     } catch (err) {
+      // 409 = the page was edited elsewhere since we loaded it. Pull the
+      // fresh revision so the next save can win.
+      if (err instanceof ApiError && err.status === 409) {
+        setStatus("conflict");
+        toast.error("This page changed elsewhere — refetching.");
+        try {
+          pageRef.current = await api.wikiPages.get(pageRef.current.id);
+        } catch {
+          /* leave the stale page in place — next edit retries */
+        }
+        return;
+      }
       setStatus("dirty");
       toast.error((err as Error).message);
     } finally {
@@ -164,8 +144,18 @@ export function WikiEditorClient({
   }, []);
 
   const onTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setTitle(e.target.value);
+    const next = e.target.value;
+    setTitle(next);
     scheduleSave();
+    // Broadcast the title so the wiki sidebar — a sibling subtree under
+    // `wiki/layout.tsx` with no shared state — can reflect it instantly.
+    // Autosave (above) still owns persistence. Interim bridge until the
+    // planned shared client state (Context / store) lands.
+    window.dispatchEvent(
+      new CustomEvent("wiki:page-title", {
+        detail: { pageId: pageRef.current.id, title: next },
+      })
+    );
   };
 
   const onBodyChange = useCallback(
@@ -178,35 +168,42 @@ export function WikiEditorClient({
 
   // ── TOC ─────────────────────────────────────────────────────────
   const tocItems = useMemo(() => parseToc(body), [body]);
-  const jumpToHeading = useCallback((id: string) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  // The editor DOM is owned by ProseMirror, which strips any anchor id
+  // we'd set imperatively on the next redraw — so the outline jumps by
+  // document index instead. `parseToc` and the editor's `<h1>`…`<h6>`
+  // are both in document order; filtering out empty-text headings keeps
+  // the index aligned with what `parseToc` chose to include.
+  const editorRef = useRef<Editor | null>(null);
+  const jumpToHeading = useCallback((index: number) => {
+    const dom = editorRef.current?.view.dom;
+    if (!dom) return;
+    const headings = Array.from(
+      dom.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")
+    ).filter((h) => h.textContent?.trim());
+    headings[index]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
   // ── Page-level ops ──────────────────────────────────────────────
   const onDelete = async () => {
-    const res = await fetch(`/api/wiki-pages/${pageRef.current.id}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
+    try {
+      await api.wikiPages.remove(pageRef.current.id);
+    } catch (err) {
       toast.error("Failed to delete");
-      throw new Error("delete failed");
+      throw err;
     }
     toast.success("Page deleted");
     router.push(`/wiki/${wiki.id}`);
     router.refresh();
   };
   const onDuplicate = async () => {
-    const res = await fetch(
-      `/api/wiki-pages/${pageRef.current.id}/duplicate`,
-      { method: "POST" }
-    );
-    if (!res.ok) {
+    let copy: WikiPageDetailOut;
+    try {
+      copy = await api.wikiPages.duplicate(pageRef.current.id);
+    } catch {
       toast.error("Failed to duplicate");
       return;
     }
-    const copy = (await res.json()) as WikiPageDetailOut;
     toast.success("Duplicated");
     router.push(`/wiki/${copy.wiki_id}/p/${copy.id}`);
     router.refresh();
@@ -217,15 +214,13 @@ export function WikiEditorClient({
       timerRef.current = null;
     }
     if (dirtyRef.current && !readOnly) await flush();
-    const res = await fetch(
-      `/api/chat/sessions/from-wiki/${pageRef.current.id}`,
-      { method: "POST" }
-    );
-    if (!res.ok) {
+    let sess: { id: string };
+    try {
+      sess = await api.chat.sessionFromWiki(pageRef.current.id);
+    } catch {
       toast.error("Failed to open chat");
       return;
     }
-    const sess = (await res.json()) as { id: string };
     router.push(`/chat/${sess.id}`);
   };
 
@@ -310,6 +305,9 @@ export function WikiEditorClient({
               initialMarkdown={initialPage.body}
               readOnly={readOnly}
               onChange={onBodyChange}
+              onReady={(editor) => {
+                editorRef.current = editor;
+              }}
             />
           </div>
         </div>
@@ -338,137 +336,5 @@ export function WikiEditorClient({
         }}
       />
     </div>
-  );
-}
-
-function SaveIndicator({
-  status,
-  lastSavedAt,
-}: {
-  status: Status;
-  lastSavedAt: Date | null;
-}) {
-  if (status === "saving") {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <Loader2 className="size-3 animate-spin" />
-        Saving…
-      </span>
-    );
-  }
-  if (status === "conflict") {
-    return (
-      <span className="inline-flex items-center gap-1 text-destructive">
-        Conflict — reloaded
-      </span>
-    );
-  }
-  if (status === "dirty") {
-    return <span className="text-muted-foreground/70">Unsaved</span>;
-  }
-  if (status === "saved" && lastSavedAt) {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <Check className="size-3 text-primary" />
-        Saved {formatRelative(lastSavedAt.toISOString())}
-      </span>
-    );
-  }
-  return null;
-}
-
-function MovePageDialog({
-  open,
-  onOpenChange,
-  currentWikiId,
-  pageId,
-  wikis,
-  onMoved,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  currentWikiId: string;
-  pageId: string;
-  wikis: WikiOut[];
-  onMoved: (target: WikiPageDetailOut) => void;
-}) {
-  const [targetId, setTargetId] = useState(currentWikiId);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (open) setTargetId(currentWikiId);
-  }, [open, currentWikiId]);
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (busy || targetId === currentWikiId) {
-      onOpenChange(false);
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/wiki-pages/${pageId}/move`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target_wiki_id: targetId }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          message?: string;
-        };
-        toast.error(body.message || "Failed to move");
-        return;
-      }
-      const moved = (await res.json()) as WikiPageDetailOut;
-      toast.success("Page moved");
-      onMoved(moved);
-      onOpenChange(false);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <form onSubmit={onSubmit}>
-          <DialogHeader>
-            <DialogTitle>Move to wiki</DialogTitle>
-            <DialogDescription>
-              The page leaves its current wiki and lands at the end of the
-              destination's root list.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 py-4">
-            <Label htmlFor="move-target">Destination wiki</Label>
-            <select
-              id="move-target"
-              value={targetId}
-              onChange={(e) => setTargetId(e.target.value)}
-              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-            >
-              {wikis.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                  {w.id === currentWikiId ? " (current)" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={targetId === currentWikiId || busy}
-            >
-              {busy ? "Moving…" : "Move"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

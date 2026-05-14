@@ -9,7 +9,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { WikiOut, WikiVisibility } from "@/lib/api/types";
+import { api } from "@/lib/api/browser";
+import type { WikiVisibility } from "@/lib/api/types";
 
 export function NewWikiClient({
   orgId,
@@ -29,26 +30,16 @@ export function NewWikiClient({
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/orgs/${orgId}/wikis`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          description: description.trim() || undefined,
-          visibility,
-        }),
+      const wiki = await api.orgs.createWiki(orgId, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        visibility,
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          message?: string;
-        };
-        toast.error(body.message || "Failed to create wiki");
-        return;
-      }
-      const wiki = (await res.json()) as WikiOut;
       toast.success("Wiki created");
       router.push(`/wiki/${wiki.id}`);
       router.refresh();
+    } catch (err) {
+      toast.error((err as Error).message || "Failed to create wiki");
     } finally {
       setBusy(false);
     }
