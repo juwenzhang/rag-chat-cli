@@ -7,6 +7,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Move,
+  Share2,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
@@ -37,6 +38,7 @@ import { cn } from "@/lib/utils";
 
 import { MovePageDialog } from "./move-page-dialog";
 import { SaveIndicator, type WikiSaveStatus } from "./save-indicator";
+import { WikiPageShareDialog } from "./wiki-page-share-dialog";
 
 interface Props {
   page: WikiPageDetailOut;
@@ -79,6 +81,7 @@ export function WikiEditorClient({
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   // ── Save pipeline ────────────────────────────────────────────────
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -256,6 +259,16 @@ export function WikiEditorClient({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setShareOpen(true);
+                  }}
+                >
+                  <Share2 />
+                  Share
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => void onDuplicate()}>
                   <Copy />
                   Duplicate
@@ -282,6 +295,17 @@ export function WikiEditorClient({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          )}
+          {readOnly && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5"
+              onClick={() => setShareOpen(true)}
+            >
+              <Share2 className="size-3.5" />
+              Share
+            </Button>
           )}
         </div>
       </header>
@@ -334,6 +358,13 @@ export function WikiEditorClient({
           router.push(`/wiki/${target.wiki_id}/p/${target.id}`);
           router.refresh();
         }}
+      />
+
+      <WikiPageShareDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        pageId={pageRef.current.id}
+        pageTitle={title}
       />
     </div>
   );

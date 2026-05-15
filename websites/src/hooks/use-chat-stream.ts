@@ -14,7 +14,11 @@ import { readSse } from "@/lib/sse-client";
  * rows aren't shown on their own — they're folded back into the
  * `toolResults` of the assistant turn that requested them.
  */
-function hydrateMessages(items: MessageOut[]): UIMessage[] {
+function hydrateMessages(
+  items: MessageOut[],
+  sessionModel?: string | null,
+  sessionProvider?: string | null,
+): UIMessage[] {
   const out: UIMessage[] = [];
   for (const m of items) {
     if (m.role === "user") {
@@ -25,6 +29,8 @@ function hydrateMessages(items: MessageOut[]): UIMessage[] {
         role: "assistant",
         content: m.content,
         toolCalls: m.tool_calls ?? undefined,
+        model: sessionModel ?? undefined,
+        provider: sessionProvider ?? undefined,
         persisted: true,
       });
     } else if (m.role === "tool") {
@@ -101,6 +107,10 @@ interface UseChatStreamOptions {
   initialMessages: MessageOut[];
   /** Current RAG toggle — read at send time, so toggling mid-session is fine. */
   useRag: boolean;
+  /** Session-level model name — injected into historical assistant messages. */
+  sessionModel?: string | null;
+  /** Session-level provider name — injected into historical assistant messages. */
+  sessionProvider?: string | null;
   /**
    * Fired the moment a turn starts streaming. The chat view uses it to
    * re-pin the scroll-follow flag; the hook itself owns no view state.
@@ -129,10 +139,12 @@ export function useChatStream({
   sessionId,
   initialMessages,
   useRag,
+  sessionModel,
+  sessionProvider,
   onTurnStart,
 }: UseChatStreamOptions): UseChatStreamResult {
   const [messages, setMessages] = useState<UIMessage[]>(() =>
-    hydrateMessages(initialMessages)
+    hydrateMessages(initialMessages, sessionModel, sessionProvider)
   );
   const [streaming, setStreaming] = useState(false);
 
@@ -213,29 +225,53 @@ export function useChatStream({
       if (completed && !sawError) {
         try {
           const persisted = await api.chat.getMessages(sessionId);
-          const realUserId = [...persisted]
-            .reverse()
-            .find((m) => m.role === "user")?.id;
-          const realAssistantId = [...persisted]
-            .reverse()
-            .find((m) => m.role === "assistant")?.id;
           setMessages((prev) => {
+            // Collect all IDs already in the transcript that are persisted
+            // (i.e. came from the server on a previous load / graft).
+            const knownIds = new Set(
+              prev.filter((m) => m.persisted).map((m) => m.id)
+            );
+
+            // Find the newest user and assistant IDs from the server that
+            // aren't already in our transcript — those are the ones that
+            // belong to the turn we just streamed.
+            let newUserId: string | undefined;
+            let newAssistantId: string | undefined;
+            for (let i = persisted.length - 1; i >= 0; i--) {
+              const pm = persisted[i];
+              if (!newAssistantId && pm.role === "assistant" && !knownIds.has(pm.id)) {
+                newAssistantId = pm.id;
+              }
+              if (!newUserId && pm.role === "user" && !knownIds.has(pm.id)) {
+                newUserId = pm.id;
+              }
+              if (newUserId && newAssistantId) break;
+            }
+
             const next = [...prev];
+            // Graft the real IDs onto the optimistic (non-persisted) rows.
             for (let i = next.length - 1; i >= 0; i--) {
-              if (realAssistantId && next[i].role === "assistant") {
+              if (
+                newAssistantId &&
+                next[i].role === "assistant" &&
+                !next[i].persisted
+              ) {
                 next[i] = {
                   ...next[i],
-                  id: realAssistantId,
+                  id: newAssistantId,
                   persisted: true,
                 };
-                break;
+                newAssistantId = undefined;
               }
-            }
-            for (let i = next.length - 1; i >= 0; i--) {
-              if (realUserId && next[i].role === "user") {
-                next[i] = { ...next[i], id: realUserId, persisted: true };
-                break;
+              if (
+                newUserId &&
+                next[i].role === "user" &&
+                !next[i].persisted
+              ) {
+                next[i] = { ...next[i], id: newUserId, persisted: true };
+                newUserId = undefined;
               }
+              if (!newUserId && !newAssistantId) break;
             }
             return next;
           });

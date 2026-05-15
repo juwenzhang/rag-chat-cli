@@ -6,6 +6,8 @@ import type {
   WikiOut,
   WikiPageDetailOut,
   WikiPageListOut,
+  WikiPageShareOut,
+  WikiPageSharePublicOut,
   WikiRole,
   WikiVisibility,
 } from "@/lib/api/types";
@@ -206,5 +208,43 @@ export async function movePage(
     method: "POST",
     token,
     body,
+  });
+}
+
+// ── Wiki page shares ────────────────────────────────────────────────
+
+export async function createPageShare(
+  token: string,
+  pageId: string
+): Promise<WikiPageShareOut> {
+  return apiFetch<WikiPageShareOut>(`/wiki-pages/${pageId}/share`, {
+    method: "POST",
+    token,
+  });
+}
+
+export async function getPageShare(
+  token: string,
+  pageId: string
+): Promise<WikiPageShareOut> {
+  return apiFetch<WikiPageShareOut>(`/wiki-pages/${pageId}/share`, { token });
+}
+
+export async function revokePageShare(
+  token: string,
+  shareToken: string
+): Promise<void> {
+  await apiFetch<void>(`/wiki-page-shares/${shareToken}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+/** Public — no Authorization header. */
+export async function fetchPageSharePublic(
+  shareToken: string
+): Promise<WikiPageSharePublicOut> {
+  return apiFetch<WikiPageSharePublicOut>(`/wiki-page-shares/${shareToken}`, {
+    // token omitted on purpose — the route is public.
   });
 }

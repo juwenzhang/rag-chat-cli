@@ -1,8 +1,11 @@
 """Document (source material for RAG) model.
 
-``meta`` uses ``JSONB`` on Postgres for first-class indexability; on
-SQLite we fall back to the generic ``JSON`` type (no-op for us beyond
-serialisation — unit tests do not query into meta).
+``body`` stores plain markdown text, matching the wiki page model.
+The editor round-trips markdown directly; the same renderer + future
+RAG ingest pipeline can chunk it without a special-case JSON walk.
+
+``meta`` (JSONB) is kept for backward compat and future extensibility
+but content now lives in ``body``.
 """
 
 from __future__ import annotations
@@ -10,7 +13,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, String
+from sqlalchemy import JSON, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,5 +35,10 @@ class Document(UUIDMixin, TimestampMixin, Base):
         nullable=True,
     )
     source: Mapped[str] = mapped_column(String(512), nullable=False)
-    title: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    title: Mapped[str] = mapped_column(
+        String(256), nullable=False, server_default="Untitled"
+    )
+    body: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=""
+    )
     meta: Mapped[dict[str, Any]] = mapped_column(_JSONType, default=dict, nullable=False)

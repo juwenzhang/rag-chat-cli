@@ -1,9 +1,7 @@
-"""``/knowledge`` routes — document upload, reindex stub, search stub.
+"""``/knowledge`` routes — document CRUD + search stub.
 
-Chunking + embedding + real vector search ship in
-``implement-rag-retrieval-pgvector`` (Change 9). For now we store the raw
-content inside :attr:`Document.meta["content"]` so Change 9 has something to
-consume without another migration.
+Documents now store markdown in a dedicated ``body`` column (matching
+the wiki_pages model). ``meta`` JSONB is kept for future extensibility.
 """
 
 from __future__ import annotations
@@ -18,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db_session
 from api.schemas.common import OkResponse, Page
-from api.schemas.knowledge import DocumentIn, DocumentOut, SearchHitOut
+from api.schemas.knowledge import DocumentDetailOut, DocumentIn, DocumentOut, DocumentUpdateIn, SearchHitOut
 from db.models import Document, User
 
 __all__ = ["router"]
@@ -29,28 +27,25 @@ router = APIRouter(tags=["knowledge"])
 
 @router.post(
     "/documents",
-    response_model=DocumentOut,
+    response_model=DocumentDetailOut,
     status_code=status.HTTP_201_CREATED,
-    summary="Upload a document (stored verbatim, indexed lazily)",
+    summary="Create a document",
 )
 async def upload_document(
     body: DocumentIn,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-) -> DocumentOut:
-    # Raw content lives inside `meta.content` until Change 9 wires up
-    # chunking; keep the column NOT NULL in the meantime.
-    meta = {"content": body.content}
+) -> DocumentDetailOut:
     doc = Document(
         user_id=user.id,
         source=body.source,
         title=body.title,
-        meta=meta,
+        body=body.body,
     )
     session.add(doc)
     await session.commit()
     await session.refresh(doc)
-    return DocumentOut.model_validate(doc)
+    return DocumentDetailOut.model_validate(doc)
 
 
 @router.get(
@@ -92,19 +87,41 @@ async def list_documents(
 
 @router.get(
     "/documents/{document_id}",
-    response_model=DocumentOut,
-    summary="Fetch a single document",
+    response_model=DocumentDetailOut,
+    summary="Fetch a single document with body",
 )
 async def get_document(
     document_id: uuid.UUID,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-) -> DocumentOut:
+) -> DocumentDetailOut:
     doc = await session.get(Document, document_id)
     if doc is None or doc.user_id != user.id:
-        # 404 for both branches — don't leak existence to non-owners.
         raise HTTPException(status_code=404, detail="document not found")
-    return DocumentOut.model_validate(doc)
+    return DocumentDetailOut.model_validate(doc)
+
+
+@router.patch(
+    "/documents/{document_id}",
+    response_model=DocumentDetailOut,
+    summary="Update a document's title and/or body",
+)
+async def update_document(
+    document_id: uuid.UUID,
+    body: DocumentUpdateIn,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> DocumentDetailOut:
+    doc = await session.get(Document, document_id)
+    if doc is None or doc.user_id != user.id:
+        raise HTTPException(status_code=404, detail="document not found")
+    if body.title is not None:
+        doc.title = body.title
+    if body.body is not None:
+        doc.body = body.body
+    await session.commit()
+    await session.refresh(doc)
+    return DocumentDetailOut.model_validate(doc)
 
 
 @router.delete(

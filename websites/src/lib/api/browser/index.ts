@@ -33,6 +33,7 @@ import type {
   RunningModel,
   UserPreferenceBody,
 } from "@/lib/api/providers";
+import type { CreateDocumentBody, UpdateDocumentBody } from "@/lib/api/knowledge";
 import type { CreateShareBody } from "@/lib/api/shares";
 import type {
   AddWikiMemberBody,
@@ -47,6 +48,8 @@ import type {
   BookmarkDetailOut,
   BookmarkOut,
   ConnectivityTestOut,
+  DocumentDetailOut,
+  DocumentOut,
   MemberOut,
   MessageOut,
   ModelListItem,
@@ -60,6 +63,8 @@ import type {
   WikiOut,
   WikiPageDetailOut,
   WikiPageListOut,
+  WikiPageShareOut,
+  WikiPageSharePublicOut,
 } from "@/lib/api/types";
 
 /** Result of an action-only route (`DELETE`, revoke, …). */
@@ -280,6 +285,14 @@ const wikiPages = {
     bff<WikiPageDetailOut>(`/api/wiki-pages/${pageId}/duplicate`, {
       method: "POST",
     }),
+
+  createShare: (pageId: string) =>
+    bff<WikiPageShareOut>(`/api/wiki-pages/${pageId}/share`, {
+      method: "POST",
+    }),
+
+  getShare: (pageId: string) =>
+    bff<WikiPageShareOut>(`/api/wiki-pages/${pageId}/share`),
 };
 
 const bookmarks = {
@@ -294,6 +307,14 @@ const bookmarks = {
     bff<void>(`/api/bookmarks/${id}`, { method: "DELETE" }),
 };
 
+const wikiPageShares = {
+  getPublic: (token: string) =>
+    bff<WikiPageSharePublicOut>(`/api/wiki-page-shares/${token}`),
+
+  remove: (token: string) =>
+    bff<void>(`/api/wiki-page-shares/${token}`, { method: "DELETE" }),
+};
+
 const shares = {
   listMine: () => bff<ShareOut[]>("/api/shares"),
 
@@ -305,6 +326,25 @@ const shares = {
 
   remove: (token: string) =>
     bff<void>(`/api/shares/${token}`, { method: "DELETE" }),
+};
+
+const documents = {
+  list: () => bff<DocumentOut[]>("/api/documents"),
+
+  create: (body: CreateDocumentBody) =>
+    bff<DocumentDetailOut>("/api/documents", { method: "POST", body }),
+
+  get: (documentId: string) =>
+    bff<DocumentDetailOut>(`/api/documents/${documentId}`),
+
+  update: (documentId: string, body: UpdateDocumentBody) =>
+    bff<DocumentDetailOut>(`/api/documents/${documentId}`, {
+      method: "PATCH",
+      body,
+    }),
+
+  remove: (documentId: string) =>
+    bff<void>(`/api/documents/${documentId}`, { method: "DELETE" }),
 };
 
 const activeOrg = {
@@ -330,8 +370,10 @@ export const api = {
   orgs,
   wikis,
   wikiPages,
+  wikiPageShares,
   bookmarks,
   shares,
+  documents,
   activeOrg,
   auth,
 };

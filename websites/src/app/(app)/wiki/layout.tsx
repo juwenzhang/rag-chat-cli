@@ -2,9 +2,10 @@ import { redirect } from "next/navigation";
 
 import { WikiSidebar } from "@/components/wiki/wiki-sidebar";
 import { resolveActiveOrg } from "@/lib/active-org";
-import { orgApi, wikiApi } from "@/lib/api";
+import { knowledgeApi, orgApi, wikiApi } from "@/lib/api";
 import {
   ApiError,
+  type DocumentOut,
   type WikiOut,
   type WikiPageListOut,
 } from "@/lib/api/types";
@@ -69,6 +70,17 @@ export default async function WikiLayout({
     }
   }
 
+  let documents: DocumentOut[] = [];
+  try {
+    documents = await knowledgeApi.listDocuments(token);
+  } catch (err) {
+    if (err instanceof ApiError) {
+      console.warn("listDocuments failed:", err.message);
+    } else {
+      throw err;
+    }
+  }
+
   return (
     <div className="flex h-full">
       <WikiSidebar
@@ -76,6 +88,7 @@ export default async function WikiLayout({
         wikis={wikis}
         activeWiki={activeWiki}
         pages={pages}
+        documents={documents}
       />
       <div className="flex-1 overflow-hidden">{children}</div>
     </div>

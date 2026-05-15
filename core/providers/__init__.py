@@ -317,7 +317,17 @@ async def create_provider(
         enabled=True,
     )
     session.add(row)
-    await session.commit()
+    try:
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        # UNIQUE(user_id, name) violation → friendly 409.
+        if "uq_providers_user_id_name" in str(exc):
+            raise ValueError(
+                f"A provider named '{name}' already exists. "
+                "Use the existing card to update its API key."
+            ) from exc
+        raise
     await session.refresh(row)
     return row
 

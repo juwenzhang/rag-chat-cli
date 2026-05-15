@@ -3,6 +3,7 @@
 import {
   Check,
   Download,
+  Key,
   Loader2,
   RefreshCcw,
   Star,
@@ -21,6 +22,7 @@ import type { ProviderUpdateBody } from "@/lib/api/providers";
 import type { ModelListItem, ProviderOut } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
+import { EditApiKeyDialog } from "./edit-api-key-dialog";
 import { EditDescriptionDialog } from "./edit-description-dialog";
 import { ModelTable } from "./model-table";
 import { PullModelDialog } from "./pull-model-dialog";
@@ -44,6 +46,7 @@ export function ProviderCard({
   const [pullOpen, setPullOpen] = useState(false);
   const [modelToDelete, setModelToDelete] = useState<string | null>(null);
   const [modelToEdit, setModelToEdit] = useState<ModelListItem | null>(null);
+  const [apiKeyOpen, setApiKeyOpen] = useState(false);
 
   const fetchModels = useCallback(async () => {
     setModelsLoading(true);
@@ -126,15 +129,40 @@ export function ProviderCard({
           </div>
           <p className="truncate text-xs text-muted-foreground">
             {provider.base_url}
-            {provider.has_api_key && (
-              <span className="ml-2 inline-flex items-center gap-1 text-[10px]">
-                <Check className="size-3 text-success" />
-                API key stored
-              </span>
-            )}
+            <button
+              type="button"
+              onClick={() => setApiKeyOpen(true)}
+              className={cn(
+                "ml-2 inline-flex items-center gap-1 text-[10px] transition-colors hover:text-foreground",
+                provider.has_api_key ? "text-success" : "text-muted-foreground/60"
+              )}
+            >
+              {provider.has_api_key ? (
+                <>
+                  <Check className="size-3" />
+                  API key stored
+                </>
+              ) : (
+                <>
+                  <Key className="size-3" />
+                  Set API key
+                </>
+              )}
+            </button>
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <Button
+            variant={provider.has_api_key ? "ghost" : "outline"}
+            size="sm"
+            onClick={() => setApiKeyOpen(true)}
+            disabled={busy}
+          >
+            <Key className={cn("size-3.5", provider.has_api_key && "text-success")} />
+            <span className="hidden sm:inline">
+              {provider.has_api_key ? "API Key" : "Set API Key"}
+            </span>
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -213,6 +241,14 @@ export function ProviderCard({
         onSaved={() => {
           setModelToEdit(null);
           void fetchModels();
+        }}
+      />
+      <EditApiKeyDialog
+        provider={apiKeyOpen ? provider : null}
+        onOpenChange={(o) => !o && setApiKeyOpen(false)}
+        onSaved={() => {
+          setApiKeyOpen(false);
+          onChanged();
         }}
       />
       <CardContent className="pt-0">

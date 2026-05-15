@@ -16,7 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
     "DocumentIn",
+    "DocumentDetailOut",
     "DocumentOut",
+    "DocumentUpdateIn",
     "SearchHitOut",
 ]
 
@@ -24,9 +26,16 @@ __all__ = [
 class DocumentIn(BaseModel):
     """Request body for ``POST /knowledge/documents``."""
 
-    source: Annotated[str, Field(min_length=1, max_length=512)]
+    source: Annotated[str, Field(min_length=1, max_length=512)] = "user-upload"
+    title: Annotated[str, Field(max_length=256)] = "Untitled"
+    body: Annotated[str, Field(max_length=10_000_000)] = ""
+
+
+class DocumentUpdateIn(BaseModel):
+    """Request body for ``PATCH /knowledge/documents/{id}``."""
+
     title: Annotated[str, Field(max_length=256)] | None = None
-    content: Annotated[str, Field(min_length=1, max_length=10_000_000)]
+    body: Annotated[str, Field(max_length=10_000_000)] | None = None
 
 
 class DocumentOut(BaseModel):
@@ -36,8 +45,15 @@ class DocumentOut(BaseModel):
 
     id: uuid.UUID
     source: str
-    title: str | None
+    title: str
     created_at: datetime
+    updated_at: datetime
+
+
+class DocumentDetailOut(DocumentOut):
+    """Full document with body — for the editor view."""
+
+    body: str
 
 
 class SearchHitOut(BaseModel):

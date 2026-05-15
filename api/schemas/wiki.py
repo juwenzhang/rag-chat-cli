@@ -25,6 +25,8 @@ __all__ = [
     "WikiPageDetailOut",
     "WikiPageListOut",
     "WikiPageMoveIn",
+    "WikiPageShareOut",
+    "WikiPageSharePublicOut",
     "WikiPageUpdateIn",
     "WikiUpdateIn",
     "WikiVisibility",
@@ -155,3 +157,29 @@ class WikiPageMoveIn(BaseModel):
 
     target_wiki_id: uuid.UUID | None = None
     new_parent_id: uuid.UUID | None = None
+
+
+# ── Wiki page shares ────────────────────────────────────────────────
+
+
+class WikiPageShareOut(BaseModel):
+    """Owner-facing share record returned by POST/GET endpoints."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    token: str
+    page_id: uuid.UUID
+    created_at: datetime
+
+
+class WikiPageSharePublicOut(BaseModel):
+    """``GET /wiki-page-shares/{token}`` — readable by anyone."""
+
+    token: str
+    created_at: datetime
+    page_id: uuid.UUID
+    page_title: str
+    page_body: str
+    wiki_name: str
+    shared_by_display_name: str | None

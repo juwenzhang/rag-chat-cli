@@ -29,6 +29,7 @@ from db.models.user_memory import UserMemory
 from db.models.wiki import Wiki
 from db.models.wiki_member import WikiMember
 from db.models.wiki_page import WikiPage
+from db.models.wiki_page_share import WikiPageShare
 
 __all__ = [
     "ChatSession",
@@ -48,4 +49,5 @@ __all__ = [
     "Wiki",
     "WikiMember",
     "WikiPage",
+    "WikiPageShare",
 ]

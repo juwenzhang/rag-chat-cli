@@ -32,9 +32,10 @@ interface Props {
   sessionId: string;
   initialMessages: MessageOut[];
   sessionMeta?: SessionMeta | null;
+  sessionProviderName?: string | null;
 }
 
-export function ChatView({ sessionId, initialMessages, sessionMeta }: Props) {
+export function ChatView({ sessionId, initialMessages, sessionMeta, sessionProviderName }: Props) {
   const [input, setInput] = useState("");
   const [useRag, setUseRag] = useState(true);
   const [providerId, setProviderId] = useState<string | null>(
@@ -74,6 +75,8 @@ export function ChatView({ sessionId, initialMessages, sessionMeta }: Props) {
     sessionId,
     initialMessages,
     useRag,
+    sessionModel: sessionMeta?.model,
+    sessionProvider: sessionProviderName,
     onTurnStart: useCallback(() => {
       stickToBottomRef.current = true;
     }, []),

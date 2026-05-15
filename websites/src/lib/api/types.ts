@@ -86,9 +86,15 @@ export interface ToolCallOut {
 export interface DocumentOut {
   id: string;
   title: string;
-  source?: string | null;
-  chunk_count: number;
+  source: string;
   created_at: string;
+  updated_at: string;
+}
+
+/** Full document with body for editing. */
+export interface DocumentDetailOut extends DocumentOut {
+  /** Markdown body. */
+  body: string;
 }
 
 export interface KnowledgeHit {
@@ -259,6 +265,27 @@ export interface WikiPageDetailOut extends WikiPageListOut {
   /** Markdown source. */
   body: string;
   created_by_user_id: string;
+}
+
+// ── Wiki page shares ────────────────────────────────────────────────
+
+/** Owner-facing wiki page share record. */
+export interface WikiPageShareOut {
+  id: string;
+  token: string;
+  page_id: string;
+  created_at: string;
+}
+
+/** ``GET /wiki-page-shares/{token}`` — public, no auth required. */
+export interface WikiPageSharePublicOut {
+  token: string;
+  created_at: string;
+  page_id: string;
+  page_title: string;
+  page_body: string;
+  wiki_name: string;
+  shared_by_display_name: string | null;
 }
 
 /** A failed API response with a structured payload. */

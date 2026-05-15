@@ -3,18 +3,16 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { DocumentTableClient } from "@/components/wiki/document-table-client";
 import { resolveActiveOrg } from "@/lib/active-org";
-import { orgApi, wikiApi } from "@/lib/api";
+import { knowledgeApi, orgApi, wikiApi } from "@/lib/api";
 import { getAccessToken, getCurrentUser } from "@/lib/session";
 import { cn, formatRelative } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 /**
- * /wiki — workspace's wiki list.
- *
- * No auto-jump anywhere. The user always sees the list and clicks the
- * wiki they want. Empty state explicitly invites them to create one.
+ * /wiki — workspace's wiki list + document library.
  */
 export default async function WikiIndexPage() {
   const user = await getCurrentUser();
@@ -26,6 +24,7 @@ export default async function WikiIndexPage() {
   const activeOrg = await resolveActiveOrg(orgs);
   if (!activeOrg) redirect("/orgs");
   const wikis = await wikiApi.listWikis(token, activeOrg.id);
+  const documents = await knowledgeApi.listDocuments(token);
   const canCreate = activeOrg.role !== "viewer";
 
   return (
@@ -96,6 +95,11 @@ export default async function WikiIndexPage() {
           ))}
         </ul>
       )}
+
+      {/* ── Document Library ─────────────────────────────────── */}
+      <section className="mt-10">
+        <DocumentTableClient documents={documents} />
+      </section>
     </div>
   );
 }

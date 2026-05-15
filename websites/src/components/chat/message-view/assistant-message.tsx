@@ -45,7 +45,11 @@ export function AssistantMessage({
           <Markdown>{message.content}</Markdown>
         ) : message.streaming ? (
           <ThinkingIndicator />
-        ) : null}
+        ) : message.error ? null : (
+          <p className="text-sm italic text-muted-foreground">
+            Response stopped.
+          </p>
+        )}
 
         {message.streaming && message.content && (
           <span className="-mt-1 text-xs text-muted-foreground">
@@ -56,7 +60,7 @@ export function AssistantMessage({
         {message.error && <MessageErrorBlock error={message.error} />}
 
         {!message.streaming && message.content && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 opacity-0 transition-opacity group-hover:opacity-100">
             <ActionRow
               text={message.content}
               messageId={canPersistAction ? message.id : undefined}

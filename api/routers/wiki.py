@@ -22,6 +22,8 @@ Permission resolution:
 from __future__ import annotations
 
 import re
+import secrets
+import string
 import uuid
 from typing import Literal
 
@@ -42,10 +44,12 @@ from api.schemas.wiki import (
     WikiPageDetailOut,
     WikiPageListOut,
     WikiPageMoveIn,
+    WikiPageShareOut,
+    WikiPageSharePublicOut,
     WikiPageUpdateIn,
     WikiUpdateIn,
 )
-from db.models import Org, User, Wiki, WikiMember, WikiPage
+from db.models import Org, User, Wiki, WikiMember, WikiPage, WikiPageShare
 
 __all__ = ["router"]
 
@@ -734,3 +738,128 @@ async def move_page(
     await session.commit()
     await session.refresh(page)
     return WikiPageDetailOut.model_validate(page)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Wiki page shares — public links to individual pages
+# ─────────────────────────────────────────────────────────────────────
+
+_TOKEN_ALPHABET = string.ascii_letters + string.digits
+_TOKEN_LEN = 16
+
+
+def _new_token() -> str:
+    return "".join(secrets.choice(_TOKEN_ALPHABET) for _ in range(_TOKEN_LEN))
+
+
+@router.post(
+    "/wiki-pages/{page_id}/share",
+    response_model=WikiPageShareOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Share a wiki page (get-or-create by (user, page_id))",
+)
+async def create_page_share(
+    page_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> WikiPageShareOut:
+    page, _wiki, _role = await _page_with_access(
+        session, page_id, user.id, "viewer"
+    )
+
+    existing = await session.scalar(
+        select(WikiPageShare).where(
+            WikiPageShare.user_id == user.id,
+            WikiPageShare.page_id == page.id,
+        )
+    )
+    if existing is not None:
+        return WikiPageShareOut.model_validate(existing)
+
+    row = WikiPageShare(
+        token=_new_token(),
+        user_id=user.id,
+        page_id=page.id,
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return WikiPageShareOut.model_validate(row)
+
+
+@router.get(
+    "/wiki-pages/{page_id}/share",
+    response_model=WikiPageShareOut,
+    summary="Get the current user's share for this page (if any)",
+)
+async def get_page_share(
+    page_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> WikiPageShareOut:
+    await _page_with_access(session, page_id, user.id, "viewer")
+
+    row = await session.scalar(
+        select(WikiPageShare).where(
+            WikiPageShare.user_id == user.id,
+            WikiPageShare.page_id == page_id,
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="no share for this page")
+    return WikiPageShareOut.model_validate(row)
+
+
+@router.delete(
+    "/wiki-page-shares/{token}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke a wiki page share by token (owner only)",
+)
+async def revoke_page_share(
+    token: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    row = await session.scalar(
+        select(WikiPageShare).where(WikiPageShare.token == token)
+    )
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status_code=404, detail="share not found")
+    await session.delete(row)
+    await session.commit()
+
+
+@router.get(
+    "/wiki-page-shares/{token}",
+    response_model=WikiPageSharePublicOut,
+    summary="Public — fetch a shared wiki page by token (no auth required)",
+)
+async def public_page_share(
+    token: str,
+    session: AsyncSession = Depends(get_db_session),
+) -> WikiPageSharePublicOut:
+    row = await session.scalar(
+        select(WikiPageShare).where(WikiPageShare.token == token)
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="share not found")
+
+    page = await session.get(WikiPage, row.page_id)
+    if page is None:
+        raise HTTPException(status_code=404, detail="share content unavailable")
+
+    wiki = await session.get(Wiki, page.wiki_id)
+    wiki_name = wiki.name if wiki else "Unknown"
+
+    sharer = await session.get(User, row.user_id)
+    shared_by = sharer.display_name if sharer else None
+
+    return WikiPageSharePublicOut(
+        token=row.token,
+        created_at=row.created_at,
+        page_id=row.page_id,
+        page_title=page.title,
+        page_body=page.body,
+        wiki_name=wiki_name,
+        shared_by_display_name=shared_by,
+    )

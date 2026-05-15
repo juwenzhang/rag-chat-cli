@@ -153,6 +153,8 @@ async def create_provider_route(
         )
     except ProviderValidationError as exc:
         raise _validation_400(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _row_to_out(row)
 
 

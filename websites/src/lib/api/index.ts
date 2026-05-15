@@ -13,6 +13,7 @@ export type {
   BookmarkDetailOut,
   BookmarkOut,
   ConnectivityTestOut,
+  DocumentDetailOut,
   DocumentOut,
   KnowledgeHit,
   MemberOut,
@@ -35,6 +36,8 @@ export type {
   WikiOut,
   WikiPageDetailOut,
   WikiPageListOut,
+  WikiPageShareOut,
+  WikiPageSharePublicOut,
   WikiRole,
   WikiVisibility,
 } from "@/lib/api/types";

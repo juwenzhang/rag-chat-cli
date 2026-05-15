@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { ChatView } from "@/components/chat/chat-view";
-import { chatApi } from "@/lib/api";
+import { chatApi, providerApi } from "@/lib/api";
 import { ApiError } from "@/lib/api/types";
 import { requireAccessToken } from "@/lib/session";
 
@@ -31,11 +31,24 @@ export default async function ChatSessionPage({
     /* non-critical */
   }
 
+  // Resolve the provider name for historical messages.
+  let providerName: string | null = null;
+  if (meta?.provider_id) {
+    try {
+      const providers = await providerApi.listProviders(token);
+      const match = providers.find((p) => p.id === meta!.provider_id);
+      if (match) providerName = match.name;
+    } catch {
+      /* non-critical */
+    }
+  }
+
   return (
     <ChatView
       sessionId={sessionId}
       initialMessages={messages}
       sessionMeta={meta}
+      sessionProviderName={providerName}
     />
   );
 }

@@ -4,7 +4,7 @@ import { resolveActiveOrg } from "@/lib/active-org";
 import { orgApi } from "@/lib/api";
 import { getAccessToken, getCurrentUser } from "@/lib/session";
 
-import { NewWikiClient } from "./new-wiki-client";
+import { NewWikiClient } from "@/components/wiki/new-wiki-client";
 
 export const dynamic = "force-dynamic";
 

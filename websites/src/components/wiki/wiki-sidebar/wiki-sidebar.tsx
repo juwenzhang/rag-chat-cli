@@ -5,13 +5,14 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ChevronsUpDown,
+  FileText,
   Lock,
   Plus,
   Search,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -34,7 +35,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/browser";
-import type { OrgOut, WikiOut, WikiPageListOut } from "@/lib/api/types";
+import type { DocumentOut, OrgOut, WikiOut, WikiPageListOut } from "@/lib/api/types";
 
 import { CreateWikiDialog } from "./create-wiki-dialog";
 import { PageRow } from "./page-row";
@@ -46,28 +47,32 @@ interface Props {
   wikis: WikiOut[];
   activeWiki: WikiOut | null;
   pages: WikiPageListOut[];
+  documents: DocumentOut[];
 }
 
 /** Two-level wiki sidebar — workspace/wiki switcher above the page tree. */
-export function WikiSidebar({ activeOrg, wikis, activeWiki, pages }: Props) {
+export function WikiSidebar({ activeOrg, wikis, activeWiki, pages, documents }: Props) {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const activePageId =
     typeof params.pageId === "string" ? params.pageId : null;
   const urlWikiId =
     typeof params.wikiId === "string" ? params.wikiId : null;
 
-  // This sidebar lives in `wiki/layout.tsx`, which the App Router keeps
-  // mounted across navigations within `/wiki/*` — so `activeWiki` /
-  // `pages` go stale the moment you switch wikis client-side. When the
-  // URL's wiki diverges from the layout-provided prop, force a refresh
-  // so the layout re-runs and hands down the correct tree. Guarded on
-  // `wikis` membership so an unresolvable id can't spin a refresh loop.
+  // Detect when the URL says "no wiki" (e.g. /wiki or /wiki/documents)
+  // but the server-provided activeWiki is stale. Force a refresh so
+  // the layout re-runs and clears activeWiki.
+  const isAtRoot = pathname === "/wiki" || pathname.startsWith("/wiki/documents");
   useEffect(() => {
+    if (isAtRoot && activeWiki !== null) {
+      router.refresh();
+      return;
+    }
     if (!urlWikiId || urlWikiId === activeWiki?.id) return;
     if (!wikis.some((w) => w.id === urlWikiId)) return;
     router.refresh();
-  }, [urlWikiId, activeWiki?.id, wikis, router]);
+  }, [urlWikiId, activeWiki?.id, wikis, router, isAtRoot, activeWiki]);
 
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -85,6 +90,10 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages }: Props) {
   const [titleOverrides, setTitleOverrides] = useState<
     Record<string, string>
   >({});
+  // Same pattern for document titles.
+  const [docTitleOverrides, setDocTitleOverrides] = useState<
+    Record<string, string>
+  >({});
   useEffect(() => {
     const onTitle = (e: Event) => {
       const detail = (e as CustomEvent<{ pageId: string; title: string }>)
@@ -92,8 +101,18 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages }: Props) {
       if (!detail?.pageId) return;
       setTitleOverrides((prev) => ({ ...prev, [detail.pageId]: detail.title }));
     };
+    const onDocTitle = (e: Event) => {
+      const detail = (e as CustomEvent<{ docId: string; title: string }>)
+        .detail;
+      if (!detail?.docId) return;
+      setDocTitleOverrides((prev) => ({ ...prev, [detail.docId]: detail.title }));
+    };
     window.addEventListener("wiki:page-title", onTitle);
-    return () => window.removeEventListener("wiki:page-title", onTitle);
+    window.addEventListener("doc:title", onDocTitle);
+    return () => {
+      window.removeEventListener("wiki:page-title", onTitle);
+      window.removeEventListener("doc:title", onDocTitle);
+    };
   }, []);
 
   const canEditWiki = activeWiki && activeWiki.role !== "viewer";
@@ -365,33 +384,127 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages }: Props) {
           </ScrollArea>
         </>
       ) : (
-        <div className="flex-1 px-3 py-4">
-          <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Wikis
-          </p>
-          {wikis.length === 0 ? (
-            <p className="py-6 text-xs text-muted-foreground">
-              No wikis yet.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-0.5">
-              {wikis.map((w) => (
-                <li key={w.id}>
-                  <Link
-                    href={`/wiki/${w.id}`}
-                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent"
-                  >
-                    <Book className="size-3.5 text-muted-foreground" />
-                    <span className="flex-1 truncate">{w.name}</span>
-                    {w.visibility === "private" && (
-                      <Lock className="size-3 text-muted-foreground" />
+        <ScrollArea className="flex-1">
+          <div className="px-3 py-4">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Wikis
+              </p>
+              {orgCanCreateWiki && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setCreateWikiOpen(true)}
+                  aria-label="New wiki"
+                  className="size-5"
+                >
+                  <Plus className="size-3" />
+                </Button>
+              )}
+            </div>
+            {wikis.length === 0 ? (
+              <p className="py-6 text-xs text-muted-foreground">
+                No wikis yet.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-0.5">
+                {wikis.map((w) => (
+                  <li key={w.id} className="group flex items-center">
+                    <Link
+                      href={`/wiki/${w.id}`}
+                      className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent"
+                    >
+                      <Book className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="flex-1 truncate">{w.name}</span>
+                      {w.visibility === "private" && (
+                        <Lock className="size-3 shrink-0 text-muted-foreground" />
+                      )}
+                    </Link>
+                    {w.role !== "viewer" && (
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="size-6 shrink-0 opacity-0 group-hover:opacity-100"
+                              onClick={async () => {
+                                try {
+                                  const page = await api.wikis.createPage(w.id, {});
+                                  router.push(`/wiki/${w.id}/p/${page.id}`);
+                                  router.refresh();
+                                } catch {
+                                  toast.error("Failed to create page");
+                                }
+                              }}
+                              aria-label="New page"
+                            >
+                              <Plus className="size-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">New page in {w.name}</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     )}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="my-3 border-t border-border" />
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Document Library
+              </p>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-5"
+                onClick={async () => {
+                  try {
+                    const doc = await api.documents.create({});
+                    router.push(`/wiki/documents/${doc.id}`);
+                    router.refresh();
+                  } catch {
+                    toast.error("Failed to create document");
+                  }
+                }}
+                aria-label="New document"
+              >
+                <Plus className="size-3" />
+              </Button>
+            </div>
+            {documents.length === 0 ? (
+              <p className="py-4 text-center text-xs text-muted-foreground">
+                No documents yet.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-0.5">
+                {documents.slice(0, 10).map((d) => (
+                  <li key={d.id}>
+                    <Link
+                      href={`/wiki/documents/${d.id}`}
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent"
+                    >
+                      <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="flex-1 truncate">{docTitleOverrides[d.id] ?? (d.title || "Untitled")}</span>
+                    </Link>
+                  </li>
+                ))}
+                {documents.length > 10 && (
+                  <li>
+                    <Link
+                      href="/wiki/documents"
+                      className="px-2 py-1 text-xs text-primary hover:underline"
+                    >
+                      View all {documents.length} documents…
+                    </Link>
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
+        </ScrollArea>
       )}
 
       <ConfirmDialog

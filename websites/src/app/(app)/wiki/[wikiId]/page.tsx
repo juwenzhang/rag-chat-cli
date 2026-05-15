@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { wikiApi } from "@/lib/api";
 import { ApiError } from "@/lib/api/types";
 import { getAccessToken, getCurrentUser } from "@/lib/session";
-import { cn, formatRelative } from "@/lib/utils";
 
 import { NewPageButton } from "./new-page-button";
+import { PageTableClient } from "./page-table-client";
 
 export const dynamic = "force-dynamic";
 
@@ -94,61 +94,8 @@ export default async function WikiHomePage({ params }: Props) {
           </p>
         </div>
       ) : (
-        <PageTable wikiId={wiki.id} pages={pages} />
+        <PageTableClient wikiId={wiki.id} pages={pages} canEdit={canEdit} />
       )}
-    </div>
-  );
-}
-
-function PageTable({
-  wikiId,
-  pages,
-}: {
-  wikiId: string;
-  pages: Awaited<ReturnType<typeof wikiApi.listPages>>;
-}) {
-  return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      <table className="w-full text-sm">
-        <thead className="border-b border-border bg-muted/30">
-          <tr className="text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            <th className="px-4 py-2.5">Title</th>
-            <th className="hidden px-4 py-2.5 sm:table-cell w-40">
-              Last updated
-            </th>
-            <th className="hidden px-4 py-2.5 md:table-cell w-32">Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          {pages.map((p, i) => (
-            <tr
-              key={p.id}
-              className={cn(
-                "transition-colors hover:bg-accent/50",
-                i !== pages.length - 1 && "border-b border-border/60"
-              )}
-            >
-              <td className="px-4 py-0">
-                <Link
-                  href={`/wiki/${wikiId}/p/${p.id}`}
-                  className="flex items-center gap-2 py-3 text-foreground"
-                >
-                  <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-medium">
-                    {p.title || "Untitled"}
-                  </span>
-                </Link>
-              </td>
-              <td className="hidden px-4 py-3 text-xs text-muted-foreground sm:table-cell">
-                {formatRelative(p.updated_at)}
-              </td>
-              <td className="hidden px-4 py-3 text-xs text-muted-foreground md:table-cell">
-                {formatRelative(p.created_at)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
