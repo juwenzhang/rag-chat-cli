@@ -158,6 +158,20 @@ postgresql://USER:PASSWORD@HOST/DB?sslmode=require
 postgresql+asyncpg://USER:PASSWORD@HOST/DB?sslmode=require
 ```
 
+如果使用 Neon pooler 地址（host 中包含 `-pooler`），建议加上：
+
+```text
+prepared_statement_cache_size=0
+```
+
+最终类似：
+
+```text
+postgresql+asyncpg://USER:PASSWORD@HOST/DB?sslmode=require&prepared_statement_cache_size=0
+```
+
+项目会在运行时把 `sslmode=require` 转换为 asyncpg 的 SSL connect args，因此部署平台里可以保留 Neon 默认的 `sslmode=require`。
+
 6. 在 Neon SQL Editor 执行：
 
 ```sql
