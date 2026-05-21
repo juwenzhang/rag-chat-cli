@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: rag-ai-websites
+    runtime: docker
+    plan: free
+    rootDir: websites
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_COOKIE_NAME
+        value: rag_session
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: RAG_API_URL
+        sync: false
+      - key: NEXT_PUBLIC_APP_NAME
+        value: RAG-AI
