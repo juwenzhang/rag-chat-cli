@@ -1,5 +1,5 @@
 import { providerApi } from "@/lib/api";
-import type { ProviderUpdateBody } from "@/lib/api/providers";
+import type { ProviderUpdateBody } from "@/lib/api/server/providers";
 
 import { readJson, withAuth } from "../../_bff";
 

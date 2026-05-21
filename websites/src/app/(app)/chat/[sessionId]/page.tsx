@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 
-import { ChatView } from "@/components/chat/chat-view";
+import { ChatView } from "@/features/chat/components/chat-view";
 import { chatApi, providerApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
-import { requireAccessToken } from "@/lib/session";
+import { ApiError } from "@/lib/api/shared/types";
+import { requireAccessToken } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 

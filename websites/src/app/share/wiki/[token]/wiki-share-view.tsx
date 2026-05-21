@@ -3,9 +3,9 @@
 import { Book, ExternalLink } from "lucide-react";
 import Link from "next/link";
 
-import { Markdown } from "@/components/chat/markdown";
+import { Markdown } from "@/features/chat/components/markdown";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import type { WikiPageSharePublicOut } from "@/lib/api/types";
+import type { WikiPageSharePublicOut } from "@/lib/api/shared/types";
 import { formatRelative } from "@/lib/utils";
 
 interface Props {

@@ -1,5 +1,5 @@
 import { chatApi } from "@/lib/api";
-import type { UpdateSessionBody } from "@/lib/api/chat";
+import type { UpdateSessionBody } from "@/lib/api/server/chat";
 
 import { readJson, withAuth } from "../../../_bff";
 

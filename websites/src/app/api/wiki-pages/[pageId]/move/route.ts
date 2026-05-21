@@ -1,5 +1,5 @@
 import { wikiApi } from "@/lib/api";
-import type { MovePageBody } from "@/lib/api/wiki";
+import type { MovePageBody } from "@/lib/api/server/wiki";
 
 import { readJson, withAuth } from "../../../_bff";
 

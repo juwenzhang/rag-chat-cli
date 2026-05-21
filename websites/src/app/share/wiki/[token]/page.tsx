@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { wikiApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
+import { ApiError } from "@/lib/api/shared/types";
 
 import { WikiShareView } from "./wiki-share-view";
 

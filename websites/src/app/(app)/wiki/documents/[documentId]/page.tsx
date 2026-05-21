@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 
-import { DocumentEditorClient } from "@/components/wiki/document-editor-client";
+import { DocumentEditorClient } from "@/features/wiki/components/document-editor-client";
 import { knowledgeApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
-import { getAccessToken, getCurrentUser } from "@/lib/session";
+import { ApiError } from "@/lib/api/shared/types";
+import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 

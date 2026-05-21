@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 
-import { BookmarksPageClient } from "@/components/bookmarks/bookmarks-page-client";
+import { BookmarksPageClient } from "@/features/bookmarks/components/bookmarks-page-client";
 import { bookmarkApi } from "@/lib/api";
-import { getAccessToken, getCurrentUser } from "@/lib/session";
+import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 

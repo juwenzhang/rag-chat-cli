@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 
-import { WikiEditorClient } from "@/components/wiki/wiki-editor-client";
+import { WikiEditorClient } from "@/features/wiki/components/wiki-editor";
 import { orgApi, wikiApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
-import { getAccessToken, getCurrentUser } from "@/lib/session";
+import { ApiError } from "@/lib/api/shared/types";
+import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 

@@ -19,10 +19,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { WikiPageShareDialog } from "@/components/wiki/wiki-page-share-dialog";
-import { PagePreviewHover } from "@/components/wiki/page-preview-hover";
+import { WikiPageShareDialog } from "@/features/wiki/components/wiki-page-share-dialog";
+import { PagePreviewHover } from "@/features/wiki/components/page-preview-hover";
 import { api } from "@/lib/api/browser";
-import type { WikiPageListOut } from "@/lib/api/types";
+import type { WikiPageListOut } from "@/lib/api/shared/types";
 import { cn, formatRelative } from "@/lib/utils";
 
 interface Props {

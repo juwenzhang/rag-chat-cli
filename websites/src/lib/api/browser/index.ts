@@ -13,28 +13,28 @@
  */
 
 import { bff, bffStream } from "@/lib/api/browser/client";
-import type { CreateBookmarkBody } from "@/lib/api/bookmarks";
+import type { CreateBookmarkBody } from "@/lib/api/server/bookmarks";
 import type {
   ChatStreamParams,
   RegenerateStreamParams,
   UpdateSessionBody,
-} from "@/lib/api/chat";
+} from "@/lib/api/server/chat";
 import type {
   AddMemberBody,
   CreateOrgBody,
   TransferOwnershipBody,
   UpdateMemberRoleBody,
   UpdateOrgBody,
-} from "@/lib/api/orgs";
+} from "@/lib/api/server/orgs";
 import type {
   ConnectivityTestBody,
   ProviderCreateBody,
   ProviderUpdateBody,
   RunningModel,
   UserPreferenceBody,
-} from "@/lib/api/providers";
-import type { CreateDocumentBody, UpdateDocumentBody } from "@/lib/api/knowledge";
-import type { CreateShareBody } from "@/lib/api/shares";
+} from "@/lib/api/server/providers";
+import type { CreateDocumentBody, UpdateDocumentBody } from "@/lib/api/server/knowledge";
+import type { CreateShareBody } from "@/lib/api/server/shares";
 import type {
   AddWikiMemberBody,
   CreateWikiBody,
@@ -43,7 +43,7 @@ import type {
   UpdateWikiBody,
   UpdateWikiMemberRoleBody,
   UpdateWikiPageBody,
-} from "@/lib/api/wiki";
+} from "@/lib/api/server/wiki";
 import type {
   BookmarkDetailOut,
   BookmarkOut,
@@ -65,7 +65,7 @@ import type {
   WikiPageListOut,
   WikiPageShareOut,
   WikiPageSharePublicOut,
-} from "@/lib/api/types";
+} from "@/lib/api/shared/types";
 
 /** Result of an action-only route (`DELETE`, revoke, …). */
 type Ok = { ok: boolean };

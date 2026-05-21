@@ -1,5 +1,5 @@
 import { orgApi } from "@/lib/api";
-import type { UpdateOrgBody } from "@/lib/api/orgs";
+import type { UpdateOrgBody } from "@/lib/api/server/orgs";
 
 import { readJson, withAuth } from "../../_bff";
 

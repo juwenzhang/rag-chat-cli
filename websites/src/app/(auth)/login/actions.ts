@@ -3,8 +3,8 @@
 import { redirect } from "next/navigation";
 
 import { authApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
-import { setSession } from "@/lib/session";
+import { ApiError } from "@/lib/api/shared/types";
+import { setSession } from "@/lib/auth/session.server";
 
 export type LoginState = {
   error?: string;

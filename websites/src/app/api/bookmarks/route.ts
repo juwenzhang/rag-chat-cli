@@ -1,5 +1,5 @@
 import { bookmarkApi } from "@/lib/api";
-import type { CreateBookmarkBody } from "@/lib/api/bookmarks";
+import type { CreateBookmarkBody } from "@/lib/api/server/bookmarks";
 
 import { readJson, withAuth } from "../_bff";
 

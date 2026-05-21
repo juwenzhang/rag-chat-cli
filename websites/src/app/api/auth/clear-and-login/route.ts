@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { clearSession } from "@/lib/session";
+import { clearSession } from "@/lib/auth/session.server";
 
 /**
  * Safe escape hatch for Server Components that detect an invalid session.

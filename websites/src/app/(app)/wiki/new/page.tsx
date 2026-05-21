@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 
-import { resolveActiveOrg } from "@/lib/active-org";
+import { resolveActiveOrg } from "@/lib/org/active-org.server";
 import { orgApi } from "@/lib/api";
-import { getAccessToken, getCurrentUser } from "@/lib/session";
+import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
 
-import { NewWikiClient } from "@/components/wiki/new-wiki-client";
+import { NewWikiClient } from "@/features/wiki/components/new-wiki-client";
 
 export const dynamic = "force-dynamic";
 

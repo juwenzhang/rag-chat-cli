@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 
 import { chatApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
-import { requireAccessToken } from "@/lib/session";
+import { ApiError } from "@/lib/api/shared/types";
+import { requireAccessToken } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 
