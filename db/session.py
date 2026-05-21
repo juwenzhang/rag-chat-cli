@@ -35,6 +35,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from db.url import asyncpg_connect_args, normalize_database_url
+
 __all__ = [
     "current_engine",
     "current_session_factory",
@@ -75,18 +77,20 @@ def init_engine(url: str | None = None, *, echo: bool | None = None) -> AsyncEng
     if _engine is not None:
         return _engine
 
+    engine_url = normalize_database_url(resolved_url)
     if _is_sqlite(resolved_url):
         # SQLite does not support pool_size / pool_recycle; skip them to avoid
         # warnings. `aiosqlite` provides its own single-writer semantics.
-        _engine = create_async_engine(resolved_url, echo=resolved_echo, future=True)
+        _engine = create_async_engine(engine_url, echo=resolved_echo, future=True)
     else:
         _engine = create_async_engine(
-            resolved_url,
+            engine_url,
             echo=resolved_echo,
             future=True,
             pool_size=settings.db.pool_size,
             pool_recycle=settings.db.pool_recycle,
             pool_pre_ping=True,
+            connect_args=asyncpg_connect_args(resolved_url),
         )
 
     _SessionLocal = async_sessionmaker(_engine, expire_on_commit=False, class_=AsyncSession)

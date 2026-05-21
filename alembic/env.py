@@ -36,6 +36,7 @@ if config.config_file_name is not None:
 # Register all ORM models so Base.metadata is populated.
 import db.models  # noqa: E402, F401  — side-effect import
 from db.base import Base  # noqa: E402
+from db.url import asyncpg_connect_args, normalize_database_url  # noqa: E402
 from settings import settings  # noqa: E402
 
 target_metadata = Base.metadata
@@ -90,13 +91,14 @@ def _do_run_migrations(connection: Connection) -> None:
 async def _run_async_migrations() -> None:
     url = _db_url()
     section = config.get_section(config.config_ini_section, {})
-    section["sqlalchemy.url"] = url
+    section["sqlalchemy.url"] = normalize_database_url(url)
 
     connectable: AsyncEngine = async_engine_from_config(
         section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
         future=True,
+        connect_args=asyncpg_connect_args(url),
     )
 
     async with connectable.connect() as connection:
@@ -109,7 +111,7 @@ def _run_sync_migrations() -> None:
     """SQLite (or other sync drivers) path — no asyncio needed."""
     url = _db_url()
     section = config.get_section(config.config_ini_section, {})
-    section["sqlalchemy.url"] = url
+    section["sqlalchemy.url"] = normalize_database_url(url)
 
     connectable = engine_from_config(
         section,
