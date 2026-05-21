@@ -1,0 +1,57 @@
+services:
+  - type: web
+    name: rag-ai-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: LOG_LEVEL
+        value: INFO
+      - key: RUN_MIGRATIONS
+        value: "true"
+      - key: REQUEST_ID_HEADER
+        value: X-Request-ID
+      - key: RATE_LIMIT_PER_MIN
+        value: "60"
+      - key: RAG_ENABLED
+        value: "true"
+      - key: RAG_TOP_K
+        value: "4"
+      - key: RAG_MIN_SCORE
+        value: "0.25"
+      - key: RAG_EMBED_DIM
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: PROVIDER_ENCRYPTION_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: APP_CORS_ORIGINS
+        sync: false
+      - key: OPENAI_BASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_CHAT_MODEL
+        sync: false
+      - key: OPENAI_EMBED_MODEL
+        sync: false
+      - key: OPENAI_TIMEOUT
+        value: "120"
+      - key: OLLAMA_BASE_URL
+        sync: false
+      - key: OLLAMA_CHAT_MODEL
+        sync: false
+      - key: OLLAMA_EMBED_MODEL
+        sync: false
+      - key: OLLAMA_TIMEOUT
+        value: "120"
+      - key: OLLAMA_API_KEY
+        sync: false
