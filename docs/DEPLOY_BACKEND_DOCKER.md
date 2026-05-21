@@ -191,6 +191,42 @@ CREATE EXTENSION IF NOT EXISTS vector;
 rediss://...
 ```
 
+## GitHub Actions 自动同步 Hugging Face
+
+已提供：
+
+```text
+.github/workflows/deploy-hf-backend.yml
+```
+
+触发条件：
+
+```text
+push 到 master
+手动 workflow_dispatch
+```
+
+GitHub 仓库需要配置 secret：
+
+```text
+Settings -> Secrets and variables -> Actions -> New repository secret
+HF_TOKEN=<Hugging Face write token>
+```
+
+Token 创建位置：
+
+```text
+https://huggingface.co/settings/tokens
+```
+
+权限需要 `Write`。workflow 会执行：
+
+```bash
+git push https://huggingface.co/spaces/luhanxin/rag-chat-backend HEAD:main
+```
+
+注意：当前 workflow 使用普通 push，不强制覆盖 HF Space 历史。合入 `master` 时建议使用 merge commit，不要 squash 掉包含 HF initial commit 的历史；如果未来确定要把 HF Space 当纯部署镜像，可再改为 `--force-with-lease`。
+
 ## 本地验证 Docker
 
 ```bash

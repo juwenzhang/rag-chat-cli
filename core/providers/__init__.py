@@ -434,7 +434,7 @@ async def test_connectivity(
             "detail": f"HTTP {r.status_code} from {path}: {r.text[:200]}",
         }
     except httpx.HTTPError as exc:
-        return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        return {"ok": False, "detail": f"{exc.__class__.__name__}: {exc}"}
 
 
 async def list_models(
@@ -518,24 +518,23 @@ async def pull_ollama_model(
     headers = {"Content-Type": "application/json", **_auth_headers(api_key)}
     timeout = httpx.Timeout(None, connect=10.0)
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream(
-                "POST", url, json=payload, headers=headers
-            ) as resp:
-                if resp.status_code >= 400:
-                    body = (await resp.aread()).decode("utf-8", errors="replace")
-                    yield {"error": f"HTTP {resp.status_code}: {body[:300]}"}
-                    return
-                async for line in resp.aiter_lines():
-                    if not line.strip():
-                        continue
-                    try:
-                        yield json.loads(line)
-                    except json.JSONDecodeError:
-                        logger.warning("ollama pull: unparseable line %r", line[:120])
-                        continue
+        async with httpx.AsyncClient(timeout=timeout) as client, client.stream(
+            "POST", url, json=payload, headers=headers
+        ) as resp:
+            if resp.status_code >= 400:
+                body = (await resp.aread()).decode("utf-8", errors="replace")
+                yield {"error": f"HTTP {resp.status_code}: {body[:300]}"}
+                return
+            async for line in resp.aiter_lines():
+                if not line.strip():
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning("ollama pull: unparseable line %r", line[:120])
+                    continue
     except httpx.HTTPError as exc:
-        yield {"error": f"{type(exc).__name__}: {exc}"}
+        yield {"error": f"{exc.__class__.__name__}: {exc}"}
 
 
 async def delete_ollama_model(
