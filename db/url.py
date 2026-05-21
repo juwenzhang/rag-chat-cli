@@ -26,7 +26,7 @@ def normalize_database_url(url: str) -> str:
     query = dict(parsed.query)
     query.pop("sslmode", None)
     query.pop("channel_binding", None)
-    return str(parsed.set(query=query))
+    return parsed.set(query=query).render_as_string(hide_password=False)
 
 
 def asyncpg_connect_args(url: str) -> dict[str, Any]:
