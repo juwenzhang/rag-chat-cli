@@ -1,27 +1,24 @@
 import "server-only";
 
+import { headers as nextHeaders } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { ApiError } from "@/lib/api/types";
-import { getAccessTokenWithRefresh } from "@/lib/session";
+import { createRequestId, debugServer, type ApiDebugMeta } from "@/lib/api/shared/debug";
+import { ApiError } from "@/lib/api/shared/types";
+import { getAccessTokenWithRefresh } from "@/lib/auth/session.server";
 
-/**
- * The single error envelope every BFF route emits. The browser-side API
- * client (`src/lib/api/browser`) parses exactly this shape back into an
- * `ApiError`, so the two sides stay in lockstep — change one, change both.
- *
- *   { error: "PROVIDER_NOT_FOUND", message: "…", details?: … }
- *
- * `error` is always a stable, machine-readable CODE (never a human
- * sentence); `message` is the human-readable text.
- */
 export interface BffError {
   error: string;
   message: string;
   details?: unknown;
+  requestId?: string;
+  debug?: ApiDebugMeta;
 }
 
-/** SSE passthrough headers — shared by every streaming route. */
+export interface BffContext {
+  requestId: string;
+}
+
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
   "Cache-Control": "no-cache, no-transform",
@@ -29,76 +26,100 @@ const SSE_HEADERS = {
   Connection: "keep-alive",
 } as const;
 
-/** Emit the standard error envelope with an explicit status. */
+async function requestIdFromHeaders(): Promise<string> {
+  try {
+    return (await nextHeaders()).get("x-request-id") ?? createRequestId();
+  } catch {
+    return createRequestId();
+  }
+}
+
+function withRequestId<T extends Response>(res: T, requestId: string): T {
+  res.headers.set("x-request-id", requestId);
+  return res;
+}
+
 export function bffError(
   code: string,
   message: string,
   status: number,
-  details?: unknown
+  details?: unknown,
+  debug?: ApiDebugMeta
 ): NextResponse {
+  const requestId = debug?.requestId;
   const body: BffError = { error: code, message };
   if (details !== undefined) body.details = details;
-  return NextResponse.json(body, { status });
+  if (requestId) body.requestId = requestId;
+  if (process.env.NODE_ENV === "development" && debug) body.debug = debug;
+  const res = NextResponse.json(body, { status });
+  if (requestId) res.headers.set("x-request-id", requestId);
+  return res;
 }
 
-/**
- * Map an unknown thrown value onto the standard error envelope. Exported
- * for the few routes that can't use `withAuth` (e.g. public, unauthed
- * endpoints) but still want a consistent error shape.
- */
-export function bffErrorFrom(err: unknown): NextResponse {
+export function bffErrorFrom(err: unknown, debug: ApiDebugMeta = {}): NextResponse {
   if (err instanceof ApiError) {
-    return bffError(err.code, err.message, err.status, err.details);
+    const mergedDebug = { ...debug, ...err.debug };
+    return bffError(err.code, err.message, err.status, err.details, mergedDebug);
   }
-  return bffError("UPSTREAM_ERROR", (err as Error).message, 502);
+  return bffError(
+    "UPSTREAM_ERROR",
+    (err as Error).message,
+    502,
+    undefined,
+    debug
+  );
 }
 
-/**
- * Common BFF response shaper for JSON routes. Refreshes the session,
- * runs `inner(token)`, and converts upstream `ApiError` into the standard
- * envelope so route handlers can stay focused on the happy path.
- *
- * Success convention: the resolved value is returned verbatim as JSON —
- * list routes resolve to arrays, detail routes to objects, action-only
- * routes to `{ ok: true }`.
- */
 export async function withAuth<T>(
-  inner: (token: string) => Promise<T>
+  inner: (token: string, ctx: BffContext) => Promise<T>
 ): Promise<NextResponse> {
+  const requestId = await requestIdFromHeaders();
+  const startedAt = performance.now();
   const token = await getAccessTokenWithRefresh();
   if (!token) {
-    return bffError("UNAUTHENTICATED", "Session expired or missing.", 401);
+    return bffError("UNAUTHENTICATED", "Session expired or missing.", 401, undefined, {
+      requestId,
+    });
   }
   try {
-    return NextResponse.json(await inner(token));
+    const data = await inner(token, { requestId });
+    const durationMs = Math.round(performance.now() - startedAt);
+    debugServer(`[bff] ${requestId} 200 ${durationMs}ms`, { requestId, durationMs });
+    return withRequestId(NextResponse.json(data), requestId);
   } catch (err) {
-    return bffErrorFrom(err);
+    const durationMs = Math.round(performance.now() - startedAt);
+    return bffErrorFrom(err, { requestId, durationMs });
   }
 }
 
-/**
- * Streaming sibling of `withAuth`. `inner` returns the raw upstream
- * `Response` (an open SSE stream from FastAPI); on success its body is
- * piped straight through to the browser with SSE headers. Auth failures
- * and upstream `ApiError`s still come back as the JSON error envelope —
- * the browser client checks the content-type to tell them apart.
- */
 export async function withAuthStream(
-  inner: (token: string) => Promise<Response>
+  inner: (token: string, ctx: BffContext) => Promise<Response>
 ): Promise<Response> {
+  const requestId = await requestIdFromHeaders();
+  const startedAt = performance.now();
   const token = await getAccessTokenWithRefresh();
   if (!token) {
-    return bffError("UNAUTHENTICATED", "Session expired or missing.", 401);
+    return bffError("UNAUTHENTICATED", "Session expired or missing.", 401, undefined, {
+      requestId,
+    });
   }
   try {
-    const upstream = await inner(token);
-    return new Response(upstream.body, { status: 200, headers: SSE_HEADERS });
+    const upstream = await inner(token, { requestId });
+    const durationMs = Math.round(performance.now() - startedAt);
+    debugServer(`[bff:stream] ${requestId} 200 ${durationMs}ms`, {
+      requestId,
+      durationMs,
+    });
+    return new Response(upstream.body, {
+      status: 200,
+      headers: { ...SSE_HEADERS, "x-request-id": requestId },
+    });
   } catch (err) {
-    return bffErrorFrom(err);
+    const durationMs = Math.round(performance.now() - startedAt);
+    return bffErrorFrom(err, { requestId, durationMs });
   }
 }
 
-/** Parse a JSON request body, tolerating an empty/invalid body as `{}`. */
 export async function readJson<T>(req: Request): Promise<T> {
   try {
     return (await req.json()) as T;

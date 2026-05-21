@@ -1,5 +1,5 @@
 import { orgApi } from "@/lib/api";
-import type { TransferOwnershipBody } from "@/lib/api/orgs";
+import type { TransferOwnershipBody } from "@/lib/api/server/orgs";
 
 import { readJson, withAuth } from "../../../_bff";
 

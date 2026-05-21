@@ -1,5 +1,5 @@
 import { wikiApi } from "@/lib/api";
-import type { UpdateWikiMemberRoleBody } from "@/lib/api/wiki";
+import type { UpdateWikiMemberRoleBody } from "@/lib/api/server/wiki";
 
 import { readJson, withAuth } from "../../../../_bff";
 

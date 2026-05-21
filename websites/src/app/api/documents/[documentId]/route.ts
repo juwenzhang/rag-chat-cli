@@ -1,5 +1,5 @@
 import { knowledgeApi } from "@/lib/api";
-import type { UpdateDocumentBody } from "@/lib/api/knowledge";
+import type { UpdateDocumentBody } from "@/lib/api/server/knowledge";
 
 import { readJson, withAuth } from "../../_bff";
 

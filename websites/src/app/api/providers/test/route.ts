@@ -1,5 +1,5 @@
 import { providerApi } from "@/lib/api";
-import type { ConnectivityTestBody } from "@/lib/api/providers";
+import type { ConnectivityTestBody } from "@/lib/api/server/providers";
 
 import { readJson, withAuth } from "../../_bff";
 

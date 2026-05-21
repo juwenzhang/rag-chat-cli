@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { shareApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
-import { getCurrentUser } from "@/lib/session";
+import { ApiError } from "@/lib/api/shared/types";
+import { getCurrentUser } from "@/lib/auth/session.server";
 
 import { ShareView } from "./share-view";
 

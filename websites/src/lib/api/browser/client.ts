@@ -11,7 +11,13 @@
  * NOT `server-only` — this is the one `lib/api` module the browser imports.
  */
 
-import { ApiError } from "@/lib/api/types";
+import {
+  createRequestId,
+  debugGroup,
+  sanitizeForDebug,
+  type ApiDebugMeta,
+} from "@/lib/api/shared/debug";
+import { ApiError } from "@/lib/api/shared/types";
 
 export interface BffRequestOptions extends Omit<RequestInit, "body"> {
   /** Body — auto-serialised as JSON if it's a plain object. */
@@ -30,40 +36,41 @@ function withQuery(path: string, query?: BffRequestOptions["query"]): string {
   return qs ? `${path}?${qs}` : path;
 }
 
-function buildInit(opts: BffRequestOptions): RequestInit {
-  // `query` is consumed by `withQuery` before this runs; leaving it in
-  // `rest` is harmless — `fetch` ignores unknown `RequestInit` keys.
+function buildInit(opts: BffRequestOptions, requestId: string): RequestInit {
   const { body, headers, ...rest } = opts;
   return {
-    // Auth-bearing BFF responses must never be served from the HTTP
-    // cache — a stale read could leak across sessions. Callers can still
-    // override `cache` explicitly via `opts`.
     cache: "no-store",
     ...rest,
     headers: {
       Accept: "application/json",
+      "x-request-id": requestId,
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
       ...(headers as Record<string, string>),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
-    // The session cookie is HttpOnly and same-origin; this keeps it
-    // attached even when callers pass their own `RequestInit`.
     credentials: "same-origin",
   };
 }
 
-/**
- * Turn a non-2xx BFF response into an `ApiError`. The BFF always emits
- * `{ error: CODE, message, details? }` (see `_bff.ts`), but we stay
- * defensive in case a proxy or framework error page slips through.
- */
-async function toApiError(res: Response): Promise<ApiError> {
-  let payload: unknown = null;
-  try {
-    payload = await res.json();
-  } catch {
-    /* non-JSON body (e.g. an HTML error page) */
-  }
+async function parseBody(res: Response): Promise<unknown> {
+  if (res.status === 204) return undefined;
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) return await res.json();
+  return await res.text();
+}
+
+function debugFromPayload(payload: unknown): ApiDebugMeta | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const debug = (payload as Record<string, unknown>).debug;
+  return debug && typeof debug === "object" ? (debug as ApiDebugMeta) : undefined;
+}
+
+/** Turn a non-2xx BFF response into an `ApiError`. */
+function toApiError(
+  res: Response,
+  payload: unknown,
+  fallbackDebug: ApiDebugMeta
+): ApiError {
   const obj = (payload && typeof payload === "object" ? payload : {}) as Record<
     string,
     unknown
@@ -73,44 +80,76 @@ async function toApiError(res: Response): Promise<ApiError> {
     typeof obj.message === "string"
       ? obj.message
       : res.statusText || "Request failed";
-  return new ApiError(res.status, code, message, obj.details);
+  return new ApiError(res.status, code, message, obj.details, {
+    ...fallbackDebug,
+    ...debugFromPayload(payload),
+  });
 }
 
-/**
- * Perform a JSON request against the BFF. Resolves to the parsed body
- * (or `undefined` for `204`), throws `ApiError` on any non-2xx response.
- */
 export async function bff<T = unknown>(
   path: string,
   opts: BffRequestOptions = {}
 ): Promise<T> {
-  const res = await fetch(withQuery(path, opts.query), buildInit(opts));
+  const requestId = createRequestId();
+  const url = withQuery(path, opts.query);
+  const method = opts.method ?? (opts.body === undefined ? "GET" : "POST");
+  const startedAt = performance.now();
+  const res = await fetch(url, buildInit(opts, requestId));
+  const durationMs = Math.round(performance.now() - startedAt);
+  const responseRequestId = res.headers.get("x-request-id") ?? requestId;
+  const payload = await parseBody(res);
+  const meta: ApiDebugMeta = {
+    requestId: responseRequestId,
+    method,
+    path: url,
+    status: res.status,
+    durationMs,
+  };
 
-  if (!res.ok) throw await toApiError(res);
-  if (res.status === 204) return undefined as T;
+  debugGroup(`[api] ${method} ${url} ${res.status} ${durationMs}ms`, {
+    requestId: responseRequestId,
+    request: { method, path: url, body: sanitizeForDebug(opts.body) },
+    response: payload,
+  });
 
-  const ct = res.headers.get("content-type") || "";
-  if (ct.includes("application/json")) return (await res.json()) as T;
-  return (await res.text()) as unknown as T;
+  if (!res.ok) throw toApiError(res, payload, meta);
+  return payload as T;
 }
 
-/**
- * Open a streaming request (SSE) against the BFF. Resolves to the raw
- * `Response` so the caller can consume `response.body` — see
- * `src/lib/sse-client.ts`. Auth/validation failures still arrive as the
- * JSON error envelope, so we surface those as a thrown `ApiError`.
- */
 export async function bffStream(
   path: string,
   opts: BffRequestOptions = {}
 ): Promise<Response> {
-  const init = buildInit(opts);
-  const res = await fetch(withQuery(path, opts.query), {
+  const requestId = createRequestId();
+  const url = withQuery(path, opts.query);
+  const method = opts.method ?? "GET";
+  const init = buildInit(opts, requestId);
+  const startedAt = performance.now();
+  const res = await fetch(url, {
     ...init,
-    // Keep the JSON Content-Type from `buildInit` (POST streams carry a
-    // JSON body) but ask for an event-stream back.
-    headers: { ...(init.headers as Record<string, string>), Accept: "text/event-stream" },
+    headers: {
+      ...(init.headers as Record<string, string>),
+      Accept: "text/event-stream",
+    },
   });
-  if (!res.ok) throw await toApiError(res);
+  const durationMs = Math.round(performance.now() - startedAt);
+  const responseRequestId = res.headers.get("x-request-id") ?? requestId;
+
+  debugGroup(`[api:stream] ${method} ${url} ${res.status} ${durationMs}ms`, {
+    requestId: responseRequestId,
+    request: { method, path: url, body: sanitizeForDebug(opts.body) },
+    response: res.ok ? "<event-stream>" : await res.clone().text(),
+  });
+
+  if (!res.ok) {
+    const payload = await parseBody(res);
+    throw toApiError(res, payload, {
+      requestId: responseRequestId,
+      method,
+      path: url,
+      status: res.status,
+      durationMs,
+    });
+  }
   return res;
 }

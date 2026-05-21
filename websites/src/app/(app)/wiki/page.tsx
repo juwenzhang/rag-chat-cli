@@ -3,10 +3,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import { DocumentTableClient } from "@/components/wiki/document-table-client";
-import { resolveActiveOrg } from "@/lib/active-org";
+import { DocumentTableClient } from "@/features/wiki/components/document-table-client";
+import { resolveActiveOrg } from "@/lib/org/active-org.server";
 import { knowledgeApi, orgApi, wikiApi } from "@/lib/api";
-import { getAccessToken, getCurrentUser } from "@/lib/session";
+import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
 import { cn, formatRelative } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";

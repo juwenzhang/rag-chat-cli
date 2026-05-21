@@ -1,15 +1,15 @@
 import { redirect } from "next/navigation";
 
-import { WikiSidebar } from "@/components/wiki/wiki-sidebar";
-import { resolveActiveOrg } from "@/lib/active-org";
+import { WikiSidebar } from "@/features/wiki/components/wiki-sidebar";
+import { resolveActiveOrg } from "@/lib/org/active-org.server";
 import { knowledgeApi, orgApi, wikiApi } from "@/lib/api";
 import {
   ApiError,
   type DocumentOut,
   type WikiOut,
   type WikiPageListOut,
-} from "@/lib/api/types";
-import { getAccessToken, getCurrentUser } from "@/lib/session";
+} from "@/lib/api/shared/types";
+import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
 import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";

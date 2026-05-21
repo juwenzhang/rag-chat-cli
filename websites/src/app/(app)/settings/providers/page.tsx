@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 
-import { ProvidersPageClient } from "@/components/providers/providers-page-client";
+import { ProvidersPageClient } from "@/features/providers/components/providers-page-client";
 import { providerApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
-import { getAccessToken } from "@/lib/session";
+import { ApiError } from "@/lib/api/shared/types";
+import { getAccessToken } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 export const metadata = {

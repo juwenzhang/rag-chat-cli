@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ApiError } from "@/lib/api/types";
+import type { ApiError } from "@/lib/api/shared/types";
 
 interface UseApiQueryOptions<T> {
   /**

@@ -12,11 +12,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { QACard } from "@/components/share/qa-card";
+import { QACard } from "@/features/share/components/qa-card";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api/browser";
-import type { SharePublicOut } from "@/lib/api/types";
+import type { SharePublicOut } from "@/lib/api/shared/types";
 import { formatRelative } from "@/lib/utils";
 
 interface Props {

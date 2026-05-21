@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 
 import { GlobalRail } from "@/components/shell/global-rail";
-import { resolveActiveOrg } from "@/lib/active-org";
+import { resolveActiveOrg } from "@/lib/org/active-org.server";
 import { orgApi, providerApi } from "@/lib/api";
-import { ApiError, type OrgOut } from "@/lib/api/types";
-import { getAccessToken, getCurrentUser } from "@/lib/session";
+import { ApiError, type OrgOut } from "@/lib/api/shared/types";
+import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 

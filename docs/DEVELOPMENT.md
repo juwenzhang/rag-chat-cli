@@ -31,6 +31,23 @@ uv run pre-commit install
 
 `make env` copies `.env.example` → `.env` unless one already exists.
 
+## Frontend SSR/MVC workflow
+
+The Next.js frontend under `websites/` follows an SSR-specific MVC discipline. Before changing frontend architecture or moving feature code, read:
+
+- `docs/FRONTEND_SSR_MVC.md`
+- `websites/src/features/README.md`
+- `websites/AGENTS.md`
+
+Short version:
+
+- `app/**` is Server Controller.
+- `features/*/hooks` is Client Controller.
+- `features/*/services` and `features/*/stores` are Model.
+- `features/*/components` is View.
+- View code should not import browser API clients, imperative router APIs, or toast.
+- Keep `lib/api/browser`, `lib/api/server`, and `lib/api/shared` boundaries intact.
+
 ## Daily workflow
 
 | Task                      | Command              | Notes                                         |

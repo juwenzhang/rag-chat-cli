@@ -1,7 +1,7 @@
-import { SessionSidebar } from "@/components/chat/session-sidebar";
+import { SessionSidebar } from "@/features/chat/components/session-sidebar";
 import { chatApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
-import { getAccessToken, getCurrentUser } from "@/lib/session";
+import { ApiError } from "@/lib/api/shared/types";
+import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";

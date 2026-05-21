@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useEffect, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -37,8 +37,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/browser";
-import type { OrgOut, UserOut } from "@/lib/api/types";
+import type { OrgOut, UserOut } from "@/lib/api/shared/types";
 import { cn, initials } from "@/lib/utils";
+import { useAppShellStore } from "@/stores/app-shell-store";
 
 interface Props {
   user: UserOut;
@@ -60,7 +61,22 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
   const router = useRouter();
   const [loggingOut, startLogout] = useTransition();
   const isDark = useIsDark();
-  const activeOrg = orgs.find((o) => o.id === activeOrgId) ?? orgs[0] ?? null;
+  const shellUser = useAppShellStore((state) => state.user) ?? user;
+  const shellOrgs = useAppShellStore((state) => state.orgs);
+  const shellActiveOrgId = useAppShellStore((state) => state.activeOrgId);
+  const initShell = useAppShellStore((state) => state.initShell);
+  const setActiveOrgId = useAppShellStore((state) => state.setActiveOrgId);
+  const resetShell = useAppShellStore((state) => state.resetShell);
+  const resolvedOrgs = shellOrgs.length > 0 ? shellOrgs : orgs;
+  const resolvedActiveOrgId = shellActiveOrgId ?? activeOrgId;
+  const activeOrg =
+    resolvedOrgs.find((o) => o.id === resolvedActiveOrgId) ??
+    resolvedOrgs[0] ??
+    null;
+
+  useEffect(() => {
+    initShell({ user, orgs, activeOrgId });
+  }, [activeOrgId, initShell, orgs, user]);
 
   const items: Array<{
     href: string;
@@ -108,22 +124,16 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
       toast.error("Failed to switch workspace");
       return;
     }
-    // Route the URL too — a bare reload would keep us on
-    // ``/wiki/{stale_page_id}`` if the user was viewing a page that
-    // belongs to the *previous* workspace. Land on the module's index
-    // for the new workspace instead, so the sidebar and content stay
-    // consistent. Other modules (orgs, settings) aren't scope-bound to
-    // a workspace, so they don't need redirection.
+    setActiveOrgId(orgId);
+    // Route the URL too — otherwise a stale wiki/page URL could point at
+    // content from the previous workspace. Module index routes re-run the
+    // server layouts and hydrate the stores with the new workspace data.
     if (pathname.startsWith("/wiki")) {
-      window.location.href = "/wiki";
+      router.push("/wiki");
     } else if (pathname.startsWith("/chat") && pathname !== "/chat") {
-      // Chat sessions are user-scoped (not workspace-scoped) but the
-      // sidebar's session list still needs to refetch. A hard nav to
-      // /chat keeps things simple.
-      window.location.href = "/chat";
-    } else {
-      window.location.reload();
+      router.push("/chat");
     }
+    router.refresh();
   };
 
   const logout = () =>
@@ -134,6 +144,7 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
         // Best-effort: even if revocation fails, fall through to /login —
         // the cookie is cleared server-side and a stale token is harmless.
       }
+      resetShell();
       toast.success("Signed out");
       router.push("/login");
       router.refresh();
@@ -165,7 +176,7 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
           <DropdownMenuContent side="right" align="start" className="w-64">
             <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {orgs.map((o) => (
+            {resolvedOrgs.map((o) => (
               <DropdownMenuItem
                 key={o.id}
                 onSelect={(e) => {
@@ -230,7 +241,7 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
             >
               <Avatar className="size-9">
                 <AvatarFallback className="bg-brand-gradient text-white text-xs">
-                  {initials(user.display_name ?? user.email)}
+                  {initials(shellUser.display_name ?? shellUser.email)}
                 </AvatarFallback>
               </Avatar>
             </button>
@@ -239,10 +250,10 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
             <DropdownMenuLabel>
               <div className="flex flex-col">
                 <span className="text-sm font-medium text-foreground">
-                  {user.display_name || "Account"}
+                  {shellUser.display_name || "Account"}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {user.email}
+                  {shellUser.email}
                 </span>
               </div>
             </DropdownMenuLabel>

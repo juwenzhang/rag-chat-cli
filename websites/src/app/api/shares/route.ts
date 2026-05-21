@@ -1,5 +1,5 @@
 import { shareApi } from "@/lib/api";
-import type { CreateShareBody } from "@/lib/api/shares";
+import type { CreateShareBody } from "@/lib/api/server/shares";
 
 import { readJson, withAuth } from "../_bff";
 

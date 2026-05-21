@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { setActiveOrg } from "@/lib/active-org";
+import { setActiveOrg } from "@/lib/org/active-org.server";
 
 import { bffError, readJson } from "../_bff";
 

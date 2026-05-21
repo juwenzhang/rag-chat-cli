@@ -4,7 +4,7 @@ import { Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useRef } from "react";
 
-import { SubmitButton } from "@/components/auth/submit-button";
+import { SubmitButton } from "@/features/auth/components/submit-button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 
-import { DocumentTableClient } from "@/components/wiki/document-table-client";
+import { DocumentTableClient } from "@/features/wiki/components/document-table-client";
 import { knowledgeApi } from "@/lib/api";
-import { getAccessToken, getCurrentUser } from "@/lib/session";
+import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 

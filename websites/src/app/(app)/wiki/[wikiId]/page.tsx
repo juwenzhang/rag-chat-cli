@@ -4,8 +4,8 @@ import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { wikiApi } from "@/lib/api";
-import { ApiError } from "@/lib/api/types";
-import { getAccessToken, getCurrentUser } from "@/lib/session";
+import { ApiError } from "@/lib/api/shared/types";
+import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
 
 import { NewPageButton } from "./new-page-button";
 import { PageTableClient } from "./page-table-client";
