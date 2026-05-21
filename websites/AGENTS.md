@@ -10,6 +10,7 @@ This project uses Next.js 16 / App Router / React 19. APIs, conventions, and fil
 
 - `src/features/README.md`
 - `../docs/FRONTEND_SSR_MVC.md`
+- `../docs/FRONTEND_NEXT_OPTIMIZATION.md`
 
 ## 1. Why these rules exist
 

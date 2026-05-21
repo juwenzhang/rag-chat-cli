@@ -36,6 +36,7 @@ uv run pre-commit install
 The Next.js frontend under `websites/` follows an SSR-specific MVC discipline. Before changing frontend architecture or moving feature code, read:
 
 - `docs/FRONTEND_SSR_MVC.md`
+- `docs/FRONTEND_NEXT_OPTIMIZATION.md`
 - `websites/src/features/README.md`
 - `websites/AGENTS.md`
 

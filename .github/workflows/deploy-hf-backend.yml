@@ -1,0 +1,35 @@
+name: deploy hf backend
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hf-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  push-space:
+    name: push backend to Hugging Face Space
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HF_TOKEN:-}" ]; then
+            echo "Missing GitHub secret: HF_TOKEN" >&2
+            exit 1
+          fi
+          git remote add hf "https://luhanxin:${HF_TOKEN}@huggingface.co/spaces/luhanxin/rag-chat-backend"
+          git push hf HEAD:main

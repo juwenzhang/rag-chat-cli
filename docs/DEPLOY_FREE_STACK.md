@@ -70,6 +70,7 @@ NEXT_PUBLIC_APP_NAME=RAG-AI
 ```text
 Dockerfile
 .dockerignore
+.github/workflows/deploy-hf-backend.yml
 deploy/backend/entrypoint.sh
 deploy/backend/render.yaml
 websites/Dockerfile
@@ -77,6 +78,20 @@ websites/.dockerignore
 deploy/websites/render.yaml
 docs/DEPLOY_BACKEND_DOCKER.md
 docs/DEPLOY_WEBSITES.md
+```
+
+## 自动部署
+
+后端 Hugging Face Space 已配置 GitHub Actions 同步：
+
+```text
+push/merge 到 master -> GitHub Actions -> push 到 HF Space main -> Space 自动 Docker 构建
+```
+
+需要在 GitHub 配置：
+
+```text
+HF_TOKEN=<Hugging Face write token>
 ```
 
 ## 注意事项
