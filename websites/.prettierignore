@@ -1,0 +1,11 @@
+node_modules
+.next
+.turbo
+out
+dist
+build
+coverage
+pnpm-lock.yaml
+next-env.d.ts
+*.log
+generated-images

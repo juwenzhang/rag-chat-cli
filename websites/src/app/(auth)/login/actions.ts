@@ -21,8 +21,7 @@ export async function loginAction(
 
   const fieldErrors: LoginState["fieldErrors"] = {};
   if (!email) fieldErrors.email = "Email is required";
-  else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
-    fieldErrors.email = "Invalid email";
+  else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fieldErrors.email = "Invalid email";
   if (!password) fieldErrors.password = "Password is required";
 
   if (Object.keys(fieldErrors).length > 0) {

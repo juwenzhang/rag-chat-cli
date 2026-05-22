@@ -28,9 +28,7 @@ export async function readPullStream(
         await callbacks.onDone();
         return;
       } else if (event.event === "error") {
-        throw new Error(
-          (event.data as { message?: string }).message ?? "Pull failed"
-        );
+        throw new Error((event.data as { message?: string }).message ?? "Pull failed");
       }
     }
   }

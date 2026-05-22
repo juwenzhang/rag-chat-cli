@@ -5,13 +5,7 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProgressFrame } from "./pull-model-dialog-parts";
 
-export function PullModelProgress({
-  frame,
-  tag,
-}: {
-  frame: ProgressFrame;
-  tag: string;
-}) {
+export function PullModelProgress({ frame, tag }: { frame: ProgressFrame; tag: string }) {
   const total = frame.total;
   const completed = frame.completed;
   const pct =

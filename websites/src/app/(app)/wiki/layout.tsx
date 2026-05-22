@@ -54,7 +54,7 @@ export default async function WikiLayout({
   const m = pathname.match(/^\/wiki\/([0-9a-f-]{36})/i);
   const activeWikiId = m ? m[1] : null;
   const activeWiki = activeWikiId
-    ? wikis.find((w) => w.id === activeWikiId) ?? null
+    ? (wikis.find((w) => w.id === activeWikiId) ?? null)
     : null;
 
   let pages: WikiPageListOut[] = [];

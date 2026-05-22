@@ -1,11 +1,7 @@
 import "server-only";
 
 import { apiFetch } from "@/lib/api/server/client";
-import type {
-  MemberOut,
-  OrgOut,
-  Role,
-} from "@/lib/api/shared/types";
+import type { MemberOut, OrgOut, Role } from "@/lib/api/shared/types";
 
 export interface CreateOrgBody {
   name: string;
@@ -33,10 +29,7 @@ export async function listOrgs(token: string): Promise<OrgOut[]> {
   return apiFetch<OrgOut[]>("/orgs", { token });
 }
 
-export async function createOrg(
-  token: string,
-  body: CreateOrgBody
-): Promise<OrgOut> {
+export async function createOrg(token: string, body: CreateOrgBody): Promise<OrgOut> {
   return apiFetch<OrgOut>("/orgs", { method: "POST", token, body });
 }
 
@@ -60,10 +53,7 @@ export async function deleteOrg(token: string, orgId: string): Promise<void> {
   await apiFetch<void>(`/orgs/${orgId}`, { method: "DELETE", token });
 }
 
-export async function listMembers(
-  token: string,
-  orgId: string
-): Promise<MemberOut[]> {
+export async function listMembers(token: string, orgId: string): Promise<MemberOut[]> {
   return apiFetch<MemberOut[]>(`/orgs/${orgId}/members`, { token });
 }
 

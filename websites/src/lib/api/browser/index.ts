@@ -145,11 +145,7 @@ const providers = {
       body: { model },
     }),
 
-  upsertModelMeta: (
-    providerId: string,
-    model: string,
-    description: string | null
-  ) =>
+  upsertModelMeta: (providerId: string, model: string, description: string | null) =>
     bff<Ok>(`/api/providers/${providerId}/models/meta`, {
       method: "POST",
       body: { model, description },
@@ -183,31 +179,24 @@ const me = {
 const orgs = {
   list: () => bff<OrgOut[]>("/api/orgs"),
 
-  create: (body: CreateOrgBody) =>
-    bff<OrgOut>("/api/orgs", { method: "POST", body }),
+  create: (body: CreateOrgBody) => bff<OrgOut>("/api/orgs", { method: "POST", body }),
 
   get: (orgId: string) => bff<OrgOut>(`/api/orgs/${orgId}`),
 
   update: (orgId: string, body: UpdateOrgBody) =>
     bff<OrgOut>(`/api/orgs/${orgId}`, { method: "PATCH", body }),
 
-  remove: (orgId: string) =>
-    bff<void>(`/api/orgs/${orgId}`, { method: "DELETE" }),
+  remove: (orgId: string) => bff<void>(`/api/orgs/${orgId}`, { method: "DELETE" }),
 
   transferOwnership: (orgId: string, body: TransferOwnershipBody) =>
     bff<OrgOut>(`/api/orgs/${orgId}/transfer`, { method: "POST", body }),
 
-  listMembers: (orgId: string) =>
-    bff<MemberOut[]>(`/api/orgs/${orgId}/members`),
+  listMembers: (orgId: string) => bff<MemberOut[]>(`/api/orgs/${orgId}/members`),
 
   addMember: (orgId: string, body: AddMemberBody) =>
     bff<MemberOut>(`/api/orgs/${orgId}/members`, { method: "POST", body }),
 
-  updateMemberRole: (
-    orgId: string,
-    userId: string,
-    body: UpdateMemberRoleBody
-  ) =>
+  updateMemberRole: (orgId: string, userId: string, body: UpdateMemberRoleBody) =>
     bff<MemberOut>(`/api/orgs/${orgId}/members/${userId}`, {
       method: "PATCH",
       body,
@@ -228,11 +217,9 @@ const wikis = {
   update: (wikiId: string, body: UpdateWikiBody) =>
     bff<WikiOut>(`/api/wikis/${wikiId}`, { method: "PATCH", body }),
 
-  remove: (wikiId: string) =>
-    bff<void>(`/api/wikis/${wikiId}`, { method: "DELETE" }),
+  remove: (wikiId: string) => bff<void>(`/api/wikis/${wikiId}`, { method: "DELETE" }),
 
-  listMembers: (wikiId: string) =>
-    bff<WikiMemberOut[]>(`/api/wikis/${wikiId}/members`),
+  listMembers: (wikiId: string) => bff<WikiMemberOut[]>(`/api/wikis/${wikiId}/members`),
 
   addMember: (wikiId: string, body: AddWikiMemberBody) =>
     bff<WikiMemberOut>(`/api/wikis/${wikiId}/members`, {
@@ -240,11 +227,7 @@ const wikis = {
       body,
     }),
 
-  updateMemberRole: (
-    wikiId: string,
-    userId: string,
-    body: UpdateWikiMemberRoleBody
-  ) =>
+  updateMemberRole: (wikiId: string, userId: string, body: UpdateWikiMemberRoleBody) =>
     bff<WikiMemberOut>(`/api/wikis/${wikiId}/members/${userId}`, {
       method: "PATCH",
       body,
@@ -253,8 +236,7 @@ const wikis = {
   removeMember: (wikiId: string, userId: string) =>
     bff<void>(`/api/wikis/${wikiId}/members/${userId}`, { method: "DELETE" }),
 
-  listPages: (wikiId: string) =>
-    bff<WikiPageListOut[]>(`/api/wikis/${wikiId}/pages`),
+  listPages: (wikiId: string) => bff<WikiPageListOut[]>(`/api/wikis/${wikiId}/pages`),
 
   createPage: (wikiId: string, body: CreateWikiPageBody) =>
     bff<WikiPageDetailOut>(`/api/wikis/${wikiId}/pages`, {
@@ -291,8 +273,7 @@ const wikiPages = {
       method: "POST",
     }),
 
-  getShare: (pageId: string) =>
-    bff<WikiPageShareOut>(`/api/wiki-pages/${pageId}/share`),
+  getShare: (pageId: string) => bff<WikiPageShareOut>(`/api/wiki-pages/${pageId}/share`),
 };
 
 const bookmarks = {
@@ -303,8 +284,7 @@ const bookmarks = {
   create: (body: CreateBookmarkBody) =>
     bff<BookmarkOut>("/api/bookmarks", { method: "POST", body }),
 
-  remove: (id: string) =>
-    bff<void>(`/api/bookmarks/${id}`, { method: "DELETE" }),
+  remove: (id: string) => bff<void>(`/api/bookmarks/${id}`, { method: "DELETE" }),
 };
 
 const wikiPageShares = {
@@ -321,11 +301,9 @@ const shares = {
   create: (body: CreateShareBody) =>
     bff<ShareOut>("/api/shares", { method: "POST", body }),
 
-  getPublic: (token: string) =>
-    bff<SharePublicOut>(`/api/shares/${token}`),
+  getPublic: (token: string) => bff<SharePublicOut>(`/api/shares/${token}`),
 
-  remove: (token: string) =>
-    bff<void>(`/api/shares/${token}`, { method: "DELETE" }),
+  remove: (token: string) => bff<void>(`/api/shares/${token}`, { method: "DELETE" }),
 };
 
 const documents = {
@@ -334,8 +312,7 @@ const documents = {
   create: (body: CreateDocumentBody) =>
     bff<DocumentDetailOut>("/api/documents", { method: "POST", body }),
 
-  get: (documentId: string) =>
-    bff<DocumentDetailOut>(`/api/documents/${documentId}`),
+  get: (documentId: string) => bff<DocumentDetailOut>(`/api/documents/${documentId}`),
 
   update: (documentId: string, body: UpdateDocumentBody) =>
     bff<DocumentDetailOut>(`/api/documents/${documentId}`, {

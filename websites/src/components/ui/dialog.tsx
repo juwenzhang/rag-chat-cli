@@ -30,8 +30,9 @@ const DialogOverlay = forwardRef<
   );
 });
 
-interface DialogContentProps
-  extends ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+interface DialogContentProps extends ComponentPropsWithoutRef<
+  typeof DialogPrimitive.Content
+> {
   /** Hide the default top-right close button (e.g. for must-respond dialogs). */
   hideClose?: boolean;
 }
@@ -73,28 +74,14 @@ const DialogContent = forwardRef<
   );
 });
 
-function DialogHeader({
-  className,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn("flex flex-col gap-1.5 text-left", className)}
-      {...rest}
-    />
-  );
+function DialogHeader({ className, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("flex flex-col gap-1.5 text-left", className)} {...rest} />;
 }
 
-function DialogFooter({
-  className,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement>) {
+function DialogFooter({ className, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn(
-        "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
-        className
-      )}
+      className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)}
       {...rest}
     />
   );

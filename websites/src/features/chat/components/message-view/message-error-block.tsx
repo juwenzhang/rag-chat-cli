@@ -17,8 +17,8 @@ export function MessageErrorBlock({ error }: { error: string }) {
         <div className="flex items-start gap-2 text-foreground">
           <AlertCircle className="mt-0.5 size-4 shrink-0 text-warning" />
           <span>
-            This model requires a paid Ollama subscription. Open the upgrade
-            page to enable cloud access, then try again.
+            This model requires a paid Ollama subscription. Open the upgrade page to
+            enable cloud access, then try again.
           </span>
         </div>
         <a

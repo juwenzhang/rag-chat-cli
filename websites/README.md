@@ -42,12 +42,17 @@ First visit redirects to `/login`. Register once with a valid email +
 
 ## Scripts
 
-| Command | What it does |
-|---------|--------------|
-| `pnpm dev` | Dev server with Turbopack |
-| `pnpm build` | Production build |
-| `pnpm start` | Run production build |
-| `pnpm lint` | ESLint check |
+| Command             | What it does                         |
+| ------------------- | ------------------------------------ |
+| `pnpm dev`          | Dev server with Turbopack            |
+| `pnpm build`        | Production build                     |
+| `pnpm start`        | Run production build                 |
+| `pnpm lint`         | ESLint check                         |
+| `pnpm lint:fix`     | ESLint auto-fix                      |
+| `pnpm format`       | Prettier write                       |
+| `pnpm format:check` | Prettier check                       |
+| `pnpm typecheck`    | TypeScript `tsc --noEmit`            |
+| `pnpm verify`       | ESLint + Prettier check + TypeScript |
 
 ## Layout
 
@@ -83,12 +88,12 @@ src/
 
 ## Environment
 
-| Var | Description | Default |
-|-----|-------------|---------|
-| `RAG_API_URL` | FastAPI base URL (server-side only) | `http://localhost:8000` |
-| `SESSION_COOKIE_NAME` | Cookie name | `rag_session` |
-| `SESSION_COOKIE_DOMAIN` | Cookie domain | (current host) |
-| `SESSION_COOKIE_SECURE` | `true` in production (HTTPS) | `false` |
+| Var                     | Description                         | Default                 |
+| ----------------------- | ----------------------------------- | ----------------------- |
+| `RAG_API_URL`           | FastAPI base URL (server-side only) | `http://localhost:8000` |
+| `SESSION_COOKIE_NAME`   | Cookie name                         | `rag_session`           |
+| `SESSION_COOKIE_DOMAIN` | Cookie domain                       | (current host)          |
+| `SESSION_COOKIE_SECURE` | `true` in production (HTTPS)        | `false`                 |
 
 ## Auth flow
 

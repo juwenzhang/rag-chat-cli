@@ -10,9 +10,7 @@ interface Ctx {
 export async function PATCH(req: Request, { params }: Ctx) {
   const { wikiId, userId } = await params;
   const body = await readJson<UpdateWikiMemberRoleBody>(req);
-  return withAuth((token) =>
-    wikiApi.updateWikiMember(token, wikiId, userId, body)
-  );
+  return withAuth((token) => wikiApi.updateWikiMember(token, wikiId, userId, body));
 }
 
 export async function DELETE(_req: Request, { params }: Ctx) {

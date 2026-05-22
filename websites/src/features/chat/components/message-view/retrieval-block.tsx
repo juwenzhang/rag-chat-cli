@@ -8,11 +8,7 @@ import type { UIMessage } from "../types";
 import { cn } from "@/lib/utils";
 
 /** Collapsible "Retrieved N sources" panel shown above a RAG answer. */
-export function RetrievalBlock({
-  hits,
-}: {
-  hits: NonNullable<UIMessage["retrieval"]>;
-}) {
+export function RetrievalBlock({ hits }: { hits: NonNullable<UIMessage["retrieval"]> }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -23,8 +19,8 @@ export function RetrievalBlock({
       >
         <BookOpen className="size-3.5" />
         <span>
-          Retrieved <strong className="text-foreground">{hits.length}</strong>{" "}
-          source{hits.length === 1 ? "" : "s"}
+          Retrieved <strong className="text-foreground">{hits.length}</strong> source
+          {hits.length === 1 ? "" : "s"}
         </span>
         <ChevronDown
           className={cn("size-3.5 transition-transform", open && "rotate-180")}
@@ -48,9 +44,7 @@ export function RetrievalBlock({
                   {h.score.toFixed(3)}
                 </span>
               </div>
-              <p className="mt-1 line-clamp-3 text-muted-foreground">
-                {h.content}
-              </p>
+              <p className="mt-1 line-clamp-3 text-muted-foreground">{h.content}</p>
             </li>
           ))}
         </ul>

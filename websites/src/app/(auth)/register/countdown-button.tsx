@@ -19,10 +19,7 @@ export function CountdownButton({
 
   useEffect(() => {
     if (remaining <= 0) return;
-    const id = setInterval(
-      () => setRemaining((n) => Math.max(0, n - 1)),
-      1000
-    );
+    const id = setInterval(() => setRemaining((n) => Math.max(0, n - 1)), 1000);
     return () => clearInterval(id);
   }, [remaining]);
 

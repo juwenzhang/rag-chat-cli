@@ -36,13 +36,13 @@ import uuid
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from api.chat_service import get_chat_service_for_user
 from api.deps import authenticate_ws
 from api.streaming.protocol import ErrorEvent, coerce_event
-from core.chat_service import ChatService
-from core.streaming.abort import AbortContext
-from db.models import ChatSession, Provider, UserPreference
-from db.session import current_session_factory
+from service.chat.factory import get_chat_service_for_user
+from service.chat.service import ChatService
+from service.db.models import ChatSession, Provider, UserPreference
+from service.db.session import current_session_factory
+from service.streaming.abort import AbortContext
 
 __all__ = ["router"]
 

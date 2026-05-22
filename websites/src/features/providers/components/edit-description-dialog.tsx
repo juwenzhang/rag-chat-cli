@@ -34,10 +34,7 @@ export function EditDescriptionDialog({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const id = window.setTimeout(
-      () => setText(model?.description ?? ""),
-      0
-    );
+    const id = window.setTimeout(() => setText(model?.description ?? ""), 0);
     return () => window.clearTimeout(id);
   }, [model]);
 

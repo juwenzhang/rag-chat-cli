@@ -65,7 +65,7 @@ Response 200:
 | `refresh_token` | ✅ | ✅(prod) | Strict | `/auth/refresh` | 7day | JWT |
 | `csrf_token` | ❌ | ✅(prod) | Lax | `/` | 15min | 随机 base64 |
 
-> `csrf_token` 必须 JS 可读（不是 HttpOnly），因为前端要把它放进请求头。  
+> `csrf_token` 必须 JS 可读（不是 HttpOnly），因为前端要把它放进请求头。
 > 但攻击者要伪造请求，需要同时拿到 Cookie（同源限制）+ Header（CSRF token）→ 双重防护。
 
 ### 2.3 验证码流程

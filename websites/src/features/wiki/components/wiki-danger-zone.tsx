@@ -35,8 +35,7 @@ export function WikiDangerZone({
     <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
       <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Deleting this wiki also deletes all of its pages. This can&apos;t be
-        undone.
+        Deleting this wiki also deletes all of its pages. This can&apos;t be undone.
       </p>
       <Button
         variant="outline"

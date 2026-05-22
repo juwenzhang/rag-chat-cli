@@ -7,17 +7,17 @@ same Q&A updates the ``note`` if one was passed.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db_session
 from api.routers.shares import _own_message
 from api.schemas.share import BookmarkCreateIn, BookmarkOut, SharedMessageOut
-from db.models import ChatSession, Message, MessageBookmark, Provider, User
-from pydantic import BaseModel, ConfigDict
-from datetime import datetime
+from service.db.models import ChatSession, Message, MessageBookmark, Provider, User
 
 __all__ = ["router"]
 

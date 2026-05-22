@@ -58,8 +58,7 @@ export function CreateOrgDialog({
           <DialogHeader>
             <DialogTitle>Create workspace</DialogTitle>
             <DialogDescription>
-              A workspace owns its own wiki pages and member list. You become
-              the owner.
+              A workspace owns its own wiki pages and member list. You become the owner.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-4">
@@ -87,11 +86,7 @@ export function CreateOrgDialog({
             </div>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={!name.trim() || busy}>

@@ -48,7 +48,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     ``init_engine`` is idempotent — calling it twice inside the same process
     (e.g. under uvicorn's reload loop) simply returns the existing engine.
     """
-    from db.session import dispose_engine, init_engine
+    from service.db.session import dispose_engine, init_engine
 
     settings: Settings = app.state.settings
     init_engine(settings.db.database_url, echo=settings.db.echo_sql)

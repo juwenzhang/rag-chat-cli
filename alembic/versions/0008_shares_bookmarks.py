@@ -56,28 +56,39 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE",
+            ["user_id"],
+            ["users.id"],
+            ondelete="CASCADE",
             name="fk_message_shares_user_id_users",
         ),
         sa.ForeignKeyConstraint(
-            ["session_id"], ["chat_sessions.id"], ondelete="CASCADE",
+            ["session_id"],
+            ["chat_sessions.id"],
+            ondelete="CASCADE",
             name="fk_message_shares_session_id_chat_sessions",
         ),
         sa.ForeignKeyConstraint(
-            ["user_message_id"], ["messages.id"], ondelete="CASCADE",
+            ["user_message_id"],
+            ["messages.id"],
+            ondelete="CASCADE",
             name="fk_message_shares_user_message_id_messages",
         ),
         sa.ForeignKeyConstraint(
-            ["assistant_message_id"], ["messages.id"], ondelete="CASCADE",
+            ["assistant_message_id"],
+            ["messages.id"],
+            ondelete="CASCADE",
             name="fk_message_shares_assistant_message_id_messages",
         ),
         sa.UniqueConstraint(
-            "user_id", "assistant_message_id",
+            "user_id",
+            "assistant_message_id",
             name="uq_message_shares_user_assistant",
         ),
     )
     op.create_index(
-        "ix_message_shares_user_id", "message_shares", ["user_id"],
+        "ix_message_shares_user_id",
+        "message_shares",
+        ["user_id"],
     )
 
     op.create_table(
@@ -101,28 +112,39 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE",
+            ["user_id"],
+            ["users.id"],
+            ondelete="CASCADE",
             name="fk_message_bookmarks_user_id_users",
         ),
         sa.ForeignKeyConstraint(
-            ["session_id"], ["chat_sessions.id"], ondelete="CASCADE",
+            ["session_id"],
+            ["chat_sessions.id"],
+            ondelete="CASCADE",
             name="fk_message_bookmarks_session_id_chat_sessions",
         ),
         sa.ForeignKeyConstraint(
-            ["user_message_id"], ["messages.id"], ondelete="CASCADE",
+            ["user_message_id"],
+            ["messages.id"],
+            ondelete="CASCADE",
             name="fk_message_bookmarks_user_message_id_messages",
         ),
         sa.ForeignKeyConstraint(
-            ["assistant_message_id"], ["messages.id"], ondelete="CASCADE",
+            ["assistant_message_id"],
+            ["messages.id"],
+            ondelete="CASCADE",
             name="fk_message_bookmarks_assistant_message_id_messages",
         ),
         sa.UniqueConstraint(
-            "user_id", "assistant_message_id",
+            "user_id",
+            "assistant_message_id",
             name="uq_message_bookmarks_user_assistant",
         ),
     )
     op.create_index(
-        "ix_message_bookmarks_user_id", "message_bookmarks", ["user_id"],
+        "ix_message_bookmarks_user_id",
+        "message_bookmarks",
+        ["user_id"],
     )
 
 

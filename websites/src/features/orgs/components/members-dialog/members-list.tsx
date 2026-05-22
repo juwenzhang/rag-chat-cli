@@ -41,9 +41,7 @@ export function MembersList({
           />
         ))
       ) : (
-        <p className="py-4 text-center text-sm text-muted-foreground">
-          No members yet.
-        </p>
+        <p className="py-4 text-center text-sm text-muted-foreground">No members yet.</p>
       )}
     </div>
   );
@@ -66,10 +64,7 @@ function MemberRow({
 
   return (
     <div
-      className={cn(
-        "flex items-center gap-3 rounded-md px-2 py-2",
-        "hover:bg-accent/50"
-      )}
+      className={cn("flex items-center gap-3 rounded-md px-2 py-2", "hover:bg-accent/50")}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -83,17 +78,13 @@ function MemberRow({
             </span>
           )}
         </div>
-        <div className="truncate text-xs text-muted-foreground">
-          {member.email}
-        </div>
+        <div className="truncate text-xs text-muted-foreground">{member.email}</div>
       </div>
       {canManage && !isOwnerRow ? (
         <>
           <select
             value={member.role}
-            onChange={(event) =>
-              onChangeRole(member.user_id, event.target.value as Role)
-            }
+            onChange={(event) => onChangeRole(member.user_id, event.target.value as Role)}
             className="h-8 rounded-md border border-border bg-background px-2 text-xs"
           >
             {ROLES.map((role) => (
@@ -113,9 +104,7 @@ function MemberRow({
           </Button>
         </>
       ) : (
-        <span className="text-xs capitalize text-muted-foreground">
-          {member.role}
-        </span>
+        <span className="text-xs capitalize text-muted-foreground">{member.role}</span>
       )}
     </div>
   );

@@ -73,16 +73,12 @@ export default async function WikiIndexPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <h3 className="truncate text-base font-semibold">
-                        {w.name}
-                      </h3>
+                      <h3 className="truncate text-base font-semibold">{w.name}</h3>
                       {w.visibility === "private" && (
                         <Lock className="size-3 shrink-0 text-muted-foreground" />
                       )}
                     </div>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {w.slug}
-                    </p>
+                    <p className="truncate text-xs text-muted-foreground">{w.slug}</p>
                   </div>
                 </div>
                 {w.description && (
@@ -91,7 +87,7 @@ export default async function WikiIndexPage() {
                   </p>
                 )}
                 <p className="mt-auto pt-4 text-xs text-muted-foreground">
-                  {t("wiki.access", { role: w.role })} · {" "}
+                  {t("wiki.access", { role: w.role })} ·{" "}
                   {t("wiki.updated", { time: formatRelative(w.updated_at) })}
                 </p>
               </Link>

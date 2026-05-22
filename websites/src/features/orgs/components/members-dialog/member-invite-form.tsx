@@ -24,10 +24,7 @@ export function MemberInviteForm({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <form
-      onSubmit={onSubmit}
-      className="rounded-lg border border-border bg-muted/30 p-3"
-    >
+    <form onSubmit={onSubmit} className="rounded-lg border border-border bg-muted/30 p-3">
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-[200px] flex-1 space-y-1.5">
           <Label htmlFor="invite-email" className="text-xs">

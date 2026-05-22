@@ -19,11 +19,7 @@ export function ToolCallCard({
 }) {
   const [open, setOpen] = useState(false);
   const variant =
-    status === "failed"
-      ? "destructive"
-      : status === "done"
-        ? "success"
-        : "secondary";
+    status === "failed" ? "destructive" : status === "done" ? "success" : "secondary";
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">

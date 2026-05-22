@@ -54,10 +54,7 @@ export async function updateDocument(
   });
 }
 
-export async function deleteDocument(
-  token: string,
-  documentId: string
-): Promise<void> {
+export async function deleteDocument(token: string, documentId: string): Promise<void> {
   await apiFetch<void>(`/knowledge/documents/${documentId}`, {
     method: "DELETE",
     token,

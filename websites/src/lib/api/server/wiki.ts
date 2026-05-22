@@ -28,10 +28,7 @@ export interface UpdateWikiBody {
   visibility?: WikiVisibility;
 }
 
-export async function listWikis(
-  token: string,
-  orgId: string
-): Promise<WikiOut[]> {
+export async function listWikis(token: string, orgId: string): Promise<WikiOut[]> {
   return apiFetch<WikiOut[]>(`/orgs/${orgId}/wikis`, { token });
 }
 
@@ -47,10 +44,7 @@ export async function createWiki(
   });
 }
 
-export async function getWiki(
-  token: string,
-  wikiId: string
-): Promise<WikiOut> {
+export async function getWiki(token: string, wikiId: string): Promise<WikiOut> {
   return apiFetch<WikiOut>(`/wikis/${wikiId}`, { token });
 }
 
@@ -163,10 +157,7 @@ export async function createPage(
   });
 }
 
-export async function getPage(
-  token: string,
-  pageId: string
-): Promise<WikiPageDetailOut> {
+export async function getPage(token: string, pageId: string): Promise<WikiPageDetailOut> {
   return apiFetch<WikiPageDetailOut>(`/wiki-pages/${pageId}`, { token });
 }
 
@@ -182,10 +173,7 @@ export async function updatePage(
   });
 }
 
-export async function deletePage(
-  token: string,
-  pageId: string
-): Promise<void> {
+export async function deletePage(token: string, pageId: string): Promise<void> {
   await apiFetch<void>(`/wiki-pages/${pageId}`, { method: "DELETE", token });
 }
 
@@ -230,10 +218,7 @@ export async function getPageShare(
   return apiFetch<WikiPageShareOut>(`/wiki-pages/${pageId}/share`, { token });
 }
 
-export async function revokePageShare(
-  token: string,
-  shareToken: string
-): Promise<void> {
+export async function revokePageShare(token: string, shareToken: string): Promise<void> {
   await apiFetch<void>(`/wiki-page-shares/${shareToken}`, {
     method: "DELETE",
     token,

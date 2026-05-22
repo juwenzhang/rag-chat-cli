@@ -5,9 +5,18 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { documentService, wikiPageService, wikiService } from "@/features/wiki/services/wiki-page-service";
+import {
+  documentService,
+  wikiPageService,
+  wikiService,
+} from "@/features/wiki/services/wiki-page-service";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
-import type { DocumentOut, OrgOut, WikiOut, WikiPageListOut } from "@/lib/api/shared/types";
+import type {
+  DocumentOut,
+  OrgOut,
+  WikiOut,
+  WikiPageListOut,
+} from "@/lib/api/shared/types";
 import { useI18n } from "@/lib/i18n/provider";
 
 import { CollapsedSidebar } from "./collapsed-sidebar";
@@ -31,10 +40,8 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages, documents }: 
   const { t } = useI18n();
   const params = useParams();
   const pathname = usePathname();
-  const activePageId =
-    typeof params.pageId === "string" ? params.pageId : null;
-  const urlWikiId =
-    typeof params.wikiId === "string" ? params.wikiId : null;
+  const activePageId = typeof params.pageId === "string" ? params.pageId : null;
+  const urlWikiId = typeof params.wikiId === "string" ? params.wikiId : null;
 
   const isAtRoot = pathname === "/wiki" || pathname.startsWith("/wiki/documents");
   useEffect(() => {
@@ -54,10 +61,8 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages, documents }: 
   const setQuery = useWikiStore((state) => state.setSidebarQuery);
   const setCollapsed = useWikiStore((state) => state.setSidebarCollapsed);
   const [creating, setCreating] = useState(false);
-  const [pendingDelete, setPendingDelete] =
-    useState<WikiPageListOut | null>(null);
-  const [pendingWikiDelete, setPendingWikiDelete] =
-    useState<WikiOut | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<WikiPageListOut | null>(null);
+  const [pendingWikiDelete, setPendingWikiDelete] = useState<WikiOut | null>(null);
   const [createWikiOpen, setCreateWikiOpen] = useState(false);
 
   const canEditWiki = activeWiki !== null && activeWiki.role !== "viewer";
@@ -77,9 +82,7 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages, documents }: 
   const searchHits = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return null;
-    return effectivePages.filter((page) =>
-      page.title.toLowerCase().includes(normalized)
-    );
+    return effectivePages.filter((page) => page.title.toLowerCase().includes(normalized));
   }, [effectivePages, query]);
 
   const createPage = async (wikiId: string, parentId?: string) => {

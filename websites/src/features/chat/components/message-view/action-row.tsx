@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  Bookmark,
-  BookmarkCheck,
-  Check,
-  Copy,
-  RefreshCw,
-  Share2,
-} from "lucide-react";
+import { Bookmark, BookmarkCheck, Check, Copy, RefreshCw, Share2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 

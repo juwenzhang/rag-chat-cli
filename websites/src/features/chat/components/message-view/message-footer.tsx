@@ -19,10 +19,8 @@ export function MessageFooter({ message }: { message: UIMessage }) {
   }
   const totalTokens =
     message.usage?.total_tokens ??
-    (message.usage?.prompt_tokens != null &&
-    message.usage?.completion_tokens != null
-      ? (message.usage.prompt_tokens ?? 0) +
-        (message.usage.completion_tokens ?? 0)
+    (message.usage?.prompt_tokens != null && message.usage?.completion_tokens != null
+      ? (message.usage.prompt_tokens ?? 0) + (message.usage.completion_tokens ?? 0)
       : undefined);
   if (totalTokens != null) {
     parts.push(

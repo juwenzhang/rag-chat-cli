@@ -33,10 +33,7 @@ function MarkdownImpl({ children, className }: Props) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[
-          [
-            rehypeHighlight,
-            { detect: true, ignoreMissing: true, languages: all },
-          ],
+          [rehypeHighlight, { detect: true, ignoreMissing: true, languages: all }],
         ]}
         components={{
           a: ({ href, children, ...rest }) => (
@@ -131,11 +128,7 @@ function CodeBlock({ children, ...rest }: ComponentProps<"pre">) {
             "opacity-0 group-hover:opacity-100"
           )}
         >
-          {copied ? (
-            <Check className="size-3.5" />
-          ) : (
-            <Copy className="size-3.5" />
-          )}
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
         </button>
       </div>
       <pre {...rest}>{children}</pre>

@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, frontend-refactor]
   pull_request:
 
 concurrency:
@@ -10,43 +10,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: lint (ruff)
+  quality:
+    name: quality
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "0.5.x"
-      - name: uv sync
-        run: uv sync --extra dev
-      - name: ruff check
-        run: uv run ruff check .
-      - name: ruff format --check
-        run: uv run ruff format --check .
-
-  typecheck:
-    name: typecheck (mypy)
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-        with:
-          version: "0.5.x"
-      - name: uv sync
-        run: uv sync --extra dev
-      - name: mypy --strict
-        run: uv run mypy --strict . --explicit-package-bases
-
-  test:
-    name: test (python ${{ matrix.python }})
-    runs-on: ubuntu-latest
-    needs: lint
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.10", "3.11"]
     env:
       APP__ENV: dev
       AUTH__JWT_SECRET: ci-secret-not-for-prod-xxxxxxxxxxxxxxxx
@@ -55,14 +21,27 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           version: "0.5.x"
-      - name: uv python install
-        run: uv python install ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: websites/pnpm-lock.yaml
+      - name: enable corepack
+        run: corepack enable
       - name: uv sync
-        run: uv sync --extra dev --python ${{ matrix.python }}
-      - name: pytest
-        run: uv run pytest -q
-
-  # Future jobs (gated behind the respective changes landing):
-  #   - test-cov-strict  → once total ≥ 85 and core/ ≥ 90 are realistic
-  #   - docker-build     → once docker/Dockerfile.app lands (containerize-with-docker-compose)
-  #   - openapi-check    → once api/ + scripts/dump_openapi.py land (add-fastapi-rest-api)
+        run: uv sync --extra dev
+      - name: pnpm install
+        run: pnpm --dir websites install --frozen-lockfile
+      - name: backend quality
+        run: uv run python scripts/quality.py backend
+      - name: frontend quality
+        run: uv run python scripts/quality.py frontend
+      - name: smoke imports
+        run: |
+          uv run python main.py --help >/tmp/rag_cli_help.txt
+          uv run python -c "from api.app import create_app; app=create_app(); print(app.title)"
+      - name: commit message example
+        run: |
+          tmp=$(mktemp)
+          echo "ci(repo): validate quality workflow" > "$tmp"
+          python3 scripts/check_commit_msg.py "$tmp"

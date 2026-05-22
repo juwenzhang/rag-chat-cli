@@ -35,9 +35,6 @@ export default async function ProvidersPage() {
   }
 
   return (
-    <ProvidersPageClient
-      initialProviders={providers}
-      initialPreferences={preferences}
-    />
+    <ProvidersPageClient initialProviders={providers} initialPreferences={preferences} />
   );
 }

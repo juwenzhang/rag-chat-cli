@@ -85,9 +85,7 @@ function MessageList({
             key={message.id}
             message={message}
             prevUserMessageId={prevUserId}
-            onRegenerate={
-              isLastAssistant && !streaming ? onRegenerate : undefined
-            }
+            onRegenerate={isLastAssistant && !streaming ? onRegenerate : undefined}
           />
         );
       })}
@@ -119,9 +117,7 @@ function JumpToBottomButton({
         )}
       >
         <ArrowDown className="size-3.5" />
-        <span className="text-xs">
-          {streaming ? copy.newTokens : copy.jumpToLatest}
-        </span>
+        <span className="text-xs">{streaming ? copy.newTokens : copy.jumpToLatest}</span>
       </Button>
     </div>
   );

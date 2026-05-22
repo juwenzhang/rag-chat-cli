@@ -4,7 +4,7 @@ Key decisions:
 
 * URL is read from ``settings.db.database_url`` at runtime; it is *not*
   stored in ``alembic.ini``.
-* ``import db.models`` triggers ORM registration before
+* ``import service.db.models`` triggers ORM registration before
   ``target_metadata`` is read.
 * ``render_as_batch=True`` on SQLite so the ``alembic upgrade`` path
   also works under the test harness (SQLite cannot ALTER TABLE natively).
@@ -34,9 +34,9 @@ if config.config_file_name is not None:
 
 # Import settings lazily so failures surface with a clear message.
 # Register all ORM models so Base.metadata is populated.
-import db.models  # noqa: E402, F401  — side-effect import
-from db.base import Base  # noqa: E402
-from db.url import asyncpg_connect_args, normalize_database_url  # noqa: E402
+import service.db.models  # noqa: E402, F401  — side-effect import
+from service.db.base import Base  # noqa: E402
+from service.db.url import asyncpg_connect_args, normalize_database_url  # noqa: E402
 from settings import settings  # noqa: E402
 
 target_metadata = Base.metadata

@@ -17,14 +17,8 @@ export function ToolCallsBlock({
     <div className="flex flex-col gap-2">
       {calls.map((c) => {
         const result = results.find((r) => r.id === c.id);
-        const status = result?.error
-          ? "failed"
-          : result
-            ? "done"
-            : "running";
-        return (
-          <ToolCallCard key={c.id} call={c} result={result} status={status} />
-        );
+        const status = result?.error ? "failed" : result ? "done" : "running";
+        return <ToolCallCard key={c.id} call={c} result={result} status={status} />;
       })}
     </div>
   );

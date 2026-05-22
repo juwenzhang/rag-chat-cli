@@ -24,12 +24,7 @@ export interface ShareDialogProps {
   onRevoked: () => void;
 }
 
-export function ShareDialog({
-  open,
-  onOpenChange,
-  share,
-  onRevoked,
-}: ShareDialogProps) {
+export function ShareDialog({ open, onOpenChange, share, onRevoked }: ShareDialogProps) {
   const [copied, setCopied] = useState(false);
   const [revoking, setRevoking] = useState(false);
 
@@ -73,8 +68,8 @@ export function ShareDialog({
             Share this Q&amp;A
           </DialogTitle>
           <DialogDescription>
-            Anyone with this link can read the question and answer. They
-            can&apos;t see the rest of your conversation.
+            Anyone with this link can read the question and answer. They can&apos;t see
+            the rest of your conversation.
           </DialogDescription>
         </DialogHeader>
 

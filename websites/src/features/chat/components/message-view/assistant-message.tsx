@@ -23,8 +23,7 @@ export function AssistantMessage({
 }) {
   // Share / Bookmark need both server IDs. Optimistic rows during the
   // active stream lack them (and the preceding user row is also still local).
-  const canPersistAction =
-    !!message.persisted && !!prevUserMessageId && !!message.id;
+  const canPersistAction = !!message.persisted && !!prevUserMessageId && !!message.id;
 
   return (
     <div className="group flex w-full gap-3">
@@ -35,10 +34,7 @@ export function AssistantMessage({
         )}
 
         {message.toolCalls && message.toolCalls.length > 0 && (
-          <ToolCallsBlock
-            calls={message.toolCalls}
-            results={message.toolResults || []}
-          />
+          <ToolCallsBlock calls={message.toolCalls} results={message.toolResults || []} />
         )}
 
         {message.content ? (
@@ -46,9 +42,7 @@ export function AssistantMessage({
         ) : message.streaming ? (
           <ThinkingIndicator />
         ) : message.error ? null : (
-          <p className="text-sm italic text-muted-foreground">
-            Response stopped.
-          </p>
+          <p className="text-sm italic text-muted-foreground">Response stopped.</p>
         )}
 
         {message.streaming && message.content && (

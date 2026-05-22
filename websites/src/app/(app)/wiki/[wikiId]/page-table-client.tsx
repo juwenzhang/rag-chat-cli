@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  FileText,
-  MoreHorizontal,
-  Share2,
-  Trash2,
-} from "lucide-react";
+import { FileText, MoreHorizontal, Share2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -34,10 +29,8 @@ interface Props {
 export function PageTableClient({ wikiId, pages: initial, canEdit }: Props) {
   const router = useRouter();
   const [pages, setPages] = useState(initial);
-  const [pendingDelete, setPendingDelete] =
-    useState<WikiPageListOut | null>(null);
-  const [shareTarget, setShareTarget] =
-    useState<WikiPageListOut | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<WikiPageListOut | null>(null);
+  const [shareTarget, setShareTarget] = useState<WikiPageListOut | null>(null);
 
   const onDelete = async () => {
     if (!pendingDelete) return;
@@ -58,12 +51,8 @@ export function PageTableClient({ wikiId, pages: initial, canEdit }: Props) {
           <thead className="border-b border-border bg-muted/30">
             <tr className="text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               <th className="px-4 py-2.5">Title</th>
-              <th className="hidden px-4 py-2.5 sm:table-cell w-40">
-                Last updated
-              </th>
-              <th className="hidden px-4 py-2.5 md:table-cell w-32">
-                Created
-              </th>
+              <th className="hidden px-4 py-2.5 sm:table-cell w-40">Last updated</th>
+              <th className="hidden px-4 py-2.5 md:table-cell w-32">Created</th>
               <th className="px-4 py-2.5 w-16 text-right">Actions</th>
             </tr>
           </thead>
@@ -102,11 +91,7 @@ export function PageTableClient({ wikiId, pages: initial, canEdit }: Props) {
                 <td className="px-4 py-3 text-right">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Actions"
-                      >
+                      <Button variant="ghost" size="icon-sm" aria-label="Actions">
                         <MoreHorizontal className="size-3.5" />
                       </Button>
                     </DropdownMenuTrigger>

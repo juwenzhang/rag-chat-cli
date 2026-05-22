@@ -13,8 +13,8 @@ from fastapi import APIRouter, Depends, status
 
 from api.deps import get_auth_service
 from api.schemas.auth import LoginIn, RefreshIn, RegisterIn, TokenPair, UserOut
-from core.auth.service import AuthService
-from core.auth.service import TokenPair as DomainTokenPair
+from service.auth.service import AuthService
+from service.auth.service import TokenPair as DomainTokenPair
 
 __all__ = ["router"]
 

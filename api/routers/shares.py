@@ -24,12 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db_session
 from api.schemas.share import (
-    SharedMessageOut,
-    SharePublicOut,
     ShareCreateIn,
+    SharedMessageOut,
     ShareOut,
+    SharePublicOut,
 )
-from db.models import ChatSession, Message, MessageShare, Provider, User
+from service.db.models import ChatSession, Message, MessageShare, Provider, User
 
 __all__ = ["router"]
 
@@ -43,9 +43,7 @@ def _new_token() -> str:
     return "".join(secrets.choice(_TOKEN_ALPHABET) for _ in range(_TOKEN_LEN))
 
 
-async def _own_message(
-    session: AsyncSession, user_id: uuid.UUID, message_id: uuid.UUID
-) -> Message:
+async def _own_message(session: AsyncSession, user_id: uuid.UUID, message_id: uuid.UUID) -> Message:
     """Fetch a message and verify it belongs to a session owned by ``user_id``.
 
     Returns 404 (not 403) if the message doesn't belong to the user to avoid
@@ -133,9 +131,7 @@ async def revoke_share(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
-    row = await session.scalar(
-        select(MessageShare).where(MessageShare.token == token)
-    )
+    row = await session.scalar(select(MessageShare).where(MessageShare.token == token))
     if row is None or row.user_id != user.id:
         raise HTTPException(status_code=404, detail="share not found")
     await session.delete(row)
@@ -151,9 +147,7 @@ async def public_share(
     token: str,
     session: AsyncSession = Depends(get_db_session),
 ) -> SharePublicOut:
-    row = await session.scalar(
-        select(MessageShare).where(MessageShare.token == token)
-    )
+    row = await session.scalar(select(MessageShare).where(MessageShare.token == token))
     if row is None:
         raise HTTPException(status_code=404, detail="share not found")
 

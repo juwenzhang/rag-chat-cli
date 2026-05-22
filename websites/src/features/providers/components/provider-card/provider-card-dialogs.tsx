@@ -62,8 +62,8 @@ export function ProviderCardDialogs({
         title={`Delete provider "${provider.name}"?`}
         description={
           <>
-            This will remove the saved endpoint and any encrypted API key. Chat
-            sessions pinned to this provider will fall back to your user default.
+            This will remove the saved endpoint and any encrypted API key. Chat sessions
+            pinned to this provider will fall back to your user default.
           </>
         }
         confirmLabel="Delete"
@@ -87,9 +87,9 @@ export function ProviderCardDialogs({
         title={`Remove "${modelToDelete}" from Ollama?`}
         description={
           <>
-            This calls Ollama&apos;s <code className="font-mono">/api/delete</code>{" "}
-            and frees the disk space the model layers occupied. Pulling it again
-            later will re-download.
+            This calls Ollama&apos;s <code className="font-mono">/api/delete</code> and
+            frees the disk space the model layers occupied. Pulling it again later will
+            re-download.
           </>
         }
         confirmLabel="Remove"

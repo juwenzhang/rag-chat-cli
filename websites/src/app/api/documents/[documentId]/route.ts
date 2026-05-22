@@ -17,9 +17,7 @@ export async function PATCH(
 ) {
   const { documentId } = await ctx.params;
   const body = await readJson<UpdateDocumentBody>(req);
-  return withAuth((token) =>
-    knowledgeApi.updateDocument(token, documentId, body)
-  );
+  return withAuth((token) => knowledgeApi.updateDocument(token, documentId, body));
 }
 
 export async function DELETE(

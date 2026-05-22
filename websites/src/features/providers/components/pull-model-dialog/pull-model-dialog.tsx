@@ -147,10 +147,9 @@ export function PullModelDialog({
         <DialogHeader>
           <DialogTitle>Pull an Ollama model</DialogTitle>
           <DialogDescription>
-            Downloads to{" "}
-            <span className="font-mono text-foreground">{providerName}</span>.
-            Tags ending in <span className="font-mono">-cloud</span> are
-            registered against Ollama Cloud and complete near-instantly.
+            Downloads to <span className="font-mono text-foreground">{providerName}</span>
+            . Tags ending in <span className="font-mono">-cloud</span> are registered
+            against Ollama Cloud and complete near-instantly.
           </DialogDescription>
         </DialogHeader>
 

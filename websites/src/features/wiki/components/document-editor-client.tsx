@@ -1,12 +1,7 @@
 "use client";
 
 import type { Editor } from "@tiptap/react";
-import {
-  ArrowLeft,
-  MoreHorizontal,
-  Share2,
-  Trash2,
-} from "lucide-react";
+import { ArrowLeft, MoreHorizontal, Share2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -23,7 +18,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TipTapEditor } from "@/features/wiki/components/tiptap-editor";
 import { parseToc, WikiToc } from "@/features/wiki/components/wiki-toc";
-import { SaveIndicator, type WikiSaveStatus } from "@/features/wiki/components/save-indicator";
+import {
+  SaveIndicator,
+  type WikiSaveStatus,
+} from "@/features/wiki/components/save-indicator";
 import { documentService } from "@/features/wiki/services/wiki-page-service";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import type { DocumentDetailOut } from "@/lib/api/shared/types";
@@ -159,11 +157,7 @@ export function DocumentEditorClient({ document: initial }: Props) {
           <SaveIndicator status={status} lastSavedAt={lastSavedAt} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Document actions"
-              >
+              <Button variant="ghost" size="icon-sm" aria-label="Document actions">
                 <MoreHorizontal />
               </Button>
             </DropdownMenuTrigger>

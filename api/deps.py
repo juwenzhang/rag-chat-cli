@@ -15,16 +15,16 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from core.auth.errors import (
+from service.auth.errors import (
     AuthError,
     TokenExpiredError,
     TokenInvalidError,
     UserNotActiveError,
 )
-from core.auth.service import AuthService
-from core.auth.tokens import decode_token
-from db.models import User
-from db.session import current_session_factory, get_session
+from service.auth.service import AuthService
+from service.auth.tokens import decode_token
+from service.db.models import User
+from service.db.session import current_session_factory, get_session
 
 if TYPE_CHECKING:
     from fastapi import WebSocket

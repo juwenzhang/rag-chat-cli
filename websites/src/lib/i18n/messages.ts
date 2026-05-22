@@ -52,7 +52,8 @@ export const messages = {
     "auth.footer": "Open source · GitHub · MIT License",
     "auth.login.title": "Welcome {accent}",
     "auth.login.titleAccent": "back",
-    "auth.login.description": "Sign in to access your conversations, knowledge base, and memory.",
+    "auth.login.description":
+      "Sign in to access your conversations, knowledge base, and memory.",
     "auth.login.submit": "Sign in",
     "auth.login.pending": "Signing in…",
     "auth.login.noAccount": "Don't have an account?",
@@ -60,7 +61,8 @@ export const messages = {
     "auth.login.forgot": "Forgot?",
     "auth.register.title": "Get {accent}",
     "auth.register.titleAccent": "started",
-    "auth.register.description": "Conversations, knowledge, and memory — all in one place.",
+    "auth.register.description":
+      "Conversations, knowledge, and memory — all in one place.",
     "auth.register.submit": "Create account",
     "auth.register.pending": "Creating account…",
     "auth.register.hasAccount": "Already have an account?",
@@ -78,20 +80,28 @@ export const messages = {
 
     "chat.empty.title": "How can I {accent} you today?",
     "chat.empty.titleAccent": "help",
-    "chat.empty.description": "Ask anything — I'll reason step by step, call tools, and retrieve from your knowledge base.",
+    "chat.empty.description":
+      "Ask anything — I'll reason step by step, call tools, and retrieve from your knowledge base.",
     "chat.example.concept.title": "Explain a concept",
-    "chat.example.concept.prompt": "Explain how retrieval-augmented generation (RAG) works in plain English.",
+    "chat.example.concept.prompt":
+      "Explain how retrieval-augmented generation (RAG) works in plain English.",
     "chat.example.refactor.title": "Refactor code",
-    "chat.example.refactor.prompt": "Refactor this Python snippet to use type hints and remove the global variable.",
+    "chat.example.refactor.prompt":
+      "Refactor this Python snippet to use type hints and remove the global variable.",
     "chat.example.summary.title": "Summarise a document",
-    "chat.example.summary.prompt": "Summarise the key takeaways from my recent notes about vector search performance.",
+    "chat.example.summary.prompt":
+      "Summarise the key takeaways from my recent notes about vector search performance.",
     "chat.example.brainstorm.title": "Brainstorm",
-    "chat.example.brainstorm.prompt": "Give me five creative blog post ideas about local-first AI applications.",
-    "chat.composer.placeholder": "Ask anything…  (Enter to send, Shift+Enter for newline)",
-    "chat.composer.disclaimer": "lhx-rag may produce inaccurate information. Responses are not stored unless you save them to your knowledge base.",
+    "chat.example.brainstorm.prompt":
+      "Give me five creative blog post ideas about local-first AI applications.",
+    "chat.composer.placeholder":
+      "Ask anything…  (Enter to send, Shift+Enter for newline)",
+    "chat.composer.disclaimer":
+      "lhx-rag may produce inaccurate information. Responses are not stored unless you save them to your knowledge base.",
     "chat.composer.ragOn": "on",
     "chat.composer.ragOff": "off",
-    "chat.composer.ragEnabledTip": "Retrieval-augmented context is being added to each turn",
+    "chat.composer.ragEnabledTip":
+      "Retrieval-augmented context is being added to each turn",
     "chat.composer.ragDisabledTip": "Click to enable retrieval-augmented context",
     "chat.composer.send": "Send",
     "chat.composer.stop": "Stop",
@@ -105,20 +115,24 @@ export const messages = {
     "bookmarks.searchPlaceholder": "Search bookmarks…",
     "bookmarks.noMatch": "No bookmarks match {query}.",
     "bookmarks.removeTitle": "Remove this bookmark?",
-    "bookmarks.removeDescription": "The conversation itself stays — only the bookmark goes away.",
+    "bookmarks.removeDescription":
+      "The conversation itself stays — only the bookmark goes away.",
     "bookmarks.shareFailed": "Failed to create share link",
     "bookmarks.removeFailed": "Failed to remove bookmark",
     "bookmarks.removed": "Bookmark removed",
 
     "orgs.title": "Workspaces",
     "orgs.heading": "Workspaces",
-    "orgs.description": "Each workspace has its own wiki and members. Your personal workspace is auto-created and can't be deleted.",
+    "orgs.description":
+      "Each workspace has its own wiki and members. Your personal workspace is auto-created and can't be deleted.",
     "orgs.new": "New workspace",
     "orgs.deleteTitle": "Delete {name}?",
     "orgs.deleteFallback": "this workspace",
-    "orgs.deleteDescription": "All wiki pages and members in this workspace will be removed. This cannot be undone.",
+    "orgs.deleteDescription":
+      "All wiki pages and members in this workspace will be removed. This cannot be undone.",
     "orgs.leaveTitle": "Leave {name}?",
-    "orgs.leaveDescription": "You'll lose access to its wiki and members. An owner will have to re-invite you to come back.",
+    "orgs.leaveDescription":
+      "You'll lose access to its wiki and members. An owner will have to re-invite you to come back.",
     "orgs.leaveFailed": "Failed to leave",
     "orgs.left": "Left workspace",
     "orgs.deleteFailed": "Failed to delete workspace",
@@ -129,7 +143,8 @@ export const messages = {
     "settings.account": "Account",
     "settings.models": "Models",
     "settings.accountTitle": "Account settings",
-    "settings.accountDescription": "Your identity and personal preferences for this workspace app.",
+    "settings.accountDescription":
+      "Your identity and personal preferences for this workspace app.",
     "settings.email": "Email",
     "settings.displayName": "Display name",
     "settings.noDisplayName": "No display name set",
@@ -141,11 +156,13 @@ export const messages = {
     "settings.theme": "Theme",
     "settings.themeDescription": "Switch between light and dark mode.",
     "settings.modelsTitle": "Model settings",
-    "settings.modelsDescription": "Configure providers, API keys, default chat models, and embedding models.",
+    "settings.modelsDescription":
+      "Configure providers, API keys, default chat models, and embedding models.",
     "settings.openModels": "Open model settings",
 
     "providers.title": "Models",
-    "providers.description": "Configure your Ollama, OpenAI key, or any OpenAI-compatible endpoint. Keys are encrypted at rest.",
+    "providers.description":
+      "Configure your Ollama, OpenAI key, or any OpenAI-compatible endpoint. Keys are encrypted at rest.",
     "providers.backToChat": "Back to chat",
     "providers.add": "Add provider",
     "providers.none": "No providers yet. Add one to start chatting.",
@@ -175,8 +192,10 @@ export const messages = {
     "wiki.indexCount": "{count} wiki{plural} in this workspace",
     "wiki.updated": "updated {time}",
     "wiki.access": "{role} access",
-    "wiki.emptyOwner": "A wiki is a named knowledge base — group related pages together, share with teammates, and let the AI search inside (later).",
-    "wiki.emptyViewer": "Pages live inside wikis. An owner of this workspace needs to create one before you can write.",
+    "wiki.emptyOwner":
+      "A wiki is a named knowledge base — group related pages together, share with teammates, and let the AI search inside (later).",
+    "wiki.emptyViewer":
+      "Pages live inside wikis. An owner of this workspace needs to create one before you can write.",
     "wiki.createFirst": "Create your first wiki",
     "wiki.editor.askAI": "Ask AI",
     "wiki.editor.pageActions": "Page actions",
@@ -253,17 +272,20 @@ export const messages = {
 
     "chat.empty.title": "今天想让我{accent}你什么？",
     "chat.empty.titleAccent": "帮",
-    "chat.empty.description": "可以问任何问题——我会逐步推理、调用工具，并从你的知识库中检索上下文。",
+    "chat.empty.description":
+      "可以问任何问题——我会逐步推理、调用工具，并从你的知识库中检索上下文。",
     "chat.example.concept.title": "解释概念",
     "chat.example.concept.prompt": "用通俗语言解释检索增强生成（RAG）是如何工作的。",
     "chat.example.refactor.title": "重构代码",
-    "chat.example.refactor.prompt": "把这段 Python 代码重构为使用类型提示，并移除全局变量。",
+    "chat.example.refactor.prompt":
+      "把这段 Python 代码重构为使用类型提示，并移除全局变量。",
     "chat.example.summary.title": "总结文档",
     "chat.example.summary.prompt": "总结我最近关于向量检索性能笔记里的关键结论。",
     "chat.example.brainstorm.title": "头脑风暴",
     "chat.example.brainstorm.prompt": "给我 5 个关于本地优先 AI 应用的创意博客选题。",
     "chat.composer.placeholder": "问点什么…（Enter 发送，Shift+Enter 换行）",
-    "chat.composer.disclaimer": "lhx-rag 可能生成不准确的信息。除非你主动保存到知识库，否则回复不会被存储。",
+    "chat.composer.disclaimer":
+      "lhx-rag 可能生成不准确的信息。除非你主动保存到知识库，否则回复不会被存储。",
     "chat.composer.ragOn": "开",
     "chat.composer.ragOff": "关",
     "chat.composer.ragEnabledTip": "每轮对话都会加入检索增强上下文",
@@ -287,13 +309,16 @@ export const messages = {
 
     "orgs.title": "工作空间",
     "orgs.heading": "工作空间",
-    "orgs.description": "每个工作空间都有独立的 Wiki 和成员。你的个人工作空间会自动创建，且不能删除。",
+    "orgs.description":
+      "每个工作空间都有独立的 Wiki 和成员。你的个人工作空间会自动创建，且不能删除。",
     "orgs.new": "新建工作空间",
     "orgs.deleteTitle": "删除 {name}？",
     "orgs.deleteFallback": "这个工作空间",
-    "orgs.deleteDescription": "该工作空间里的所有 Wiki 页面和成员都会被移除。此操作不可撤销。",
+    "orgs.deleteDescription":
+      "该工作空间里的所有 Wiki 页面和成员都会被移除。此操作不可撤销。",
     "orgs.leaveTitle": "离开 {name}？",
-    "orgs.leaveDescription": "你将失去它的 Wiki 和成员访问权限。之后需要所有者重新邀请你。",
+    "orgs.leaveDescription":
+      "你将失去它的 Wiki 和成员访问权限。之后需要所有者重新邀请你。",
     "orgs.leaveFailed": "离开失败",
     "orgs.left": "已离开工作空间",
     "orgs.deleteFailed": "删除工作空间失败",
@@ -320,7 +345,8 @@ export const messages = {
     "settings.openModels": "打开模型设置",
 
     "providers.title": "模型",
-    "providers.description": "配置你的 Ollama、OpenAI Key，或任何兼容 OpenAI 的端点。密钥会加密存储。",
+    "providers.description":
+      "配置你的 Ollama、OpenAI Key，或任何兼容 OpenAI 的端点。密钥会加密存储。",
     "providers.backToChat": "返回聊天",
     "providers.add": "添加服务商",
     "providers.none": "还没有服务商。添加一个即可开始聊天。",
@@ -350,8 +376,10 @@ export const messages = {
     "wiki.indexCount": "该工作空间中有 {count} 个 Wiki",
     "wiki.updated": "更新于 {time}",
     "wiki.access": "{role} 权限",
-    "wiki.emptyOwner": "Wiki 是一个命名知识库——可以把相关页面组织在一起、与队友共享，并让 AI 在其中检索（后续支持）。",
-    "wiki.emptyViewer": "页面属于 Wiki。需要该工作空间的所有者先创建 Wiki，你才能编写页面。",
+    "wiki.emptyOwner":
+      "Wiki 是一个命名知识库——可以把相关页面组织在一起、与队友共享，并让 AI 在其中检索（后续支持）。",
+    "wiki.emptyViewer":
+      "页面属于 Wiki。需要该工作空间的所有者先创建 Wiki，你才能编写页面。",
     "wiki.createFirst": "创建第一个 Wiki",
     "wiki.editor.askAI": "问 AI",
     "wiki.editor.pageActions": "页面操作",

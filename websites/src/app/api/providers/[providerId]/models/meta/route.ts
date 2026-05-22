@@ -7,9 +7,7 @@ export async function POST(
   ctx: { params: Promise<{ providerId: string }> }
 ) {
   const { providerId } = await ctx.params;
-  const body = await readJson<{ model?: string; description?: string | null }>(
-    req
-  );
+  const body = await readJson<{ model?: string; description?: string | null }>(req);
   return withAuth((token) =>
     providerApi.upsertModelMeta(token, providerId, {
       model: body.model ?? "",

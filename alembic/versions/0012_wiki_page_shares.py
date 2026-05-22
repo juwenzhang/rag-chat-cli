@@ -47,23 +47,32 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE",
+            ["user_id"],
+            ["users.id"],
+            ondelete="CASCADE",
             name="fk_wiki_page_shares_user_id_users",
         ),
         sa.ForeignKeyConstraint(
-            ["page_id"], ["wiki_pages.id"], ondelete="CASCADE",
+            ["page_id"],
+            ["wiki_pages.id"],
+            ondelete="CASCADE",
             name="fk_wiki_page_shares_page_id_wiki_pages",
         ),
         sa.UniqueConstraint(
-            "user_id", "page_id",
+            "user_id",
+            "page_id",
             name="uq_wiki_page_shares_user_page",
         ),
     )
     op.create_index(
-        "ix_wiki_page_shares_user_id", "wiki_page_shares", ["user_id"],
+        "ix_wiki_page_shares_user_id",
+        "wiki_page_shares",
+        ["user_id"],
     )
     op.create_index(
-        "ix_wiki_page_shares_token", "wiki_page_shares", ["token"],
+        "ix_wiki_page_shares_token",
+        "wiki_page_shares",
+        ["token"],
         unique=True,
     )
 

@@ -25,11 +25,8 @@ export const providerService = {
   deleteModel: (providerId: string, model: string) =>
     api.providers.deleteModel(providerId, model),
 
-  saveModelDescription: (
-    providerId: string,
-    model: string,
-    description: string | null
-  ) => api.providers.upsertModelMeta(providerId, model, description),
+  saveModelDescription: (providerId: string, model: string, description: string | null) =>
+    api.providers.upsertModelMeta(providerId, model, description),
 
   saveApiKey: (providerId: string, apiKey: string) =>
     api.providers.update(providerId, { api_key: apiKey }),
@@ -42,7 +39,9 @@ export const providerService = {
   pullModel: (providerId: string, model: string, signal?: AbortSignal) =>
     api.providers.pullModel(providerId, model, signal),
 
-  listEmbeddingModels: async (providers: Array<{ id: string; name: string; enabled: boolean }>) => {
+  listEmbeddingModels: async (
+    providers: Array<{ id: string; name: string; enabled: boolean }>
+  ) => {
     const enabled = providers.filter((p) => p.enabled);
     const results = await Promise.all(
       enabled.map(async (p) => {

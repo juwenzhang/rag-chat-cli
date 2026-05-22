@@ -14,10 +14,7 @@ import { api } from "@/lib/api/browser";
 import type { ProviderOut, UserPreferenceOut } from "@/lib/api/shared/types";
 import { cn } from "@/lib/utils";
 
-import {
-  ModelSelectorMenu,
-  type ProviderWithModels,
-} from "./model-selector-menu";
+import { ModelSelectorMenu, type ProviderWithModels } from "./model-selector-menu";
 
 interface Props {
   sessionId: string;
@@ -140,7 +137,10 @@ export function ModelSelector({
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-[60vh] w-[calc(100vw-2rem)] max-w-72 overflow-y-auto">
+      <DropdownMenuContent
+        align="end"
+        className="max-h-[60vh] w-[calc(100vw-2rem)] max-w-72 overflow-y-auto"
+      >
         <ModelSelectorMenu
           bootstrapLoading={false}
           providers={providers}
@@ -177,10 +177,7 @@ function getSwitchMessage(
     : `Switched to ${providerName}`;
 }
 
-function getButtonLabel(
-  model: string | null,
-  providerName: string | null
-): string {
+function getButtonLabel(model: string | null, providerName: string | null): string {
   if (model && providerName) return `${providerName} · ${model}`;
   if (model) return model;
   if (providerName) return `${providerName} · auto`;

@@ -15,7 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import type { UserPreferenceBody } from "@/lib/api/server/providers";
-import type { ModelListItem, ProviderOut, UserPreferenceOut } from "@/lib/api/shared/types";
+import type {
+  ModelListItem,
+  ProviderOut,
+  UserPreferenceOut,
+} from "@/lib/api/shared/types";
 import { cn } from "@/lib/utils";
 
 import { EmbeddingModelSelect } from "./embedding-model-select";
@@ -38,9 +42,7 @@ export function PreferencesCard({
   onError: (err: unknown) => void;
   onUpdated: (p: UserPreferenceOut) => void;
 }) {
-  const [providerId, setProviderId] = useState<string | null>(
-    pref.default_provider_id
-  );
+  const [providerId, setProviderId] = useState<string | null>(pref.default_provider_id);
   const [modelName, setModelName] = useState(pref.default_model ?? "");
   const [embeddingModel, setEmbeddingModel] = useState(
     pref.default_embedding_model ?? ""
@@ -83,8 +85,7 @@ export function PreferencesCard({
   const dirty =
     providerId !== pref.default_provider_id ||
     (modelName.trim() || null) !== (pref.default_model || null) ||
-    (embeddingModel.trim() || null) !==
-      (pref.default_embedding_model || null) ||
+    (embeddingModel.trim() || null) !== (pref.default_embedding_model || null) ||
     useRag !== pref.default_use_rag;
 
   return (
@@ -92,8 +93,8 @@ export function PreferencesCard({
       <CardHeader>
         <CardTitle className="text-base">Defaults</CardTitle>
         <CardDescription>
-          Applied to every new chat session that doesn&apos;t pin its own
-          provider or model.
+          Applied to every new chat session that doesn&apos;t pin its own provider or
+          model.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -142,10 +143,10 @@ export function PreferencesCard({
             onLoadEmbeddingModels={onLoadEmbeddingModels}
           />
           <p className="text-[11px] text-muted-foreground">
-            Auto-populated from your providers — only models classified as
-            embedding (e.g. <code className="font-mono">nomic-embed-text</code>,{" "}
-            <code className="font-mono">bge-m3</code>) appear. Pull one from the
-            provider card below if the list is empty.
+            Auto-populated from your providers — only models classified as embedding (e.g.{" "}
+            <code className="font-mono">nomic-embed-text</code>,{" "}
+            <code className="font-mono">bge-m3</code>) appear. Pull one from the provider
+            card below if the list is empty.
           </p>
         </div>
         <Separator />
@@ -153,9 +154,8 @@ export function PreferencesCard({
           <div>
             <p className="font-medium">RAG by default</p>
             <p className="text-xs text-muted-foreground">
-              Toggle retrieval for new chat sessions. Note: web upload UI lands
-              in the next sprint — until then the toggle has no effect on chat
-              from the web.
+              Toggle retrieval for new chat sessions. Note: web upload UI lands in the
+              next sprint — until then the toggle has no effect on chat from the web.
             </p>
           </div>
           <input

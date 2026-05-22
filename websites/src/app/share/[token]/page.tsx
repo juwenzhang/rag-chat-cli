@@ -13,19 +13,14 @@ interface PageProps {
   params: Promise<{ token: string }>;
 }
 
-export async function generateMetadata(
-  { params }: PageProps
-): Promise<Metadata> {
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { token } = await params;
   try {
     const data = await shareApi.fetchSharePublic(token);
-    const snippet =
-      data.user_message.content.slice(0, 80).replace(/\s+/g, " ") + "…";
+    const snippet = data.user_message.content.slice(0, 80).replace(/\s+/g, " ") + "…";
     return {
       title: `Shared conversation — ${snippet}`,
-      description: data.assistant_message.content
-        .slice(0, 140)
-        .replace(/\s+/g, " "),
+      description: data.assistant_message.content.slice(0, 140).replace(/\s+/g, " "),
       robots: { index: false, follow: false },
     };
   } catch {
@@ -44,11 +39,5 @@ export default async function SharePage({ params }: PageProps) {
   }
   const viewer = await getCurrentUser();
   const isOwner = viewer?.id === data.session_owner_id;
-  return (
-    <ShareView
-      share={data}
-      isAuthed={viewer !== null}
-      isOwner={isOwner}
-    />
-  );
+  return <ShareView share={data} isAuthed={viewer !== null} isOwner={isOwner} />;
 }

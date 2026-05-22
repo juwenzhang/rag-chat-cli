@@ -21,10 +21,7 @@ interface Props {
 }
 
 /** Providers settings controller — owns API orchestration and passes pure callbacks to views. */
-export function ProvidersPageClient({
-  initialProviders,
-  initialPreferences,
-}: Props) {
+export function ProvidersPageClient({ initialProviders, initialPreferences }: Props) {
   const { t } = useI18n();
   const providers = useProvidersStore((state) => state.providers);
   const pref = useProvidersStore((state) => state.preferences);
@@ -52,12 +49,8 @@ export function ProvidersPageClient({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="text-xl font-semibold tracking-tight">
-            {t("providers.title")}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {t("providers.description")}
-          </p>
+          <h2 className="text-xl font-semibold tracking-tight">{t("providers.title")}</h2>
+          <p className="text-sm text-muted-foreground">{t("providers.description")}</p>
         </div>
         {!adding && (
           <Button onClick={() => setAdding(true)} size="sm">
@@ -99,9 +92,7 @@ export function ProvidersPageClient({
         {providers.length === 0 && !adding ? (
           <Card>
             <CardContent className="py-10 text-center">
-              <p className="text-sm text-muted-foreground">
-                {t("providers.none")}
-              </p>
+              <p className="text-sm text-muted-foreground">{t("providers.none")}</p>
             </CardContent>
           </Card>
         ) : (

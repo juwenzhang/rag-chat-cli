@@ -100,8 +100,8 @@ export function MembersDialog({
         <DialogHeader>
           <DialogTitle>{org?.name ?? ""} · members</DialogTitle>
           <DialogDescription>
-            Owners can invite people by email (they must already have an account)
-            and change roles.
+            Owners can invite people by email (they must already have an account) and
+            change roles.
           </DialogDescription>
         </DialogHeader>
 

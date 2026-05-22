@@ -39,10 +39,10 @@ export function RegisterForm({ copy }: { copy: RegisterFormCopy }) {
     registerAction,
     undefined
   );
-  const [codeState, codeAction] = useActionState<
-    SendCodeState | undefined,
-    FormData
-  >(sendCodeAction, undefined);
+  const [codeState, codeAction] = useActionState<SendCodeState | undefined, FormData>(
+    sendCodeAction,
+    undefined
+  );
 
   const emailRef = useRef<HTMLInputElement>(null);
   const codeUnavailable = codeState?.status === "unavailable";
@@ -68,7 +68,7 @@ export function RegisterForm({ copy }: { copy: RegisterFormCopy }) {
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="display_name">
-          {copy.displayName} {" "}
+          {copy.displayName}{" "}
           <span className="text-muted-foreground">({copy.optional})</span>
         </Label>
         <Input
@@ -91,9 +91,7 @@ export function RegisterForm({ copy }: { copy: RegisterFormCopy }) {
           minLength={8}
         />
         {state?.fieldErrors?.password && (
-          <p className="text-xs text-destructive">
-            {state.fieldErrors.password}
-          </p>
+          <p className="text-xs text-destructive">{state.fieldErrors.password}</p>
         )}
         <p className="text-xs text-muted-foreground">{copy.passwordHint}</p>
       </div>
@@ -101,7 +99,7 @@ export function RegisterForm({ copy }: { copy: RegisterFormCopy }) {
       {!codeUnavailable && (
         <div className="flex flex-col gap-2">
           <Label htmlFor="code">
-            {copy.code} {" "}
+            {copy.code}{" "}
             <span className="text-muted-foreground">({copy.codeEnabledHint})</span>
           </Label>
           <div className="flex gap-2">
@@ -123,9 +121,7 @@ export function RegisterForm({ copy }: { copy: RegisterFormCopy }) {
             />
           </div>
           {state?.fieldErrors?.code && (
-            <p className="text-xs text-destructive">
-              {state.fieldErrors.code}
-            </p>
+            <p className="text-xs text-destructive">{state.fieldErrors.code}</p>
           )}
           {codeState?.status === "sent" && (
             <p className="text-xs text-success">{codeState.message}</p>
@@ -138,9 +134,7 @@ export function RegisterForm({ copy }: { copy: RegisterFormCopy }) {
 
       {codeUnavailable && (
         <Alert>
-          <AlertDescription className="text-xs">
-            {codeState.message}
-          </AlertDescription>
+          <AlertDescription className="text-xs">{codeState.message}</AlertDescription>
         </Alert>
       )}
 
@@ -150,10 +144,14 @@ export function RegisterForm({ copy }: { copy: RegisterFormCopy }) {
         </Alert>
       )}
 
-      <SubmitButton idleLabel={copy.submit} pendingLabel={copy.pending} icon={<Sparkles />} />
+      <SubmitButton
+        idleLabel={copy.submit}
+        pendingLabel={copy.pending}
+        icon={<Sparkles />}
+      />
 
       <p className="text-center text-sm text-muted-foreground">
-        {copy.hasAccount} {" "}
+        {copy.hasAccount}{" "}
         <Link
           href="/login"
           className="font-medium text-foreground underline-offset-4 hover:underline"

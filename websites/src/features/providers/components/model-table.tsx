@@ -3,10 +3,7 @@
 import { CloudDownload, Pencil, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import {
-  VirtualTable,
-  type VirtualTableColumn,
-} from "@/components/ui/virtual-table";
+import { VirtualTable, type VirtualTableColumn } from "@/components/ui/virtual-table";
 import type { ModelListItem } from "@/lib/api/shared/types";
 
 /** Virtualised model list for one provider card — name, size, note, actions. */
@@ -30,9 +27,7 @@ export function ModelTable({
       width: "minmax(220px, 2.5fr)",
       cell: (m) => (
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate font-mono text-[13px] text-foreground">
-            {m.id}
-          </span>
+          <span className="truncate font-mono text-[13px] text-foreground">{m.id}</span>
           {m.kind === "embedding" && (
             <Badge
               variant="secondary"

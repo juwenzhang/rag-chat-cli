@@ -36,11 +36,9 @@ export async function registerAction(
 
   const fieldErrors: RegisterState["fieldErrors"] = {};
   if (!email) fieldErrors.email = "Email is required";
-  else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
-    fieldErrors.email = "Invalid email";
+  else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fieldErrors.email = "Invalid email";
   if (!password) fieldErrors.password = "Password is required";
-  else if (password.length < 8)
-    fieldErrors.password = "At least 8 characters";
+  else if (password.length < 8) fieldErrors.password = "At least 8 characters";
 
   if (Object.keys(fieldErrors).length > 0) {
     return { fieldErrors };

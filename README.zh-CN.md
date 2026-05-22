@@ -46,23 +46,20 @@ FastAPI 接口层 —— 想接前端／IDE 插件／别的客户端，直接吃
 
 ```
 main.py
-└─ app/cli.py            {chat, serve, ingest, worker, train}
-   └─ app/chat_app.py    REPL + factory wiring
-      └─ core/chat_service.py        ReAct 循环（所有可调节点都挂在这里）
-         ├─ core/llm/                {OllamaClient, OpenAIClient} : LLMClient
-         ├─ core/tools/              ToolRegistry + FunctionTool + (MCP) McpTool
-         ├─ core/knowledge/          PgvectorKnowledgeBase + Reranker + Ingestor
-         ├─ core/memory/             {File,Db}ChatMemory + UserMemoryStore
-         ├─ core/tokens.py           Tokenizer + TokenBudget
-         ├─ core/history.py          HistorySummarizer
-         ├─ core/prompts.py          PromptBuilder
-         ├─ core/limits.py           ResourceLimits
-         ├─ core/observability.py    Tracer + UsageAccumulator
-         ├─ core/mcp/                stdio JSON-RPC client + adapter
-         ├─ core/workers/            Redis queue + worker
-         └─ core/streaming/          Event vocabulary + AbortContext
-
-api/  → 与 CLI 共享 ChatService.generate()，外面套 SSE / WS 帧 + auth deps
+├─ api/                    FastAPI HTTP / SSE / WS 入口
+├─ tui/                    CLI/TUI 入口和终端展示层
+└─ service/                后端服务层
+   ├─ chat/                ChatService + prompts/titles/history/tokens/limits
+   ├─ llm/                 {OllamaClient, OpenAIClient} : LLMClient
+   ├─ providers/           provider registry + runtime resolution
+   ├─ knowledge/           PgvectorKnowledgeBase + Reranker + Ingestor
+   ├─ memory/              {File,Db}ChatMemory + UserMemoryStore
+   ├─ db/                  SQLAlchemy async models/session
+   ├─ tools/               ToolRegistry + FunctionTool + (MCP) McpTool
+   ├─ mcp/                 stdio JSON-RPC client + adapter
+   ├─ workers/             Redis queue + worker
+   ├─ streaming/           Event vocabulary + AbortContext
+   └─ common/              跨 service 域的通用基础设施
 ```
 
 每个模块都有 Protocol。后面想加 Anthropic LLMClient、Cohere reranker、
@@ -243,8 +240,7 @@ curl -X POST http://localhost:8000/auth/register \
 完整事件词表 + 顺序约定见
 [docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md)。
 
-`make openapi` 重新生成 [docs/openapi.json](docs/openapi.json)；
-`make test.api` 用 `httpx.ASGITransport` 跑内存版 SQLite 上的路由测试。
+`make openapi` 重新生成 [docs/openapi.json](docs/openapi.json)；`make openapi.check` 校验生成结果已提交。
 
 ## 入库 + 后台 Worker
 
@@ -261,7 +257,7 @@ uv run python -m main worker
 ```
 
 Job 协议 / 队列语义 / 重试预期都在
-[`core/workers/queue.py`](core/workers/queue.py)。
+[`service/workers/queue.py`](service/workers/queue.py)。
 
 ## 配置
 
@@ -300,26 +296,21 @@ make db.shell       # psql 交互
 - `0002_add_tool_message_fields` —— `messages.tool_call_id` + `messages.tool_calls`（Postgres 上是 JSONB），支撑 tool-role 消息
 - `0003_add_user_memories` —— `user_memories` 表，存用户级长期事实
 
-单元测试默认走内存版 SQLite（不依赖 docker）。需要真实 pgvector 的
-集成测试用 `pytest -m pg` 触发。
+SQLite（`DATABASE_URL=sqlite+aiosqlite:///./.dev.db`）可用于轻量本地烟测；完整 RAG 开发仍建议使用 Postgres + pgvector。
 
 ## 开发
 
 ```bash
-make ci             # ruff check + format check + mypy strict + pytest
-make lint           # ruff check
-make fmt            # ruff format（写盘）
-make typecheck      # mypy --strict，覆盖 app/ core/ ui/ api/ db/
-make test           # 所有测试
-make test-fast      # 跳过 slow / pg / redis / integration 标记
-make test-cov       # pytest-cov（软门）
-make test-cov-strict   # 强制 AGENTS.md §12 覆盖率阈值
+make ci             # 后端 + 前端质量检查
+make lint           # Ruff + ESLint
+make fmt            # Ruff format + Prettier（写盘）
+make typecheck      # mypy + TypeScript noEmit
+make compile        # 后端 compileall 语法/导入路径烟测
 make openapi        # 重新生成 docs/openapi.json
 make openapi.check  # 对比当前代码与 docs/openapi.json（CI 用）
 ```
 
-pre-commit hooks：`pre-commit install` 一次，之后 commit 时自动跑
-ruff + format。
+Git hooks：执行一次 `uv run pre-commit install --hook-type pre-commit --hook-type pre-push`。commit 阶段跑 Ruff，push 阶段跑 mypy + compileall。
 
 ## 项目结构
 
@@ -330,39 +321,34 @@ ruff + format。
 │   └── openapi.json           # 生成产物；CI 会做 drift 检查
 ├── settings.py                # pydantic-settings 单入口
 ├── .env.example               # env 模板
-├── main.py                    # CLI 薄壳 → app.cli.main
-├── app/                       # 编排层（唯一同时依赖 ui/ 与 core/ 的层）
-│   ├── cli.py                 #   argparse: chat / serve / ingest / worker / train
-│   ├── chat_app.py            #   REPL + ChatService factory
-│   └── auth_local.py          #   ~/.config/rag-chat/token.json
-├── ui/                        # 展示层（rich + prompt_toolkit）
-│   ├── theme.py · console.py · markdown.py
-│   ├── chat_view.py           #   流式渲染器 + help 面板
-│   └── prompt.py              #   PromptSession + SlashCompleter + Dispatcher
-├── core/                      # 领域层（provider-agnostic，无 I/O imports）
-│   ├── chat_service.py        #   ReAct 循环 —— 唯一集成点
+├── main.py                    # CLI 薄壳 → tui.cli.main
+├── api/                       # FastAPI app（routers / deps / middleware）
+├── service/                   # 后端服务、领域逻辑和基础设施
+│   ├── chat/                  #   ChatService + prompts/titles/history/tokens/limits
 │   ├── llm/                   #   LLMClient protocol + Ollama + OpenAI 实装
-│   ├── tools/                 #   Tool protocol + ToolRegistry + FunctionTool
+│   ├── providers/             #   provider registry + runtime resolution
 │   ├── knowledge/             #   PgvectorKnowledgeBase + Ingestor + Reranker hook
 │   ├── memory/                #   ChatMemory（File/DB）+ UserMemoryStore + FactExtractor
+│   ├── db/                    #   SQLAlchemy 2.x async + models
+│   ├── tools/                 #   Tool protocol + ToolRegistry + FunctionTool
 │   ├── mcp/                   #   MCP stdio client + Tool 适配器
 │   ├── workers/               #   RedisJobQueue + Worker pump
 │   ├── streaming/             #   Event TypedDict + AbortContext
-│   ├── tokens.py · history.py · prompts.py · limits.py · observability.py
+│   ├── common/                #   跨 service 域的通用基础设施
 │   └── auth/                  #   bcrypt + JWT + refresh rotation
-├── db/                        # SQLAlchemy 2.x async + models
-├── alembic/versions/          # 0001 / 0002 / 0003
-├── api/                       # FastAPI app（routers / deps / middleware）
-├── scripts/                   # 一次性运维（db_init, check_coverage 等）
-├── tests/                     # pytest（unit + integration + api）
+├── tui/                       # CLI/TUI 入口和终端展示层
+│   ├── cli.py                 #   argparse: chat / serve / ingest / worker / train
+│   ├── chat_app.py            #   REPL + ChatService factory
+│   ├── auth_local.py          #   ~/.config/rag-chat/token.json
+│   └── ui/                    #   rich + prompt_toolkit 展示层
+├── alembic/versions/          # 数据库迁移
+├── scripts/                   # 一次性运维（db_init, dump_openapi 等）
 ├── openspec/                  # spec 提案 + 归档
 ├── Makefile · docker-compose.yml · pyproject.toml
 └── README.md / README.zh-CN.md
 ```
 
-分层规则（AGENTS.md §3）：`ui/` 永不 import `core/` / `db/` / `api/`；
-`core/` 永不 import `db/` / `api/` / `ui/`；`app/` 是唯一能把它们
-串起来的层。
+分层规则：`api/` 和 `tui/` 是入口适配层，可以依赖 `service/`；`service/` 不能反向依赖 `api/` 或 `tui/`。
 
 ## 贡献
 
@@ -372,8 +358,7 @@ ruff + format。
   `openspec/changes/archive/YYYY-MM-DD-<name>/`。
 - 稳定能力规范 → `openspec/specs/<capability>/spec.md`。
 
-提 PR 前请本地跑一次 `make ci`，四个质量门（ruff / format / mypy /
-pytest）必须全绿。
+提 PR 前请本地跑一次 `make ci`，Ruff、format check、mypy 和 compileall 必须全绿。
 
 ## 许可证
 

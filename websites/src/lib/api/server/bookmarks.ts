@@ -24,16 +24,11 @@ export async function listBookmarks(token: string): Promise<BookmarkOut[]> {
   return apiFetch<BookmarkOut[]>("/bookmarks", { token });
 }
 
-export async function listBookmarksFull(
-  token: string
-): Promise<BookmarkDetailOut[]> {
+export async function listBookmarksFull(token: string): Promise<BookmarkDetailOut[]> {
   return apiFetch<BookmarkDetailOut[]>("/bookmarks/full", { token });
 }
 
-export async function deleteBookmark(
-  token: string,
-  bookmarkId: string
-): Promise<void> {
+export async function deleteBookmark(token: string, bookmarkId: string): Promise<void> {
   await apiFetch<void>(`/bookmarks/${bookmarkId}`, {
     method: "DELETE",
     token,
