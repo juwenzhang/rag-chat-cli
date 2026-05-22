@@ -21,15 +21,9 @@ export interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
-  /** Async-friendly: shows a spinner until the promise resolves. Errors propagate. */
   onConfirm: () => void | Promise<void>;
 }
 
-/**
- * Generic confirm modal. Designed to replace native ``window.confirm()`` /
- * ``window.alert()`` everywhere — same call-site weight (one render with
- * `open` state), but proper UI, focus management, and async handling.
- */
 export function ConfirmDialog({
   open,
   onOpenChange,

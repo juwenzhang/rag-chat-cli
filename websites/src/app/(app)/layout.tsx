@@ -46,9 +46,9 @@ export default async function AppLayout({
   const activeOrg = await resolveActiveOrg(orgs);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden">
+    <div className="flex h-dvh w-full overflow-hidden md:h-screen">
       <GlobalRail user={user} orgs={orgs} activeOrgId={activeOrg?.id ?? null} />
-      <main className="flex-1 overflow-hidden">{children}</main>
+      <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
     </div>
   );
 }

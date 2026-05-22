@@ -10,41 +10,31 @@ import {
 
 import { cn } from "@/lib/utils";
 
-interface Example {
+export interface EmptyStateExample {
   icon: LucideIcon;
   title: string;
   prompt: string;
 }
 
-const EXAMPLES: Example[] = [
-  {
-    icon: Lightbulb,
-    title: "Explain a concept",
-    prompt: "Explain how retrieval-augmented generation (RAG) works in plain English.",
-  },
-  {
-    icon: Code2,
-    title: "Refactor code",
-    prompt:
-      "Refactor this Python snippet to use type hints and remove the global variable.",
-  },
-  {
-    icon: BookOpen,
-    title: "Summarise a document",
-    prompt:
-      "Summarise the key takeaways from my recent notes about vector search performance.",
-  },
-  {
-    icon: Sparkles,
-    title: "Brainstorm",
-    prompt:
-      "Give me five creative blog post ideas about local-first AI applications.",
-  },
-];
+export interface EmptyStateCopy {
+  title: string;
+  titleAccent: string;
+  description: string;
+  examples: EmptyStateExample[];
+}
+
+export const EMPTY_STATE_ICONS = {
+  concept: Lightbulb,
+  refactor: Code2,
+  summary: BookOpen,
+  brainstorm: Sparkles,
+} as const;
 
 export function EmptyState({
+  copy,
   onPick,
 }: {
+  copy: EmptyStateCopy;
   onPick: (prompt: string) => void;
 }) {
   return (
@@ -56,15 +46,14 @@ export function EmptyState({
         <Sparkles className="size-8" />
       </div>
       <h2 className="text-3xl font-semibold tracking-tight">
-        How can I <span className="text-brand-gradient">help</span> you today?
+        {copy.title} <span className="text-brand-gradient">{copy.titleAccent}</span>
       </h2>
       <p className="mt-2 max-w-md text-center text-sm text-muted-foreground">
-        Ask anything — I&apos;ll reason step by step, call tools, and retrieve
-        from your knowledge base.
+        {copy.description}
       </p>
 
       <div className="mt-10 grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
-        {EXAMPLES.map(({ icon: Icon, title, prompt }) => (
+        {copy.examples.map(({ icon: Icon, title, prompt }) => (
           <button
             key={title}
             type="button"

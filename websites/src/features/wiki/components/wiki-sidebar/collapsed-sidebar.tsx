@@ -22,7 +22,7 @@ export function CollapsedSidebar({
   onExpand: () => void;
 }) {
   return (
-    <aside className="flex h-full w-12 shrink-0 flex-col items-center border-r border-border bg-card/40 py-2">
+    <aside className="hidden h-full w-12 shrink-0 flex-col items-center border-r border-border bg-card/40 py-2 md:flex">
       <TooltipProvider delayDuration={200}>
         <Tooltip>
           <TooltipTrigger asChild>

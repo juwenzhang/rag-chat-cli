@@ -4,10 +4,10 @@ import { Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useRef } from "react";
 
-import { SubmitButton } from "@/features/auth/components/submit-button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SubmitButton } from "@/features/auth/components/submit-button";
 
 import {
   registerAction,
@@ -17,7 +17,24 @@ import {
 } from "./actions";
 import { CountdownButton } from "./countdown-button";
 
-export function RegisterForm() {
+export interface RegisterFormCopy {
+  email: string;
+  displayName: string;
+  optional: string;
+  displayNamePlaceholder: string;
+  password: string;
+  passwordHint: string;
+  code: string;
+  codeEnabledHint: string;
+  codePlaceholder: string;
+  sendCode: string;
+  submit: string;
+  pending: string;
+  hasAccount: string;
+  signIn: string;
+}
+
+export function RegisterForm({ copy }: { copy: RegisterFormCopy }) {
   const [state, formAction] = useActionState<RegisterState | undefined, FormData>(
     registerAction,
     undefined
@@ -34,7 +51,7 @@ export function RegisterForm() {
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email">{copy.email}</Label>
         <Input
           ref={emailRef}
           id="email"
@@ -50,18 +67,21 @@ export function RegisterForm() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="display_name">Display name <span className="text-muted-foreground">(optional)</span></Label>
+        <Label htmlFor="display_name">
+          {copy.displayName} {" "}
+          <span className="text-muted-foreground">({copy.optional})</span>
+        </Label>
         <Input
           id="display_name"
           name="display_name"
           type="text"
           autoComplete="nickname"
-          placeholder="What should we call you?"
+          placeholder={copy.displayNamePlaceholder}
         />
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="password">Password</Label>
+        <Label htmlFor="password">{copy.password}</Label>
         <Input
           id="password"
           name="password"
@@ -75,13 +95,14 @@ export function RegisterForm() {
             {state.fieldErrors.password}
           </p>
         )}
-        <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+        <p className="text-xs text-muted-foreground">{copy.passwordHint}</p>
       </div>
 
       {!codeUnavailable && (
         <div className="flex flex-col gap-2">
           <Label htmlFor="code">
-            Email verification code <span className="text-muted-foreground">(if enabled)</span>
+            {copy.code} {" "}
+            <span className="text-muted-foreground">({copy.codeEnabledHint})</span>
           </Label>
           <div className="flex gap-2">
             <Input
@@ -91,12 +112,13 @@ export function RegisterForm() {
               inputMode="numeric"
               pattern="[0-9]{6}"
               maxLength={6}
-              placeholder="6-digit code"
+              placeholder={copy.codePlaceholder}
               autoComplete="one-time-code"
             />
             <CountdownButton
               key={cooldownKey}
               initialSeconds={codeState?.cooldown ?? 0}
+              idleLabel={copy.sendCode}
               formAction={codeAction}
             />
           </div>
@@ -106,9 +128,7 @@ export function RegisterForm() {
             </p>
           )}
           {codeState?.status === "sent" && (
-            <p className="text-xs text-success">
-              {codeState.message}
-            </p>
+            <p className="text-xs text-success">{codeState.message}</p>
           )}
           {codeState?.status === "error" && (
             <p className="text-xs text-destructive">{codeState.message}</p>
@@ -130,19 +150,15 @@ export function RegisterForm() {
         </Alert>
       )}
 
-      <SubmitButton
-        idleLabel="Create account"
-        pendingLabel="Creating account…"
-        icon={<Sparkles />}
-      />
+      <SubmitButton idleLabel={copy.submit} pendingLabel={copy.pending} icon={<Sparkles />} />
 
       <p className="text-center text-sm text-muted-foreground">
-        Already have an account?{" "}
+        {copy.hasAccount} {" "}
         <Link
           href="/login"
           className="font-medium text-foreground underline-offset-4 hover:underline"
         >
-          Sign in
+          {copy.signIn}
         </Link>
       </p>
     </form>

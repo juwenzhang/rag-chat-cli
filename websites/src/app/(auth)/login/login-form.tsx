@@ -4,14 +4,24 @@ import { LogIn } from "lucide-react";
 import Link from "next/link";
 import { useActionState } from "react";
 
-import { SubmitButton } from "@/features/auth/components/submit-button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SubmitButton } from "@/features/auth/components/submit-button";
 
 import { loginAction, type LoginState } from "./actions";
 
-export function LoginForm({ next }: { next: string }) {
+export interface LoginFormCopy {
+  email: string;
+  password: string;
+  forgot: string;
+  submit: string;
+  pending: string;
+  noAccount: string;
+  createOne: string;
+}
+
+export function LoginForm({ next, copy }: { next: string; copy: LoginFormCopy }) {
   const [state, formAction] = useActionState<LoginState | undefined, FormData>(
     loginAction,
     undefined
@@ -22,7 +32,7 @@ export function LoginForm({ next }: { next: string }) {
       <input type="hidden" name="next" value={next} />
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email">{copy.email}</Label>
         <Input
           id="email"
           name="email"
@@ -38,12 +48,12 @@ export function LoginForm({ next }: { next: string }) {
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password">{copy.password}</Label>
           <Link
             href="/forgot-password"
             className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
-            Forgot?
+            {copy.forgot}
           </Link>
         </div>
         <Input
@@ -66,19 +76,15 @@ export function LoginForm({ next }: { next: string }) {
         </Alert>
       )}
 
-      <SubmitButton
-        idleLabel="Sign in"
-        pendingLabel="Signing in…"
-        icon={<LogIn />}
-      />
+      <SubmitButton idleLabel={copy.submit} pendingLabel={copy.pending} icon={<LogIn />} />
 
       <p className="text-center text-sm text-muted-foreground">
-        Don&apos;t have an account?{" "}
+        {copy.noAccount} {" "}
         <Link
           href="/register"
           className="font-medium text-foreground underline-offset-4 hover:underline"
         >
-          Create one
+          {copy.createOne}
         </Link>
       </p>
     </form>

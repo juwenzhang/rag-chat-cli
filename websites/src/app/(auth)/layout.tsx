@@ -1,13 +1,16 @@
 import Link from "next/link";
 
+import { LanguageToggle } from "@/components/shell/language-toggle";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { getServerI18n } from "@/lib/i18n/server";
 
-export default function AuthLayout({
+export default async function AuthLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const { t } = await getServerI18n();
+
   return (
     <div className="relative flex min-h-screen w-full flex-col overflow-hidden">
-      {/* Animated brand gradient background */}
       <div
         aria-hidden
         className="absolute inset-0 -z-10 bg-brand-gradient opacity-[0.08] animate-gradient dark:opacity-[0.18]"
@@ -16,7 +19,6 @@ export default function AuthLayout({
         aria-hidden
         className="absolute inset-0 -z-10 bg-dot-pattern opacity-[0.5] dark:opacity-[0.35]"
       />
-      {/* Floating blurred orbs */}
       <div
         aria-hidden
         className="pointer-events-none absolute -left-32 top-12 -z-10 h-72 w-72 rounded-full bg-brand-from/30 blur-[100px] animate-float"
@@ -26,7 +28,6 @@ export default function AuthLayout({
         className="pointer-events-none absolute -right-32 bottom-12 -z-10 h-80 w-80 rounded-full bg-brand-to/30 blur-[120px] animate-float [animation-delay:-3s]"
       />
 
-      {/* Top bar */}
       <header className="flex items-center justify-between p-6">
         <Link
           href="/"
@@ -37,7 +38,10 @@ export default function AuthLayout({
           </div>
           <span>lhx-rag</span>
         </Link>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <LanguageToggle />
+          <ThemeToggle ariaLabel={t("theme.toggle")} tooltip={t("theme.toggle")} />
+        </div>
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 pb-12">

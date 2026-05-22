@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getServerI18n } from "@/lib/i18n/server";
 
 import { LoginForm } from "./login-form";
 
@@ -21,6 +22,7 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const next = params.next ?? "/chat";
+  const { t } = await getServerI18n();
 
   return (
     <Card className="glass border-border/60 shadow-2xl shadow-primary/5">
@@ -29,14 +31,24 @@ export default async function LoginPage({
           <span className="text-xl font-bold">R</span>
         </div>
         <CardTitle className="text-2xl">
-          Welcome <span className="text-brand-gradient">back</span>
+          {t("auth.login.title", { accent: "" })}{" "}
+          <span className="text-brand-gradient">{t("auth.login.titleAccent")}</span>
         </CardTitle>
-        <CardDescription>
-          Sign in to access your conversations, knowledge base, and memory.
-        </CardDescription>
+        <CardDescription>{t("auth.login.description")}</CardDescription>
       </CardHeader>
       <CardContent>
-        <LoginForm next={next} />
+        <LoginForm
+          next={next}
+          copy={{
+            email: t("auth.email"),
+            password: t("auth.password"),
+            forgot: t("auth.login.forgot"),
+            submit: t("auth.login.submit"),
+            pending: t("auth.login.pending"),
+            noAccount: t("auth.login.noAccount"),
+            createOne: t("auth.login.createOne"),
+          }}
+        />
       </CardContent>
     </Card>
   );

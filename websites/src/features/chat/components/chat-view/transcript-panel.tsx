@@ -7,14 +7,21 @@ import { Button } from "@/components/ui/button";
 import type { UIMessage } from "@/features/chat/components/types";
 import { cn } from "@/lib/utils";
 
-import { EmptyState } from "../empty-state";
+import { EmptyState, type EmptyStateCopy } from "../empty-state";
 import { MessageView } from "../message-view";
+
+export interface TranscriptPanelCopy {
+  emptyState: EmptyStateCopy;
+  jumpToLatest: string;
+  newTokens: string;
+}
 
 export function TranscriptPanel({
   messages,
   streaming,
   scrollRef,
   atBottom,
+  copy,
   onPickPrompt,
   onRegenerate,
   onJumpToBottom,
@@ -23,6 +30,7 @@ export function TranscriptPanel({
   streaming: boolean;
   scrollRef: RefObject<HTMLDivElement | null>;
   atBottom: boolean;
+  copy: TranscriptPanelCopy;
   onPickPrompt: (prompt: string) => void;
   onRegenerate: () => void;
   onJumpToBottom: () => void;
@@ -33,7 +41,7 @@ export function TranscriptPanel({
     <div className="relative flex-1 overflow-hidden">
       <div ref={scrollRef} className="h-full overflow-y-auto">
         {empty ? (
-          <EmptyState onPick={onPickPrompt} />
+          <EmptyState copy={copy.emptyState} onPick={onPickPrompt} />
         ) : (
           <MessageList
             messages={messages}
@@ -45,6 +53,7 @@ export function TranscriptPanel({
       {!atBottom && !empty && (
         <JumpToBottomButton
           streaming={streaming}
+          copy={copy}
           onJumpToBottom={onJumpToBottom}
         />
       )}
@@ -62,7 +71,7 @@ function MessageList({
   onRegenerate: () => void;
 }) {
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 pb-12">
+    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-3 py-5 pb-8 sm:gap-8 sm:px-4 sm:py-8 sm:pb-12">
       {messages.map((message, index) => {
         const prevUserId = findPreviousUserMessageId(messages, index);
         const isLastAssistant =
@@ -88,9 +97,11 @@ function MessageList({
 
 function JumpToBottomButton({
   streaming,
+  copy,
   onJumpToBottom,
 }: {
   streaming: boolean;
+  copy: TranscriptPanelCopy;
   onJumpToBottom: () => void;
 }) {
   return (
@@ -100,7 +111,7 @@ function JumpToBottomButton({
         variant="outline"
         size="sm"
         onClick={onJumpToBottom}
-        aria-label="Jump to latest"
+        aria-label={copy.jumpToLatest}
         className={cn(
           "pointer-events-auto h-8 rounded-full px-3 shadow-md backdrop-blur",
           "border-border bg-background/90 text-foreground/80 hover:text-foreground",
@@ -109,7 +120,7 @@ function JumpToBottomButton({
       >
         <ArrowDown className="size-3.5" />
         <span className="text-xs">
-          {streaming ? "New tokens" : "Jump to latest"}
+          {streaming ? copy.newTokens : copy.jumpToLatest}
         </span>
       </Button>
     </div>

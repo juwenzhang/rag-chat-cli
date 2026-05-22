@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -12,10 +13,17 @@ import {
 } from "react";
 
 import { useChatStore } from "@/features/chat/stores/chat-store";
-import type { MessageOut, SessionMeta } from "@/lib/api/shared/types";
+import type {
+  MessageOut,
+  ProviderOut,
+  SessionMeta,
+  UserPreferenceOut,
+} from "@/lib/api/shared/types";
+import { useI18n } from "@/lib/i18n/provider";
 
-import { ChatComposer } from "./chat-composer";
+import { EMPTY_STATE_ICONS } from "../empty-state";
 import { ChatToolbar } from "../chat-toolbar";
+import { ChatComposer } from "./chat-composer";
 import { TranscriptPanel } from "./transcript-panel";
 
 interface Props {
@@ -23,9 +31,19 @@ interface Props {
   initialMessages: MessageOut[];
   sessionMeta?: SessionMeta | null;
   sessionProviderName?: string | null;
+  initialProviders: ProviderOut[];
+  initialPreferences: UserPreferenceOut;
 }
 
-export function ChatView({ sessionId, initialMessages, sessionMeta, sessionProviderName }: Props) {
+export function ChatView({
+  sessionId,
+  initialMessages,
+  sessionMeta,
+  sessionProviderName,
+  initialProviders,
+  initialPreferences,
+}: Props) {
+  const { t } = useI18n();
   const [input, setInput] = useState("");
   const messages = useChatStore((state) => state.messages);
   const streaming = useChatStore((state) => state.streaming);
@@ -43,6 +61,56 @@ export function ChatView({ sessionId, initialMessages, sessionMeta, sessionProvi
   const stickToBottomRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
   const autoFiredSessionRef = useRef<string | null>(null);
+
+  const copy = useMemo(
+    () => ({
+      toolbar: {
+        thinking: t("chat.toolbar.thinking"),
+      },
+      transcript: {
+        jumpToLatest: t("chat.jumpToLatest"),
+        newTokens: t("chat.newTokens"),
+        emptyState: {
+          title: t("chat.empty.title", { accent: "" }).trim(),
+          titleAccent: t("chat.empty.titleAccent"),
+          description: t("chat.empty.description"),
+          examples: [
+            {
+              icon: EMPTY_STATE_ICONS.concept,
+              title: t("chat.example.concept.title"),
+              prompt: t("chat.example.concept.prompt"),
+            },
+            {
+              icon: EMPTY_STATE_ICONS.refactor,
+              title: t("chat.example.refactor.title"),
+              prompt: t("chat.example.refactor.prompt"),
+            },
+            {
+              icon: EMPTY_STATE_ICONS.summary,
+              title: t("chat.example.summary.title"),
+              prompt: t("chat.example.summary.prompt"),
+            },
+            {
+              icon: EMPTY_STATE_ICONS.brainstorm,
+              title: t("chat.example.brainstorm.title"),
+              prompt: t("chat.example.brainstorm.prompt"),
+            },
+          ],
+        },
+      },
+      composer: {
+        placeholder: t("chat.composer.placeholder"),
+        disclaimer: t("chat.composer.disclaimer"),
+        stop: t("chat.composer.stop"),
+        send: t("chat.composer.send"),
+        ragOn: t("chat.composer.ragOn"),
+        ragOff: t("chat.composer.ragOff"),
+        ragEnabledTip: t("chat.composer.ragEnabledTip"),
+        ragDisabledTip: t("chat.composer.ragDisabledTip"),
+      },
+    }),
+    [t]
+  );
 
   const onTurnStart = useCallback(() => {
     stickToBottomRef.current = true;
@@ -124,12 +192,17 @@ export function ChatView({ sessionId, initialMessages, sessionMeta, sessionProvi
 
   return (
     <div className="flex h-full flex-col">
-      <ChatToolbar title={sessionMeta?.title || "New conversation"} streaming={streaming} />
+      <ChatToolbar
+        title={sessionMeta?.title || "New conversation"}
+        streaming={streaming}
+        thinkingLabel={copy.toolbar.thinking}
+      />
       <TranscriptPanel
         messages={messages}
         streaming={streaming}
         scrollRef={scrollRef}
         atBottom={atBottom}
+        copy={copy.transcript}
         onPickPrompt={submit}
         onRegenerate={() => void regenerate({ onTurnStart })}
         onJumpToBottom={jumpToBottom}
@@ -143,6 +216,9 @@ export function ChatView({ sessionId, initialMessages, sessionMeta, sessionProvi
         providerId={providerId}
         model={model}
         inputRef={inputRef}
+        initialProviders={initialProviders}
+        initialPreferences={initialPreferences}
+        copy={copy.composer}
         onInputChange={setInput}
         onSubmit={onSubmit}
         onKeyDown={onKeyDown}

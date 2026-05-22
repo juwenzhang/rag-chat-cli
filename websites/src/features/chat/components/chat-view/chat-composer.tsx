@@ -12,10 +12,21 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { SessionMeta } from "@/lib/api/shared/types";
+import type { ProviderOut, SessionMeta, UserPreferenceOut } from "@/lib/api/shared/types";
 import { cn } from "@/lib/utils";
 
 import { ModelSelector } from "../model-selector";
+
+export interface ChatComposerCopy {
+  placeholder: string;
+  disclaimer: string;
+  stop: string;
+  send: string;
+  ragOn: string;
+  ragOff: string;
+  ragEnabledTip: string;
+  ragDisabledTip: string;
+}
 
 export function ChatComposer({
   sessionId,
@@ -26,6 +37,9 @@ export function ChatComposer({
   providerId,
   model,
   inputRef,
+  initialProviders,
+  initialPreferences,
+  copy,
   onInputChange,
   onSubmit,
   onKeyDown,
@@ -41,6 +55,9 @@ export function ChatComposer({
   providerId: string | null;
   model: string | null;
   inputRef: RefObject<HTMLTextAreaElement | null>;
+  initialProviders: ProviderOut[];
+  initialPreferences: UserPreferenceOut;
+  copy: ChatComposerCopy;
   onInputChange: (next: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -51,7 +68,7 @@ export function ChatComposer({
   return (
     <form
       onSubmit={onSubmit}
-      className="border-t border-border bg-background/80 px-4 py-4 backdrop-blur"
+      className="border-t border-border bg-background/80 px-3 py-3 backdrop-blur sm:px-4 sm:py-4"
     >
       <div className="mx-auto max-w-3xl">
         <div
@@ -65,11 +82,11 @@ export function ChatComposer({
             value={input}
             onChange={(event) => onInputChange(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Ask anything…  (Enter to send, Shift+Enter for newline)"
+            placeholder={copy.placeholder}
             rows={1}
             className={cn(
-              "min-h-[44px] resize-none border-0 bg-transparent px-2 py-2.5 shadow-none focus-visible:ring-0",
-              "max-h-[200px]"
+              "min-h-11 resize-none border-0 bg-transparent px-2 py-2.5 shadow-none focus-visible:ring-0",
+              "max-h-50"
             )}
             style={{ height: "auto" }}
             onInput={(event) => {
@@ -87,14 +104,16 @@ export function ChatComposer({
             useRag={useRag}
             providerId={providerId}
             model={model}
+            initialProviders={initialProviders}
+            initialPreferences={initialPreferences}
+            copy={copy}
             onToggleRag={onToggleRag}
             onModelChange={onModelChange}
             onAbort={onAbort}
           />
         </div>
-        <p className="mt-2 text-center text-[11px] text-muted-foreground">
-          lhx-rag may produce inaccurate information. Responses are not stored
-          unless you save them to your knowledge base.
+        <p className="mt-2 hidden text-center text-[11px] text-muted-foreground sm:block">
+          {copy.disclaimer}
         </p>
       </div>
     </form>
@@ -109,6 +128,9 @@ function ComposerActions({
   useRag,
   providerId,
   model,
+  initialProviders,
+  initialPreferences,
+  copy,
   onToggleRag,
   onModelChange,
   onAbort,
@@ -120,18 +142,28 @@ function ComposerActions({
   useRag: boolean;
   providerId: string | null;
   model: string | null;
+  initialProviders: ProviderOut[];
+  initialPreferences: UserPreferenceOut;
+  copy: ChatComposerCopy;
   onToggleRag: () => void;
   onModelChange: (next: { provider_id: string | null; model: string | null }) => void;
   onAbort: () => void;
 }) {
   return (
-    <div className="flex items-center gap-1 border-t border-border/60 pt-1.5">
-      <RagToggle enabled={useRag} disabled={streaming} onToggle={onToggleRag} />
-      <div className="ml-auto flex items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1 border-t border-border/60 pt-1.5">
+      <RagToggle
+        enabled={useRag}
+        disabled={streaming}
+        copy={copy}
+        onToggle={onToggleRag}
+      />
+      <div className="ml-auto flex min-w-0 items-center gap-1">
         <ModelSelector
           sessionId={sessionId}
           initialProviderId={providerId ?? sessionMeta?.provider_id ?? null}
           initialModel={model ?? sessionMeta?.model ?? null}
+          initialProviders={initialProviders}
+          initialPreferences={initialPreferences}
           disabled={streaming}
           onChange={onModelChange}
         />
@@ -142,7 +174,7 @@ function ComposerActions({
             size="icon"
             onClick={onAbort}
             className="size-9 shrink-0 rounded-xl"
-            aria-label="Stop"
+            aria-label={copy.stop}
           >
             <Square className="size-4 fill-current" />
           </Button>
@@ -152,7 +184,7 @@ function ComposerActions({
             size="icon"
             disabled={!input.trim()}
             className="size-9 shrink-0 rounded-xl"
-            aria-label="Send"
+            aria-label={copy.send}
           >
             <Send className="size-4" />
           </Button>
@@ -165,10 +197,12 @@ function ComposerActions({
 function RagToggle({
   enabled,
   disabled,
+  copy,
   onToggle,
 }: {
   enabled: boolean;
   disabled: boolean;
+  copy: ChatComposerCopy;
   onToggle: () => void;
 }) {
   return (
@@ -182,7 +216,7 @@ function RagToggle({
             onClick={onToggle}
             disabled={disabled}
             className={cn(
-              "gap-1.5 text-xs font-normal",
+              "gap-1.5 px-2 text-xs font-normal sm:px-3",
               enabled ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -197,14 +231,12 @@ function RagToggle({
               variant={enabled ? "success" : "outline"}
               className="ml-0.5 text-[9px]"
             >
-              {enabled ? "on" : "off"}
+              {enabled ? copy.ragOn : copy.ragOff}
             </Badge>
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {enabled
-            ? "Retrieval-augmented context is being added to each turn"
-            : "Click to enable retrieval-augmented context"}
+          {enabled ? copy.ragEnabledTip : copy.ragDisabledTip}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
