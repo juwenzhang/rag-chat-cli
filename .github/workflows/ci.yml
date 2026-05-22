@@ -21,13 +21,14 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           version: "0.5.x"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: pnpm
           cache-dependency-path: websites/pnpm-lock.yaml
-      - name: enable corepack
-        run: corepack enable
       - name: uv sync
         run: uv sync --extra dev
       - name: pnpm install
