@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { orgService } from "@/features/orgs/services/org-service";
 import type { OrgOut } from "@/lib/api/shared/types";
+import { useI18n } from "@/lib/i18n/provider";
 
 import { CreateOrgDialog } from "./create-org-dialog";
 import { MembersDialog } from "./members-dialog";
@@ -23,6 +24,7 @@ interface Props {
 /** Workspaces page — grid of org cards plus create/rename/members/delete. */
 export function OrgsPageClient({ currentUserId, orgs }: Props) {
   const router = useRouter();
+  const { t } = useI18n();
   const [createOpen, setCreateOpen] = useState(false);
   const [membersOf, setMembersOf] = useState<OrgOut | null>(null);
   const [pendingDelete, setPendingDelete] = useState<OrgOut | null>(null);
@@ -34,10 +36,10 @@ export function OrgsPageClient({ currentUserId, orgs }: Props) {
     try {
       await orgService.leaveOrg(pendingLeave.id, currentUserId);
     } catch (err) {
-      toast.error((err as Error).message || "Failed to leave");
+      toast.error((err as Error).message || t("orgs.leaveFailed"));
       throw err;
     }
-    toast.success("Left workspace");
+    toast.success(t("orgs.left"));
     router.refresh();
   };
 
@@ -46,10 +48,10 @@ export function OrgsPageClient({ currentUserId, orgs }: Props) {
     try {
       await orgService.deleteOrg(pendingDelete.id);
     } catch (err) {
-      toast.error((err as Error).message || "Failed to delete workspace");
+      toast.error((err as Error).message || t("orgs.deleteFailed"));
       throw err;
     }
-    toast.success("Workspace deleted");
+    toast.success(t("orgs.deleted"));
     router.refresh();
   };
 
@@ -58,19 +60,18 @@ export function OrgsPageClient({ currentUserId, orgs }: Props) {
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1.5">
           <p className="text-[11px] font-medium uppercase tracking-wider text-primary">
-            Workspaces
+            {t("orgs.title")}
           </p>
           <h1 className="text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
-            工作空间
+            {t("orgs.heading")}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Each workspace has its own wiki and members. Your personal workspace
-            is auto-created and can&apos;t be deleted.
+            {t("orgs.description")}
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus />
-          New workspace
+          {t("orgs.new")}
         </Button>
       </header>
 
@@ -114,9 +115,11 @@ export function OrgsPageClient({ currentUserId, orgs }: Props) {
         onOpenChange={(open) => {
           if (!open) setPendingDelete(null);
         }}
-        title={`Delete ${pendingDelete?.name ?? "this workspace"}?`}
-        description="All wiki pages and members in this workspace will be removed. This cannot be undone."
-        confirmLabel="Delete"
+        title={t("orgs.deleteTitle", {
+          name: pendingDelete?.name ?? t("orgs.deleteFallback"),
+        })}
+        description={t("orgs.deleteDescription")}
+        confirmLabel={t("common.delete")}
         destructive
         onConfirm={onDelete}
       />
@@ -126,9 +129,11 @@ export function OrgsPageClient({ currentUserId, orgs }: Props) {
         onOpenChange={(open) => {
           if (!open) setPendingLeave(null);
         }}
-        title={`Leave ${pendingLeave?.name ?? "this workspace"}?`}
-        description="You'll lose access to its wiki and members. An owner will have to re-invite you to come back."
-        confirmLabel="Leave"
+        title={t("orgs.leaveTitle", {
+          name: pendingLeave?.name ?? t("orgs.deleteFallback"),
+        })}
+        description={t("orgs.leaveDescription")}
+        confirmLabel={t("common.leave")}
         destructive
         onConfirm={onLeave}
       />

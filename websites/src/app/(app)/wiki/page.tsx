@@ -4,9 +4,10 @@ import { redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { DocumentTableClient } from "@/features/wiki/components/document-table-client";
-import { resolveActiveOrg } from "@/lib/org/active-org.server";
 import { knowledgeApi, orgApi, wikiApi } from "@/lib/api";
 import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
+import { getServerI18n } from "@/lib/i18n/server";
+import { resolveActiveOrg } from "@/lib/org/active-org.server";
 import { cn, formatRelative } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export default async function WikiIndexPage() {
   const wikis = await wikiApi.listWikis(token, activeOrg.id);
   const documents = await knowledgeApi.listDocuments(token);
   const canCreate = activeOrg.role !== "viewer";
+  const { t } = await getServerI18n();
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 pb-16 pt-6 sm:px-8 sm:pt-10">
@@ -34,24 +36,26 @@ export default async function WikiIndexPage() {
           <p className="text-[11px] font-medium uppercase tracking-wider text-primary">
             {activeOrg.name}
           </p>
-          <h1 className="text-2xl font-semibold tracking-tight">Wikis</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("wiki.wikis")}</h1>
           <p className="text-sm text-muted-foreground">
-            {wikis.length} wiki{wikis.length === 1 ? "" : "s"} in this
-            workspace
+            {t("wiki.indexCount", {
+              count: wikis.length,
+              plural: wikis.length === 1 ? "" : "s",
+            })}
           </p>
         </div>
         {canCreate && (
           <Button asChild>
             <Link href="/wiki/new">
               <Plus />
-              New wiki
+              {t("wiki.newWiki")}
             </Link>
           </Button>
         )}
       </header>
 
       {wikis.length === 0 ? (
-        <EmptyState canCreate={canCreate} />
+        <EmptyState canCreate={canCreate} t={t} />
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {wikis.map((w) => (
@@ -87,8 +91,8 @@ export default async function WikiIndexPage() {
                   </p>
                 )}
                 <p className="mt-auto pt-4 text-xs text-muted-foreground">
-                  <span className="capitalize">{w.role}</span> access ·{" "}
-                  updated {formatRelative(w.updated_at)}
+                  {t("wiki.access", { role: w.role })} · {" "}
+                  {t("wiki.updated", { time: formatRelative(w.updated_at) })}
                 </p>
               </Link>
             </li>
@@ -96,7 +100,6 @@ export default async function WikiIndexPage() {
         </ul>
       )}
 
-      {/* ── Document Library ─────────────────────────────────── */}
       <section className="mt-10">
         <DocumentTableClient documents={documents} />
       </section>
@@ -104,23 +107,27 @@ export default async function WikiIndexPage() {
   );
 }
 
-function EmptyState({ canCreate }: { canCreate: boolean }) {
+function EmptyState({
+  canCreate,
+  t,
+}: {
+  canCreate: boolean;
+  t: Awaited<ReturnType<typeof getServerI18n>>["t"];
+}) {
   return (
     <div className="rounded-xl border border-dashed border-border bg-card/40 p-12 text-center">
       <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
         <Book className="size-5" />
       </div>
-      <p className="text-base font-medium">No wikis yet</p>
+      <p className="text-base font-medium">{t("wiki.noWikis")}</p>
       <p className="mt-1 text-sm text-muted-foreground">
-        {canCreate
-          ? "A wiki is a named knowledge base — group related pages together, share with teammates, and let the AI search inside (later)."
-          : "Pages live inside wikis. An owner of this workspace needs to create one before you can write."}
+        {canCreate ? t("wiki.emptyOwner") : t("wiki.emptyViewer")}
       </p>
       {canCreate && (
         <Button asChild className="mt-5">
           <Link href="/wiki/new">
             <Plus />
-            Create your first wiki
+            {t("wiki.createFirst")}
           </Link>
         </Button>
       )}

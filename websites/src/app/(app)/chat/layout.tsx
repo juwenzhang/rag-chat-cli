@@ -31,9 +31,9 @@ export default async function ChatLayout({
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0">
       <SessionSidebar user={user} sessions={sessions} />
-      <div className="flex-1 overflow-hidden">{children}</div>
+      <div className="min-w-0 flex-1 overflow-hidden">{children}</div>
     </div>
   );
 }

@@ -6,16 +6,13 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-/**
- * "Send code" button with a resend cooldown. `formAction` posts the
- * send-code server action; the button stays disabled and counts down
- * while `initialSeconds > 0`.
- */
 export function CountdownButton({
   initialSeconds,
+  idleLabel,
   formAction,
 }: {
   initialSeconds: number;
+  idleLabel: string;
   formAction: (formData: FormData) => void;
 }) {
   const [remaining, setRemaining] = useState(initialSeconds);
@@ -38,7 +35,7 @@ export function CountdownButton({
       className={cn("shrink-0", remaining > 0 && "min-w-[110px]")}
     >
       <Send className="size-3.5" />
-      {remaining > 0 ? `${remaining}s` : "Send code"}
+      {remaining > 0 ? `${remaining}s` : idleLabel}
     </Button>
   );
 }

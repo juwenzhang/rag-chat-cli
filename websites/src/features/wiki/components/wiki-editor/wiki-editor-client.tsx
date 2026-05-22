@@ -6,6 +6,7 @@ import { useCallback, useRef, useState } from "react";
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useWikiPageEditor } from "@/features/wiki/hooks/use-wiki-page-editor";
+import { useI18n } from "@/lib/i18n/provider";
 import type {
   EffectiveWikiRole,
   OrgOut,
@@ -34,6 +35,7 @@ export function WikiEditorClient({
   writableWikis,
 }: Props) {
   const router = useRouter();
+  const { t } = useI18n();
   const editor = useWikiPageEditor({ initialPage, wiki, role });
   const [pendingDelete, setPendingDelete] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -56,6 +58,14 @@ export function WikiEditorClient({
         readOnly={editor.readOnly}
         status={editor.status}
         lastSavedAt={editor.lastSavedAt}
+        copy={{
+          askAI: t("wiki.editor.askAI"),
+          share: t("wiki.editor.share"),
+          pageActions: t("wiki.editor.pageActions"),
+          duplicate: t("wiki.editor.duplicate"),
+          move: t("wiki.editor.move"),
+          delete: t("wiki.editor.delete"),
+        }}
         onAskAI={() => void editor.askAI()}
         onShare={() => setShareOpen(true)}
         onDuplicate={() => void editor.duplicatePage()}
@@ -68,6 +78,7 @@ export function WikiEditorClient({
         initialMarkdown={initialPage.body}
         readOnly={editor.readOnly}
         tocItems={editor.tocItems}
+        titlePlaceholder={t("wiki.editor.titlePlaceholder")}
         onTitleChange={editor.updateTitle}
         onBodyChange={editor.updateBody}
         onEditorReady={(instance) => {

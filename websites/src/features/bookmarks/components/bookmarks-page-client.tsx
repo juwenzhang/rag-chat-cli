@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { ShareDialog } from "@/features/share/components/share-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { bookmarkService } from "@/features/bookmarks/services/bookmark-service";
+import { ShareDialog } from "@/features/share/components/share-dialog";
 import type { BookmarkDetailOut, ShareOut } from "@/lib/api/shared/types";
+import { useI18n } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
 
 import { BookmarkDetailDialog } from "./bookmark-detail-dialog";
@@ -24,6 +25,7 @@ interface Props {
 /** Bookmarks page — searchable grid of saved Q&As, preview + detail dialog. */
 export function BookmarksPageClient({ currentUserId, bookmarks }: Props) {
   const router = useRouter();
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [pendingDelete, setPendingDelete] = useState<BookmarkDetailOut | null>(
     null
@@ -33,10 +35,6 @@ export function BookmarksPageClient({ currentUserId, bookmarks }: Props) {
   const [shareOpen, setShareOpen] = useState(false);
   const [sharingId, setSharingId] = useState<string | null>(null);
 
-  // Owner-only action: only the user that authored the underlying session
-  // can mint a share for it. We hide the share button on bookmarks that
-  // point at someone else's session (shouldn't happen yet, but the API
-  // model already permits cross-user reads via fork, so guard anyway).
   const onShare = async (b: BookmarkDetailOut) => {
     if (b.session_owner_id !== currentUserId) return;
     if (sharingId) return;
@@ -49,7 +47,7 @@ export function BookmarksPageClient({ currentUserId, bookmarks }: Props) {
       setShare(created);
       setShareOpen(true);
     } catch {
-      toast.error("Failed to create share link");
+      toast.error(t("bookmarks.shareFailed"));
     } finally {
       setSharingId(null);
     }
@@ -72,11 +70,10 @@ export function BookmarksPageClient({ currentUserId, bookmarks }: Props) {
     try {
       await bookmarkService.deleteBookmark(pendingDelete.id);
     } catch (err) {
-      toast.error("Failed to remove bookmark");
+      toast.error(t("bookmarks.removeFailed"));
       throw err;
     }
-    toast.success("Bookmark removed");
-    // If the dialog showed this bookmark, close it.
+    toast.success(t("bookmarks.removed"));
     if (opened?.id === pendingDelete.id) setOpened(null);
     router.refresh();
   };
@@ -86,19 +83,19 @@ export function BookmarksPageClient({ currentUserId, bookmarks }: Props) {
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1.5">
           <p className="text-[11px] font-medium uppercase tracking-wider text-primary">
-            Bookmarks
+            {t("bookmarks.title")}
           </p>
           <h1 className="text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
-            收藏夹
+            {t("bookmarks.heading")}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {bookmarks.length} saved · click a card to open the full answer
+            {t("bookmarks.count", { count: bookmarks.length })}
           </p>
         </div>
         <div className="relative w-full sm:w-72">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search bookmarks…"
+            placeholder={t("bookmarks.searchPlaceholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9"
@@ -110,13 +107,13 @@ export function BookmarksPageClient({ currentUserId, bookmarks }: Props) {
         <BookmarkEmptyState />
       ) : filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-card/40 p-10 text-center text-sm text-muted-foreground">
-          No bookmarks match <span className="font-medium">{query}</span>.
+          {t("bookmarks.noMatch", { query })}
         </div>
       ) : (
         <ul
           className={cn(
             "grid gap-3 sm:gap-4",
-            "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+            "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
           )}
         >
           {filtered.map((b) => {
@@ -161,9 +158,9 @@ export function BookmarksPageClient({ currentUserId, bookmarks }: Props) {
         onOpenChange={(open) => {
           if (!open) setPendingDelete(null);
         }}
-        title="Remove this bookmark?"
-        description="The conversation itself stays — only the bookmark goes away."
-        confirmLabel="Remove"
+        title={t("bookmarks.removeTitle")}
+        description={t("bookmarks.removeDescription")}
+        confirmLabel={t("common.remove")}
         destructive
         onConfirm={onDelete}
       />

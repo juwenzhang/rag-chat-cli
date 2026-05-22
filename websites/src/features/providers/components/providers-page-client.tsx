@@ -1,7 +1,6 @@
 "use client";
 
-import { ArrowLeft, Plus } from "lucide-react";
-import Link from "next/link";
+import { Plus } from "lucide-react";
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 
@@ -10,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { providerService } from "@/features/providers/services/provider-service";
 import { useProvidersStore } from "@/features/providers/stores/providers-store";
 import type { ProviderOut, UserPreferenceOut } from "@/lib/api/shared/types";
+import { useI18n } from "@/lib/i18n/provider";
 
 import { AddProviderForm } from "./add-provider-form";
 import { PreferencesCard } from "./preferences-card";
@@ -25,6 +25,7 @@ export function ProvidersPageClient({
   initialProviders,
   initialPreferences,
 }: Props) {
+  const { t } = useI18n();
   const providers = useProvidersStore((state) => state.providers);
   const pref = useProvidersStore((state) => state.preferences);
   const adding = useProvidersStore((state) => state.adding);
@@ -43,115 +44,107 @@ export function ProvidersPageClient({
       setProviders(nextProviders);
       setPreferences(nextPreferences);
     } catch (err) {
-      toast.error(`Refresh failed: ${(err as Error).message}`);
+      toast.error(t("providers.refreshFailed", { message: (err as Error).message }));
     }
-  }, [setPreferences, setProviders]);
+  }, [setPreferences, setProviders, t]);
 
   return (
-    <div className="h-full overflow-y-auto bg-muted/30">
-      <div className="mx-auto max-w-3xl space-y-6 px-6 py-10">
-        <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="icon" aria-label="Back to chat">
-            <Link href="/chat">
-              <ArrowLeft />
-            </Link>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-xl font-semibold tracking-tight">
+            {t("providers.title")}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {t("providers.description")}
+          </p>
+        </div>
+        {!adding && (
+          <Button onClick={() => setAdding(true)} size="sm">
+            <Plus /> {t("providers.add")}
           </Button>
-          <div className="flex-1">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              LLM providers
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Self-host: bring your own Ollama, OpenAI key, or any
-              OpenAI-compatible endpoint. Keys are encrypted at rest.
-            </p>
-          </div>
-          {!adding && (
-            <Button onClick={() => setAdding(true)} size="sm">
-              <Plus /> Add provider
-            </Button>
-          )}
-        </div>
-
-        {adding && (
-          <AddProviderForm
-            onClose={() => setAdding(false)}
-            onTestConnection={providerService.test}
-            onCreate={async (body) => {
-              const created = await providerService.create(body);
-              toast.success(`Added provider ${body.name}`);
-              return created;
-            }}
-            onCreated={() => {
-              setAdding(false);
-              void refetch();
-            }}
-          />
         )}
+      </div>
 
-        <PreferencesCard
-          providers={providers}
-          pref={pref}
-          onSave={async (body) => {
-            const next = await providerService.updatePreferences(body);
-            toast.success("Preferences saved");
-            return next;
+      {adding && (
+        <AddProviderForm
+          onClose={() => setAdding(false)}
+          onTestConnection={providerService.test}
+          onCreate={async (body) => {
+            const created = await providerService.create(body);
+            toast.success(t("providers.added", { name: body.name }));
+            return created;
           }}
-          onLoadEmbeddingModels={providerService.listEmbeddingModels}
-          onError={(err) => toast.error((err as Error).message)}
-          onUpdated={setPreferences}
+          onCreated={() => {
+            setAdding(false);
+            void refetch();
+          }}
         />
+      )}
 
-        <div className="space-y-3">
-          {providers.length === 0 && !adding ? (
-            <Card>
-              <CardContent className="py-10 text-center">
-                <p className="text-sm text-muted-foreground">
-                  No providers yet. Add one to start chatting.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            providers.map((p) => (
-              <ProviderCard
-                key={p.id}
-                provider={p}
-                isUserDefault={pref.default_provider_id === p.id}
-                onPatch={async (body) => {
-                  const updated = await providerService.update(p.id, body);
-                  toast.success("Provider updated");
-                  return updated;
-                }}
-                onDelete={async () => {
-                  await providerService.remove(p.id);
-                  toast.success(`Deleted ${p.name}`);
-                }}
-                onListModels={() => providerService.listModels(p.id)}
-                onDeleteModel={async (model) => {
-                  await providerService.deleteModel(p.id, model);
-                  toast.success(`Removed ${model}`);
-                }}
-                onSaveModelDescription={async (model, description) => {
-                  await providerService.saveModelDescription(p.id, model, description);
-                  toast.success("Description saved");
-                }}
-                onSaveApiKey={async (apiKey) => {
-                  await providerService.saveApiKey(p.id, apiKey);
-                  toast.success("API key saved");
-                }}
-                onClearApiKey={async () => {
-                  await providerService.clearApiKey(p.id);
-                  toast.success("API key cleared");
-                }}
-                onPullModel={async (model, signal) => {
-                  const response = await providerService.pullModel(p.id, model, signal);
-                  return response;
-                }}
-                onError={(err) => toast.error((err as Error).message)}
-                onChanged={refetch}
-              />
-            ))
-          )}
-        </div>
+      <PreferencesCard
+        providers={providers}
+        pref={pref}
+        onSave={async (body) => {
+          const next = await providerService.updatePreferences(body);
+          toast.success(t("providers.preferencesSaved"));
+          return next;
+        }}
+        onLoadEmbeddingModels={providerService.listEmbeddingModels}
+        onError={(err) => toast.error((err as Error).message)}
+        onUpdated={setPreferences}
+      />
+
+      <div className="space-y-3">
+        {providers.length === 0 && !adding ? (
+          <Card>
+            <CardContent className="py-10 text-center">
+              <p className="text-sm text-muted-foreground">
+                {t("providers.none")}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          providers.map((p) => (
+            <ProviderCard
+              key={p.id}
+              provider={p}
+              isUserDefault={pref.default_provider_id === p.id}
+              onPatch={async (body) => {
+                const updated = await providerService.update(p.id, body);
+                toast.success(t("providers.updated"));
+                return updated;
+              }}
+              onDelete={async () => {
+                await providerService.remove(p.id);
+                toast.success(t("providers.deleted", { name: p.name }));
+              }}
+              onListModels={() => providerService.listModels(p.id)}
+              onDeleteModel={async (model) => {
+                await providerService.deleteModel(p.id, model);
+                toast.success(t("providers.modelRemoved", { model }));
+              }}
+              onSaveModelDescription={async (model, description) => {
+                await providerService.saveModelDescription(p.id, model, description);
+                toast.success(t("providers.descriptionSaved"));
+              }}
+              onSaveApiKey={async (apiKey) => {
+                await providerService.saveApiKey(p.id, apiKey);
+                toast.success(t("providers.apiKeySaved"));
+              }}
+              onClearApiKey={async () => {
+                await providerService.clearApiKey(p.id);
+                toast.success(t("providers.apiKeyCleared"));
+              }}
+              onPullModel={async (model, signal) => {
+                const response = await providerService.pullModel(p.id, model, signal);
+                return response;
+              }}
+              onError={(err) => toast.error((err as Error).message)}
+              onChanged={refetch}
+            />
+          ))
+        )}
       </div>
     </div>
   );

@@ -82,7 +82,7 @@ export default async function WikiLayout({
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0">
       <WikiSidebar
         activeOrg={activeOrg}
         wikis={wikis}
@@ -90,7 +90,7 @@ export default async function WikiLayout({
         pages={pages}
         documents={documents}
       />
-      <div className="flex-1 overflow-hidden">{children}</div>
+      <div className="min-w-0 flex-1 overflow-hidden">{children}</div>
     </div>
   );
 }

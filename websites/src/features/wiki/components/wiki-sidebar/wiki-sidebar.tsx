@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { documentService, wikiPageService, wikiService } from "@/features/wiki/services/wiki-page-service";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import type { DocumentOut, OrgOut, WikiOut, WikiPageListOut } from "@/lib/api/shared/types";
+import { useI18n } from "@/lib/i18n/provider";
 
 import { CollapsedSidebar } from "./collapsed-sidebar";
 import { CreateWikiDialog } from "./create-wiki-dialog";
@@ -27,6 +28,7 @@ interface Props {
 /** Two-level wiki sidebar — workspace/wiki switcher above the page tree. */
 export function WikiSidebar({ activeOrg, wikis, activeWiki, pages, documents }: Props) {
   const router = useRouter();
+  const { t } = useI18n();
   const params = useParams();
   const pathname = usePathname();
   const activePageId =
@@ -147,7 +149,7 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages, documents }: 
   }
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-card/40">
+    <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-border bg-card/40 md:flex">
       <WikiSwitcher
         activeOrg={activeOrg}
         activeWiki={activeWiki}
@@ -168,6 +170,14 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages, documents }: 
           creating={creating}
           canEdit={canEditWiki}
           activePageId={activePageId}
+          copy={{
+            creating: t("common.creating"),
+            newPage: t("wiki.newPage"),
+            pages: t("wiki.pages"),
+            searchPages: t("wiki.searchPages"),
+            noPages: t("wiki.noPages"),
+            noMatches: t("wiki.noMatches"),
+          }}
           onQueryChange={setQuery}
           onCreatePage={() => void createPage(activeWiki.id)}
           onCreateChildPage={(parentId) => void createPage(activeWiki.id, parentId)}
@@ -179,6 +189,18 @@ export function WikiSidebar({ activeOrg, wikis, activeWiki, pages, documents }: 
           documents={documents}
           documentTitleOverrides={docTitleOverrides}
           canCreateWiki={orgCanCreateWiki}
+          copy={{
+            wikis: t("wiki.wikis"),
+            newWiki: t("wiki.newWiki"),
+            noWikis: t("wiki.noWikis"),
+            newPage: t("wiki.newPage"),
+            newPageIn: (name) => t("wiki.newPageIn", { name }),
+            documentLibrary: t("wiki.documentLibrary"),
+            newDocument: t("wiki.newDocument"),
+            noDocuments: t("wiki.noDocuments"),
+            untitled: t("common.untitled"),
+            viewAllDocuments: (count) => t("wiki.viewAllDocuments", { count }),
+          }}
           onCreateWiki={() => setCreateWikiOpen(true)}
           onCreatePage={(wiki) => void createPage(wiki.id)}
           onCreateDocument={() => void createDocument()}

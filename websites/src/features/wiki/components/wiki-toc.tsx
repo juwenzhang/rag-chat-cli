@@ -75,7 +75,7 @@ export function WikiToc({
 
   if (collapsed) {
     return (
-      <aside className="flex w-10 shrink-0 flex-col items-center border-l border-border bg-card/30 py-3">
+      <aside className="hidden w-10 shrink-0 flex-col items-center border-l border-border bg-card/30 py-3 md:flex">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -89,7 +89,7 @@ export function WikiToc({
   }
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-l border-border bg-card/30">
+    <aside className="hidden w-60 shrink-0 flex-col border-l border-border bg-card/30 md:flex">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
           <ListTree className="size-3.5" />

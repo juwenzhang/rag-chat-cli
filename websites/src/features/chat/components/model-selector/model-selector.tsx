@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, Cpu, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api/browser";
-import type { UserPreferenceOut } from "@/lib/api/shared/types";
+import type { ProviderOut, UserPreferenceOut } from "@/lib/api/shared/types";
 import { cn } from "@/lib/utils";
 
 import {
@@ -25,6 +25,8 @@ interface Props {
   initialProviderId: string | null;
   /** Per-session model pin (`null` = inherit user default). */
   initialModel: string | null;
+  initialProviders: ProviderOut[];
+  initialPreferences: UserPreferenceOut;
   disabled?: boolean;
   /** Called after a successful PATCH so the parent can refresh state. */
   onChange?: (next: { provider_id: string | null; model: string | null }) => void;
@@ -34,39 +36,19 @@ export function ModelSelector({
   sessionId,
   initialProviderId,
   initialModel,
+  initialProviders,
+  initialPreferences,
   disabled,
   onChange,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [providerId, setProviderId] = useState<string | null>(initialProviderId);
   const [model, setModel] = useState<string | null>(initialModel);
-  const [providers, setProviders] = useState<ProviderWithModels[]>([]);
-  const [pref, setPref] = useState<UserPreferenceOut | null>(null);
-  const [bootstrapLoading, setBootstrapLoading] = useState(false);
+  const [providers, setProviders] = useState<ProviderWithModels[]>(() =>
+    initialProviders.map((provider) => ({ ...provider }))
+  );
+  const [pref] = useState<UserPreferenceOut>(initialPreferences);
   const [saving, setSaving] = useState(false);
-  const loadedOnceRef = useRef(false);
-
-  const loadProviders = useCallback(async () => {
-    setBootstrapLoading(true);
-    try {
-      const [provData, prefData] = await Promise.all([
-        api.providers.list(),
-        api.me.getPreferences(),
-      ]);
-      setProviders(provData.map((provider) => ({ ...provider })));
-      setPref(prefData);
-    } catch (err) {
-      setProviders([]);
-      toast.error(`Failed to load providers: ${(err as Error).message}`);
-    } finally {
-      setBootstrapLoading(false);
-      loadedOnceRef.current = true;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!loadedOnceRef.current) void loadProviders();
-  }, [loadProviders]);
 
   const fetchModels = useCallback(async (pid: string) => {
     setProviders((prev) =>
@@ -150,7 +132,7 @@ export function ModelSelector({
           )}
         >
           <Cpu className="size-3.5" />
-          <span className="max-w-[160px] truncate">{buttonLabel}</span>
+          <span className="max-w-27.5 truncate sm:max-w-40">{buttonLabel}</span>
           {saving ? (
             <Loader2 className="size-3 animate-spin" />
           ) : (
@@ -158,9 +140,9 @@ export function ModelSelector({
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72 max-h-[60vh] overflow-y-auto">
+      <DropdownMenuContent align="end" className="max-h-[60vh] w-[calc(100vw-2rem)] max-w-72 overflow-y-auto">
         <ModelSelectorMenu
-          bootstrapLoading={bootstrapLoading}
+          bootstrapLoading={false}
           providers={providers}
           pref={pref}
           providerId={providerId}

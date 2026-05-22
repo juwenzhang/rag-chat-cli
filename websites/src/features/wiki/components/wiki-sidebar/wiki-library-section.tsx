@@ -13,11 +13,25 @@ import {
 } from "@/components/ui/tooltip";
 import type { DocumentOut, WikiOut } from "@/lib/api/shared/types";
 
+export interface WikiLibrarySectionCopy {
+  wikis: string;
+  newWiki: string;
+  noWikis: string;
+  newPage: string;
+  newPageIn: (name: string) => string;
+  documentLibrary: string;
+  newDocument: string;
+  noDocuments: string;
+  untitled: string;
+  viewAllDocuments: (count: number) => string;
+}
+
 export function WikiLibrarySection({
   wikis,
   documents,
   documentTitleOverrides,
   canCreateWiki,
+  copy,
   onCreateWiki,
   onCreatePage,
   onCreateDocument,
@@ -26,6 +40,7 @@ export function WikiLibrarySection({
   documents: DocumentOut[];
   documentTitleOverrides: Record<string, string>;
   canCreateWiki: boolean;
+  copy: WikiLibrarySectionCopy;
   onCreateWiki: () => void;
   onCreatePage: (wiki: WikiOut) => void;
   onCreateDocument: () => void;
@@ -36,6 +51,7 @@ export function WikiLibrarySection({
         <WikiList
           wikis={wikis}
           canCreateWiki={canCreateWiki}
+          copy={copy}
           onCreateWiki={onCreateWiki}
           onCreatePage={onCreatePage}
         />
@@ -43,6 +59,7 @@ export function WikiLibrarySection({
         <DocumentList
           documents={documents}
           titleOverrides={documentTitleOverrides}
+          copy={copy}
           onCreateDocument={onCreateDocument}
         />
       </div>
@@ -53,11 +70,13 @@ export function WikiLibrarySection({
 function WikiList({
   wikis,
   canCreateWiki,
+  copy,
   onCreateWiki,
   onCreatePage,
 }: {
   wikis: WikiOut[];
   canCreateWiki: boolean;
+  copy: WikiLibrarySectionCopy;
   onCreateWiki: () => void;
   onCreatePage: (wiki: WikiOut) => void;
 }) {
@@ -65,14 +84,14 @@ function WikiList({
     <>
       <div className="mb-2 flex items-center justify-between">
         <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          Wikis
+          {copy.wikis}
         </p>
         {canCreateWiki && (
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={onCreateWiki}
-            aria-label="New wiki"
+            aria-label={copy.newWiki}
             className="size-5"
           >
             <Plus className="size-3" />
@@ -80,7 +99,7 @@ function WikiList({
         )}
       </div>
       {wikis.length === 0 ? (
-        <p className="py-6 text-xs text-muted-foreground">No wikis yet.</p>
+        <p className="py-6 text-xs text-muted-foreground">{copy.noWikis}</p>
       ) : (
         <ul className="flex flex-col gap-0.5">
           {wikis.map((wiki) => (
@@ -104,13 +123,13 @@ function WikiList({
                         size="icon-sm"
                         className="size-6 shrink-0 opacity-0 group-hover:opacity-100"
                         onClick={() => onCreatePage(wiki)}
-                        aria-label="New page"
+                        aria-label={copy.newPage}
                       >
                         <Plus className="size-3" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="right">
-                      New page in {wiki.name}
+                      {copy.newPageIn(wiki.name)}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -126,31 +145,33 @@ function WikiList({
 function DocumentList({
   documents,
   titleOverrides,
+  copy,
   onCreateDocument,
 }: {
   documents: DocumentOut[];
   titleOverrides: Record<string, string>;
+  copy: WikiLibrarySectionCopy;
   onCreateDocument: () => void;
 }) {
   return (
     <>
       <div className="mb-2 flex items-center justify-between">
         <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          Document Library
+          {copy.documentLibrary}
         </p>
         <Button
           variant="ghost"
           size="icon-sm"
           className="size-5"
           onClick={onCreateDocument}
-          aria-label="New document"
+          aria-label={copy.newDocument}
         >
           <Plus className="size-3" />
         </Button>
       </div>
       {documents.length === 0 ? (
         <p className="py-4 text-center text-xs text-muted-foreground">
-          No documents yet.
+          {copy.noDocuments}
         </p>
       ) : (
         <ul className="flex flex-col gap-0.5">
@@ -162,7 +183,7 @@ function DocumentList({
               >
                 <FileText className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="flex-1 truncate">
-                  {titleOverrides[document.id] ?? (document.title || "Untitled")}
+                  {titleOverrides[document.id] ?? (document.title || copy.untitled)}
                 </span>
               </Link>
             </li>
@@ -173,7 +194,7 @@ function DocumentList({
                 href="/wiki/documents"
                 className="px-2 py-1 text-xs text-primary hover:underline"
               >
-                View all {documents.length} documents…
+                {copy.viewAllDocuments(documents.length)}
               </Link>
             </li>
           )}

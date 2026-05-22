@@ -20,7 +20,7 @@ export function CollapsedSessionSidebar({
   onExpand: () => void;
 }) {
   return (
-    <aside className="flex h-full w-14 shrink-0 flex-col border-r border-border bg-card/50">
+    <aside className="hidden h-full w-14 shrink-0 flex-col border-r border-border bg-card/50 md:flex">
       <div className="flex flex-col items-center gap-1 p-2">
         <TooltipProvider delayDuration={200}>
           <Tooltip>

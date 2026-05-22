@@ -99,7 +99,7 @@ export function SessionSidebar({ sessions }: Props) {
   }
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-card/40">
+    <aside className="hidden h-full w-72 shrink-0 flex-col border-r border-border bg-card/40 md:flex">
       <SessionSidebarHeader
         creating={creating}
         query={query}
