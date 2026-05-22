@@ -43,7 +43,8 @@ from api.schemas.provider import (
     UserPreferenceIn,
     UserPreferenceOut,
 )
-from core.providers import (
+from service.db.models import Provider, User, UserPreference
+from service.providers import (
     ProviderInfo,
     ProviderNotFoundError,
     ProviderValidationError,
@@ -63,7 +64,6 @@ from core.providers import (
     update_provider,
     upsert_model_meta,
 )
-from db.models import Provider, User, UserPreference
 
 __all__ = ["router"]
 
@@ -133,9 +133,7 @@ async def create_provider_route(
 ) -> ProviderOut:
     base_url = str(body.base_url).rstrip("/")
     if body.test_connectivity:
-        result = await test_connectivity(
-            type=body.type, base_url=base_url, api_key=body.api_key
-        )
+        result = await test_connectivity(type=body.type, base_url=base_url, api_key=body.api_key)
         if not result["ok"]:
             raise HTTPException(
                 status_code=400,
@@ -199,9 +197,7 @@ async def delete_provider_route(
     session: AsyncSession = Depends(get_db_session),
 ) -> OkResponse:
     try:
-        await delete_provider(
-            session, user_id=user.id, provider_id=provider_id
-        )
+        await delete_provider(session, user_id=user.id, provider_id=provider_id)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
     return OkResponse(ok=True)
@@ -223,17 +219,13 @@ async def list_models_route(
     session: AsyncSession = Depends(get_db_session),
 ) -> list[ModelListItem]:
     try:
-        row = await get_provider(
-            session, user_id=user.id, provider_id=provider_id
-        )
+        row = await get_provider(session, user_id=user.id, provider_id=provider_id)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
 
     api_key = decrypt_api_key(row.api_key_encrypted)
     try:
-        items = await list_models(
-            type=row.type, base_url=row.base_url, api_key=api_key
-        )
+        items = await list_models(type=row.type, base_url=row.base_url, api_key=api_key)
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=502,
@@ -244,9 +236,7 @@ async def list_models_route(
 
     # Join with model_metadata so the UI can render hover descriptions in
     # one round-trip instead of a second per-model fetch.
-    descriptions = await list_model_meta_for_provider(
-        session, provider_id=provider_id
-    )
+    descriptions = await list_model_meta_for_provider(session, provider_id=provider_id)
     return [
         ModelListItem(
             id=m["id"],
@@ -271,9 +261,7 @@ async def upsert_model_meta_route(
 ) -> OkResponse:
     try:
         # Ownership check — `upsert_model_meta` itself only takes provider_id.
-        await get_provider(
-            session, user_id=user.id, provider_id=provider_id
-        )
+        await get_provider(session, user_id=user.id, provider_id=provider_id)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
 
@@ -312,9 +300,7 @@ async def pull_model_route(
     session: AsyncSession = Depends(get_db_session),
 ) -> StreamingResponse:
     try:
-        row = await get_provider(
-            session, user_id=user.id, provider_id=provider_id
-        )
+        row = await get_provider(session, user_id=user.id, provider_id=provider_id)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
 
@@ -358,13 +344,11 @@ async def pull_model_route(
             # UI doesn't hang. The progress frames already gave context.
             yield _sse_frame("done", {"model": model_tag})
 
-    return StreamingResponse(
-        _byte_stream(), media_type="text/event-stream", headers=sse_headers
-    )
+    return StreamingResponse(_byte_stream(), media_type="text/event-stream", headers=sse_headers)
 
 
-def _sse_frame(event: str, data: dict) -> bytes:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode("utf-8")
+def _sse_frame(event: str, data: dict[str, object]) -> bytes:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
 
 
 # ---------------------------------------------------------------------------
@@ -401,18 +385,14 @@ async def delete_provider_model_route(
     fiddly across nginx / Next / fetch. The semantic is still "delete".
     """
     try:
-        row = await get_provider(
-            session, user_id=user.id, provider_id=provider_id
-        )
+        row = await get_provider(session, user_id=user.id, provider_id=provider_id)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
     _ollama_provider_or_400(row)
 
     api_key = decrypt_api_key(row.api_key_encrypted)
     try:
-        await delete_ollama_model(
-            base_url=row.base_url, api_key=api_key, model=body.model
-        )
+        await delete_ollama_model(base_url=row.base_url, api_key=api_key, model=body.model)
     except httpx.HTTPStatusError as exc:
         status_code = 404 if exc.response.status_code == 404 else 502
         raise HTTPException(
@@ -436,20 +416,16 @@ async def show_provider_model_route(
     body: PullModelIn,  # reused: same {"model": "..."} shape
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-) -> dict:
+) -> dict[str, object]:
     try:
-        row = await get_provider(
-            session, user_id=user.id, provider_id=provider_id
-        )
+        row = await get_provider(session, user_id=user.id, provider_id=provider_id)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
     _ollama_provider_or_400(row)
 
     api_key = decrypt_api_key(row.api_key_encrypted)
     try:
-        return await show_ollama_model(
-            base_url=row.base_url, api_key=api_key, model=body.model
-        )
+        return await show_ollama_model(base_url=row.base_url, api_key=api_key, model=body.model)
     except httpx.HTTPStatusError as exc:
         status_code = 404 if exc.response.status_code == 404 else 502
         raise HTTPException(
@@ -471,20 +447,16 @@ async def list_running_models_route(
     provider_id: uuid.UUID,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-) -> list[dict]:
+) -> list[dict[str, object]]:
     try:
-        row = await get_provider(
-            session, user_id=user.id, provider_id=provider_id
-        )
+        row = await get_provider(session, user_id=user.id, provider_id=provider_id)
     except ProviderNotFoundError as exc:
         raise HTTPException(status_code=404, detail="provider not found") from exc
     _ollama_provider_or_400(row)
 
     api_key = decrypt_api_key(row.api_key_encrypted)
     try:
-        return await running_ollama_models(
-            base_url=row.base_url, api_key=api_key
-        )
+        return await running_ollama_models(base_url=row.base_url, api_key=api_key)
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=502,
@@ -519,9 +491,7 @@ async def test_provider_route(
 # ---------------------------------------------------------------------------
 
 
-async def _get_or_create_pref(
-    session: AsyncSession, user_id: uuid.UUID
-) -> UserPreference:
+async def _get_or_create_pref(session: AsyncSession, user_id: uuid.UUID) -> UserPreference:
     """Return the user's preferences row, creating an empty one on miss.
 
     Seeding is *not* done here — that belongs to ``GET /providers`` so
@@ -568,9 +538,7 @@ async def put_preferences_route(
     elif body.default_provider_id is not None:
         # Defence in depth: the provider must be owned by ``user``.
         try:
-            await get_provider(
-                session, user_id=user.id, provider_id=body.default_provider_id
-            )
+            await get_provider(session, user_id=user.id, provider_id=body.default_provider_id)
         except ProviderNotFoundError as exc:
             raise HTTPException(
                 status_code=400, detail="default_provider_id does not exist"

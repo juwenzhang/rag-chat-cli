@@ -27,9 +27,7 @@ export function BookmarksPageClient({ currentUserId, bookmarks }: Props) {
   const router = useRouter();
   const { t } = useI18n();
   const [query, setQuery] = useState("");
-  const [pendingDelete, setPendingDelete] = useState<BookmarkDetailOut | null>(
-    null
-  );
+  const [pendingDelete, setPendingDelete] = useState<BookmarkDetailOut | null>(null);
   const [opened, setOpened] = useState<BookmarkDetailOut | null>(null);
   const [share, setShare] = useState<ShareOut | null>(null);
   const [shareOpen, setShareOpen] = useState(false);

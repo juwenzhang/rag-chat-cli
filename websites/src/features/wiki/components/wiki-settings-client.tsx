@@ -39,12 +39,10 @@ export function WikiSettingsClient({
         </Link>
       </Button>
 
-      <h1 className="mb-1 text-2xl font-semibold tracking-tight">
-        Wiki settings
-      </h1>
+      <h1 className="mb-1 text-2xl font-semibold tracking-tight">Wiki settings</h1>
       <p className="mb-6 text-sm text-muted-foreground">
-        Manage <span className="font-medium">{wiki.name}</span> — rename it,
-        change who can see it, or delete it.
+        Manage <span className="font-medium">{wiki.name}</span> — rename it, change who
+        can see it, or delete it.
       </p>
 
       <WikiDetailsSection

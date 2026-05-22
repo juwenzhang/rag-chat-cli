@@ -52,9 +52,7 @@ export function EmbeddingModelSelect({
   const totalCount = grouped.reduce((sum, g) => sum + g.models.length, 0);
   // Show free-text fallback when the typed value isn't in the discovered list
   // (e.g. user pasted a tag the provider hasn't pulled yet).
-  const valueInList = grouped.some((g) =>
-    g.models.some((m) => m.id === value)
-  );
+  const valueInList = grouped.some((g) => g.models.some((m) => m.id === value));
 
   return (
     <select
@@ -72,9 +70,7 @@ export function EmbeddingModelSelect({
             ? "— No embedding models found — pull one first —"
             : "— None (fall back to env) —"}
       </option>
-      {value && !valueInList && (
-        <option value={value}>{value} (not installed)</option>
-      )}
+      {value && !valueInList && <option value={value}>{value} (not installed)</option>}
       {grouped.map((g) => (
         <optgroup key={g.providerName} label={g.providerName}>
           {g.models.map((m) => (

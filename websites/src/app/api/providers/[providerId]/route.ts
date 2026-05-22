@@ -9,9 +9,7 @@ export async function PATCH(
 ) {
   const { providerId } = await ctx.params;
   const body = await readJson<ProviderUpdateBody>(req);
-  return withAuth((token) =>
-    providerApi.updateProvider(token, providerId, body)
-  );
+  return withAuth((token) => providerApi.updateProvider(token, providerId, body));
 }
 
 export async function DELETE(

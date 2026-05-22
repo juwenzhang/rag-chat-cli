@@ -51,9 +51,7 @@ export function ProviderModelsPanel({
             className="rounded p-1 text-muted-foreground/70 hover:bg-foreground/5 hover:text-foreground"
             aria-label="Refresh models"
           >
-            <RefreshCcw
-              className={cn("size-3.5", modelsLoading && "animate-spin")}
-            />
+            <RefreshCcw className={cn("size-3.5", modelsLoading && "animate-spin")} />
           </button>
         )}
         {provider.type === "ollama" && (
@@ -128,8 +126,6 @@ function ProviderModelsContent({
   }
 
   return (
-    <p className="text-xs text-muted-foreground">
-      No models exposed by this endpoint.
-    </p>
+    <p className="text-xs text-muted-foreground">No models exposed by this endpoint.</p>
   );
 }

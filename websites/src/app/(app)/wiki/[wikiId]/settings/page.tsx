@@ -29,14 +29,6 @@ export default async function WikiSettingsPage({ params }: Props) {
   // org_wide wikis the members panel is hidden (access is inherited),
   // so the fetch would just waste a round-trip.
   const members =
-    wiki.visibility === "private"
-      ? await wikiApi.listWikiMembers(token, wikiId)
-      : [];
-  return (
-    <WikiSettingsClient
-      currentUserId={user.id}
-      wiki={wiki}
-      members={members}
-    />
-  );
+    wiki.visibility === "private" ? await wikiApi.listWikiMembers(token, wikiId) : [];
+  return <WikiSettingsClient currentUserId={user.id} wiki={wiki} members={members} />;
 }

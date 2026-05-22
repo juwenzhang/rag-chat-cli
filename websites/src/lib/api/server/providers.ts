@@ -69,10 +69,7 @@ export async function updateProvider(
   });
 }
 
-export async function deleteProvider(
-  token: string,
-  id: string
-): Promise<void> {
+export async function deleteProvider(token: string, id: string): Promise<void> {
   await apiFetch(`/providers/${id}`, { method: "DELETE", token });
 }
 
@@ -158,9 +155,7 @@ export async function testProvider(
   });
 }
 
-export async function getPreferences(
-  token: string
-): Promise<UserPreferenceOut> {
+export async function getPreferences(token: string): Promise<UserPreferenceOut> {
   return apiFetch<UserPreferenceOut>("/me/preferences", { token });
 }
 

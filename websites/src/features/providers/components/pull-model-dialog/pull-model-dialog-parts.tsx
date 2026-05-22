@@ -53,10 +53,7 @@ export function PullModelIdleForm({
         />
         {tag && <ModelTagHint cloud={isCloud(tag)} />}
       </div>
-      <PullDescriptionField
-        value={description}
-        onChange={onDescriptionChange}
-      />
+      <PullDescriptionField value={description} onChange={onDescriptionChange} />
       <CloudBillingNotice />
       <DialogFooter>
         <Button type="button" variant="ghost" onClick={onCancel}>
@@ -85,9 +82,9 @@ export function PullModelConfirmStep({
       <Alert variant="warning">
         <AlertCircle />
         <AlertDescription className="text-xs">
-          <code className="font-mono text-foreground">{tag}</code> is a local
-          model — Ollama will download all model layers, which can be several GB
-          and take many minutes. Continue?
+          <code className="font-mono text-foreground">{tag}</code> is a local model —
+          Ollama will download all model layers, which can be several GB and take many
+          minutes. Continue?
         </AlertDescription>
       </Alert>
       <DialogFooter>
@@ -173,8 +170,8 @@ function ModelTagHint({ cloud }: { cloud: boolean }) {
     <p className="text-xs text-muted-foreground">
       {cloud ? (
         <>
-          <CloudDownload className="inline size-3 text-primary" /> Cloud-hosted
-          — pulls instantly.
+          <CloudDownload className="inline size-3 text-primary" /> Cloud-hosted — pulls
+          instantly.
         </>
       ) : (
         <>This will download from the Ollama library. May be several GB.</>
@@ -187,12 +184,8 @@ function ModelLibraryLinks() {
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
       <ModelLink href="https://ollama.com/search">Browse library</ModelLink>
-      <ModelLink href="https://ollama.com/search?c=cloud">
-        Browse cloud models
-      </ModelLink>
-      <ModelLink href="https://ollama.com/settings/keys">
-        Get an API key
-      </ModelLink>
+      <ModelLink href="https://ollama.com/search?c=cloud">Browse cloud models</ModelLink>
+      <ModelLink href="https://ollama.com/settings/keys">Get an API key</ModelLink>
     </div>
   );
 }
@@ -217,8 +210,8 @@ function CloudBillingNotice() {
       <Info />
       <AlertDescription className="text-[11px] leading-relaxed">
         Cloud models are billed by <span className="font-medium">Ollama</span>
-        per their plan. This app is just a runner — like Claude Code Desktop —
-        and doesn&apos;t meter usage. Manage your quota at{" "}
+        per their plan. This app is just a runner — like Claude Code Desktop — and
+        doesn&apos;t meter usage. Manage your quota at{" "}
         <a
           href="https://ollama.com/settings"
           target="_blank"

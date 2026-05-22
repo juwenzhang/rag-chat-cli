@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  ArrowRight,
-  ExternalLink,
-  GitFork,
-  Loader2,
-  LogIn,
-} from "lucide-react";
+import { ArrowRight, ExternalLink, GitFork, Loader2, LogIn } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -67,8 +61,8 @@ export function ShareView({ share, isAuthed, isOwner }: Props) {
             A question and the answer it received
           </h1>
           <p className="text-sm text-muted-foreground">
-            Shared {formatRelative(share.created_at)} · This link shows just one
-            exchange from a longer conversation.
+            Shared {formatRelative(share.created_at)} · This link shows just one exchange
+            from a longer conversation.
           </p>
         </div>
 
@@ -94,11 +88,7 @@ export function ShareView({ share, isAuthed, isOwner }: Props) {
                   </Button>
                 ) : isAuthed ? (
                   <Button onClick={onFork} disabled={forking}>
-                    {forking ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <GitFork />
-                    )}
+                    {forking ? <Loader2 className="animate-spin" /> : <GitFork />}
                     Fork as new conversation
                   </Button>
                 ) : (
@@ -116,13 +106,10 @@ export function ShareView({ share, isAuthed, isOwner }: Props) {
 
         <footer className="mt-8 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
           <span>
-            Powered by <span className="font-medium text-foreground">lhx-rag</span>
-            {" "}— a self-hosted AI runner.
+            Powered by <span className="font-medium text-foreground">lhx-rag</span> — a
+            self-hosted AI runner.
           </span>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1 hover:text-foreground"
-          >
+          <Link href="/" className="inline-flex items-center gap-1 hover:text-foreground">
             Learn more
             <ExternalLink className="size-3" />
           </Link>

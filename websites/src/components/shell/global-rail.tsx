@@ -74,9 +74,7 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
   const resolvedOrgs = shellOrgs.length > 0 ? shellOrgs : orgs;
   const resolvedActiveOrgId = shellActiveOrgId ?? activeOrgId;
   const activeOrg =
-    resolvedOrgs.find((o) => o.id === resolvedActiveOrgId) ??
-    resolvedOrgs[0] ??
-    null;
+    resolvedOrgs.find((o) => o.id === resolvedActiveOrgId) ?? resolvedOrgs[0] ?? null;
 
   useEffect(() => {
     initShell({ user, orgs, activeOrgId });
@@ -211,9 +209,7 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
                 >
                   <Building2 className="size-3.5 shrink-0 text-muted-foreground" />
                   <span className="flex-1 truncate">{o.name}</span>
-                  {o.id === activeOrg.id && (
-                    <Check className="size-3.5 text-primary" />
-                  )}
+                  {o.id === activeOrg.id && <Check className="size-3.5 text-primary" />}
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
@@ -311,9 +307,7 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
                   <span className="text-sm font-medium text-foreground">
                     {shellUser.display_name || t("nav.account")}
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {shellUser.email}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{shellUser.email}</span>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />

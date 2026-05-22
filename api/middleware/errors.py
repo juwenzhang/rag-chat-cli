@@ -20,7 +20,7 @@ from starlette.responses import JSONResponse
 
 from api.middleware.request_id import current_request_id
 from api.schemas.common import ErrorResponse
-from core.auth.errors import (
+from service.auth.errors import (
     AuthError,
     EmailAlreadyExistsError,
     InvalidCredentialsError,

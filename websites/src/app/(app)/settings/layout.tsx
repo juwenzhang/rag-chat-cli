@@ -15,9 +15,7 @@ export default async function SettingsLayout({
             <h1 className="text-2xl font-semibold tracking-tight">
               {t("settings.title")}
             </h1>
-            <p className="text-sm text-muted-foreground">
-              {t("settings.description")}
-            </p>
+            <p className="text-sm text-muted-foreground">{t("settings.description")}</p>
           </div>
           <SettingsNav
             items={[

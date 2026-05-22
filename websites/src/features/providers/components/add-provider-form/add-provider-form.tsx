@@ -11,7 +11,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { ConnectivityTestBody, ProviderCreateBody } from "@/lib/api/server/providers";
+import type {
+  ConnectivityTestBody,
+  ProviderCreateBody,
+} from "@/lib/api/server/providers";
 import type { ConnectivityTestOut } from "@/lib/api/shared/types";
 
 import {
@@ -103,8 +106,8 @@ export function AddProviderForm({
         <div>
           <CardTitle className="text-base">Add a provider</CardTitle>
           <CardDescription>
-            Type, URL, and (if needed) an API key. We probe the endpoint before
-            saving unless you opt out.
+            Type, URL, and (if needed) an API key. We probe the endpoint before saving
+            unless you opt out.
           </CardDescription>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Cancel">

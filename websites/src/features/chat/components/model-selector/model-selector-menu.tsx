@@ -51,11 +51,7 @@ export function ModelSelectorMenu({
         <EmptyProvidersHint />
       ) : (
         <>
-          <DefaultModelItem
-            pref={pref}
-            providers={providers}
-            onSelect={onUseDefault}
-          />
+          <DefaultModelItem pref={pref} providers={providers} onSelect={onUseDefault} />
           <DropdownMenuSeparator />
           {providers.map((provider) => (
             <ProviderModelGroup

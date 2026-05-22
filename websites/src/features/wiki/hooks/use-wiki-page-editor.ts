@@ -7,7 +7,12 @@ import { toast } from "sonner";
 import { wikiPageService } from "@/features/wiki/services/wiki-page-service";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { parseToc } from "@/features/wiki/components/wiki-toc";
-import { ApiError, type EffectiveWikiRole, type WikiOut, type WikiPageDetailOut } from "@/lib/api/shared/types";
+import {
+  ApiError,
+  type EffectiveWikiRole,
+  type WikiOut,
+  type WikiPageDetailOut,
+} from "@/lib/api/shared/types";
 
 import type { WikiSaveStatus } from "../components/save-indicator";
 
@@ -19,16 +24,10 @@ interface UseWikiPageEditorOptions {
   role: EffectiveWikiRole;
 }
 
-export function useWikiPageEditor({
-  initialPage,
-  wiki,
-  role,
-}: UseWikiPageEditorOptions) {
+export function useWikiPageEditor({ initialPage, wiki, role }: UseWikiPageEditorOptions) {
   const router = useRouter();
   const readOnly = role === "viewer";
-  const setPageTitleOverride = useWikiStore(
-    (state) => state.setPageTitleOverride
-  );
+  const setPageTitleOverride = useWikiStore((state) => state.setPageTitleOverride);
 
   const pageRef = useRef(initialPage);
   const [title, setTitle] = useState(initialPage.title);

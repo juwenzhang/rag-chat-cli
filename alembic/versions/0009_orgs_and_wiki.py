@@ -66,7 +66,9 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["owner_id"], ["users.id"], ondelete="CASCADE",
+            ["owner_id"],
+            ["users.id"],
+            ondelete="CASCADE",
             name="fk_orgs_owner_id_users",
         ),
     )
@@ -85,11 +87,15 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["org_id"], ["orgs.id"], ondelete="CASCADE",
+            ["org_id"],
+            ["orgs.id"],
+            ondelete="CASCADE",
             name="fk_org_members_org_id_orgs",
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE",
+            ["user_id"],
+            ["users.id"],
+            ondelete="CASCADE",
             name="fk_org_members_user_id_users",
         ),
     )
@@ -140,15 +146,21 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["org_id"], ["orgs.id"], ondelete="CASCADE",
+            ["org_id"],
+            ["orgs.id"],
+            ondelete="CASCADE",
             name="fk_wiki_pages_org_id_orgs",
         ),
         sa.ForeignKeyConstraint(
-            ["created_by_user_id"], ["users.id"], ondelete="CASCADE",
+            ["created_by_user_id"],
+            ["users.id"],
+            ondelete="CASCADE",
             name="fk_wiki_pages_created_by_user_id_users",
         ),
         sa.ForeignKeyConstraint(
-            ["parent_id"], ["wiki_pages.id"], ondelete="SET NULL",
+            ["parent_id"],
+            ["wiki_pages.id"],
+            ondelete="SET NULL",
             name="fk_wiki_pages_parent_id_wiki_pages",
         ),
     )

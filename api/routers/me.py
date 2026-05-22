@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.deps import get_current_user, get_db_session
 from api.schemas.auth import UserOut
 from api.schemas.me import UserPatchIn
-from db.models import User
+from service.db.models import User
 
 __all__ = ["router"]
 

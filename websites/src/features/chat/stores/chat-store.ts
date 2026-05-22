@@ -251,8 +251,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
 
     setUseRag: (enabled) => set({ useRag: enabled }),
 
-    setModelSelection: (next) =>
-      set({ providerId: next.provider_id, model: next.model }),
+    setModelSelection: (next) => set({ providerId: next.provider_id, model: next.model }),
 
     send: async (content, options) => {
       const state = get();
@@ -309,10 +308,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
       await runStream(
         sessionId,
         (signal) =>
-          api.chat.regenerate(
-            { session_id: sessionId, use_rag: get().useRag },
-            signal
-          ),
+          api.chat.regenerate({ session_id: sessionId, use_rag: get().useRag }, signal),
         placeholderId,
         options
       );

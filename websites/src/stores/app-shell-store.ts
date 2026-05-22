@@ -22,8 +22,7 @@ export const useAppShellStore = create<AppShellStore>((set) => ({
   orgs: [],
   activeOrgId: null,
 
-  initShell: ({ user, orgs, activeOrgId }) =>
-    set({ user, orgs, activeOrgId }),
+  initShell: ({ user, orgs, activeOrgId }) => set({ user, orgs, activeOrgId }),
 
   setActiveOrgId: (activeOrgId) => set({ activeOrgId }),
 

@@ -39,7 +39,8 @@ export default async function ChatSessionPage({
   }
 
   let providers: Awaited<ReturnType<typeof providerApi.listProviders>> = [];
-  let preferences: Awaited<ReturnType<typeof providerApi.getPreferences>> = DEFAULT_PREFERENCES;
+  let preferences: Awaited<ReturnType<typeof providerApi.getPreferences>> =
+    DEFAULT_PREFERENCES;
   try {
     [providers, preferences] = await Promise.all([
       providerApi.listProviders(token),
@@ -50,7 +51,7 @@ export default async function ChatSessionPage({
   }
 
   const providerName = meta?.provider_id
-    ? providers.find((provider) => provider.id === meta.provider_id)?.name ?? null
+    ? (providers.find((provider) => provider.id === meta.provider_id)?.name ?? null)
     : null;
 
   return (

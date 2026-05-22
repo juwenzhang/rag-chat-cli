@@ -12,17 +12,13 @@ interface PageProps {
   params: Promise<{ token: string }>;
 }
 
-export async function generateMetadata(
-  { params }: PageProps
-): Promise<Metadata> {
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { token } = await params;
   try {
     const data = await wikiApi.fetchPageSharePublic(token);
     return {
       title: `${data.page_title} — ${data.wiki_name}`,
-      description: data.page_body
-        .slice(0, 140)
-        .replace(/\s+/g, " "),
+      description: data.page_body.slice(0, 140).replace(/\s+/g, " "),
       robots: { index: false, follow: false },
     };
   } catch {

@@ -1,33 +1,73 @@
-# AGENTS.md §11 — lint/format/type-safety hooks.
-#
+# Git quality gates.
 # Install locally once:
-#   uv run pre-commit install
-#
-# Run against the whole repo:
+#   uv run pre-commit install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push
+# Run manually:
 #   uv run pre-commit run --all-files
-#
-# The heavier `mypy` check is intentionally excluded from the commit hook
-# (too slow for per-commit). CI runs it; devs can run `make typecheck`
-# locally. A `pre-push` stage could be added later for mypy if desired.
+#   uv run pre-commit run --hook-stage pre-push --all-files
+
+default_language_version:
+  python: python3.10
+
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
 
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.9
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
-
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        stages: [pre-commit]
       - id: end-of-file-fixer
+        stages: [pre-commit]
       - id: check-yaml
+        stages: [pre-commit]
       - id: check-toml
+        stages: [pre-commit]
       - id: check-merge-conflict
+        stages: [pre-commit]
       - id: mixed-line-ending
         args: [--fix=lf]
+        stages: [pre-commit]
 
-default_language_version:
-  python: python3.10
+  - repo: local
+    hooks:
+      - id: commit-message
+        name: commit message (Angular)
+        entry: python3 scripts/check_commit_msg.py
+        language: system
+        stages: [commit-msg]
+      - id: backend-ruff-fix
+        name: backend ruff --fix
+        entry: uv run ruff check . --fix
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: backend-ruff-format
+        name: backend ruff format
+        entry: uv run ruff format .
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: frontend-lint-fix
+        name: frontend eslint --fix
+        entry: pnpm --dir websites lint:fix
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: frontend-format
+        name: frontend prettier --write
+        entry: pnpm --dir websites format
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: backend-verify
+        name: backend verify
+        entry: uv run python scripts/quality.py backend
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: frontend-verify
+        name: frontend verify
+        entry: uv run python scripts/quality.py frontend
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

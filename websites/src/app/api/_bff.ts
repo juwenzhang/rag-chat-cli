@@ -61,13 +61,7 @@ export function bffErrorFrom(err: unknown, debug: ApiDebugMeta = {}): NextRespon
     const mergedDebug = { ...debug, ...err.debug };
     return bffError(err.code, err.message, err.status, err.details, mergedDebug);
   }
-  return bffError(
-    "UPSTREAM_ERROR",
-    (err as Error).message,
-    502,
-    undefined,
-    debug
-  );
+  return bffError("UPSTREAM_ERROR", (err as Error).message, 502, undefined, debug);
 }
 
 export async function withAuth<T>(

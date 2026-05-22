@@ -1,12 +1,7 @@
 "use client";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import {
-  useEffect,
-  useRef,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -108,21 +103,14 @@ export function VirtualTable<T>({
     <div
       role="grid"
       aria-rowcount={rows.length + 1}
-      className={cn(
-        "overflow-hidden rounded-xl border border-border bg-card",
-        className
-      )}
+      className={cn("overflow-hidden rounded-xl border border-border bg-card", className)}
     >
       <HeaderRow
         columns={columns}
         gridTemplate={gridTemplate}
         headerPadClass={headerPadClass}
       />
-      <div
-        ref={parentRef}
-        className="overflow-auto"
-        style={{ maxHeight }}
-      >
+      <div ref={parentRef} className="overflow-auto" style={{ maxHeight }}>
         <div
           style={{
             height: totalSize,
@@ -152,9 +140,7 @@ export function VirtualTable<T>({
                 role="row"
                 aria-rowindex={vRow.index + 2}
                 tabIndex={interactive ? 0 : -1}
-                onClick={
-                  interactive ? () => onRowClick(row, vRow.index) : undefined
-                }
+                onClick={interactive ? () => onRowClick(row, vRow.index) : undefined}
                 onKeyDown={
                   interactive
                     ? (e) => {
@@ -223,10 +209,7 @@ function HeaderRow<T>({
         <div
           key={c.key}
           role="columnheader"
-          className={cn(
-            "flex min-w-0 items-center",
-            ALIGN_CLASS[c.align ?? "left"]
-          )}
+          className={cn("flex min-w-0 items-center", ALIGN_CLASS[c.align ?? "left"])}
         >
           {c.header}
         </div>

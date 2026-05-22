@@ -8,10 +8,9 @@ export interface ListSessionsResult {
 }
 
 export async function listSessions(token: string): Promise<SessionMeta[]> {
-  const data = await apiFetch<ListSessionsResult | SessionMeta[]>(
-    "/chat/sessions",
-    { token }
-  );
+  const data = await apiFetch<ListSessionsResult | SessionMeta[]>("/chat/sessions", {
+    token,
+  });
   return Array.isArray(data) ? data : data.items;
 }
 
@@ -57,10 +56,7 @@ export async function updateSession(
   });
 }
 
-export async function deleteSession(
-  token: string,
-  sessionId: string
-): Promise<void> {
+export async function deleteSession(token: string, sessionId: string): Promise<void> {
   await apiFetch<void>(`/chat/sessions/${sessionId}`, {
     method: "DELETE",
     token,

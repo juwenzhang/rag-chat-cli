@@ -139,9 +139,7 @@ def upgrade() -> None:
     # Step 2: backfill — walk every page, convert its block JSON to a
     # markdown string. We do this row-by-row in Python so the transcode
     # logic stays in one (testable) place.
-    rows = bind.execute(
-        sa.text("SELECT id, content FROM wiki_pages")
-    ).fetchall()
+    rows = bind.execute(sa.text("SELECT id, content FROM wiki_pages")).fetchall()
     for row in rows:
         page_id = row[0]
         raw = row[1]
@@ -149,7 +147,7 @@ def upgrade() -> None:
         # asyncpg, but Alembic's sync session may give us either a
         # ``dict``/``list`` or a JSON string depending on dialect. Handle
         # both shapes.
-        if isinstance(raw, (bytes, str)):
+        if isinstance(raw, bytes | str):
             try:
                 blocks = json.loads(raw)
             except (TypeError, ValueError):

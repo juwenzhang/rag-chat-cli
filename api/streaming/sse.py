@@ -85,7 +85,7 @@ async def merge_with_keepalive(
             pending = None
             if chunk is _END:
                 return
-            assert isinstance(chunk, (bytes, bytearray))
+            assert isinstance(chunk, bytes | bytearray)
             yield bytes(chunk)
     finally:
         if pending is not None and not pending.done():

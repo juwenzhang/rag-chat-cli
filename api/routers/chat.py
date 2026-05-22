@@ -21,7 +21,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat_service import get_chat_service_for_user
 from api.deps import get_current_user, get_db_session
 from api.schemas.chat import (
     ChatSessionOut,
@@ -33,11 +32,12 @@ from api.schemas.chat import (
 )
 from api.schemas.common import Page
 from api.schemas.share import ForkFromShareIn
-from core.chat_service import ChatService
-from core.llm.client import ChatMessage
-from core.providers import ProviderNotFoundError, get_provider
-from core.titles import synthesize_preview_title
-from db.models import ChatSession, Message, MessageShare, User, WikiPage
+from service.chat.factory import get_chat_service_for_user
+from service.chat.service import ChatService
+from service.chat.titles import synthesize_preview_title
+from service.db.models import ChatSession, Message, MessageShare, User, WikiPage
+from service.llm.client import ChatMessage
+from service.providers import ProviderNotFoundError, get_provider
 
 __all__ = ["router"]
 
@@ -63,13 +63,9 @@ async def create_session(
     if body.provider_id is not None:
         # Confirm the provider belongs to ``user`` before persisting the pin.
         try:
-            await get_provider(
-                session, user_id=user.id, provider_id=body.provider_id
-            )
+            await get_provider(session, user_id=user.id, provider_id=body.provider_id)
         except ProviderNotFoundError as exc:
-            raise HTTPException(
-                status_code=400, detail="provider_id does not exist"
-            ) from exc
+            raise HTTPException(status_code=400, detail="provider_id does not exist") from exc
 
     row = ChatSession(
         user_id=user.id,
@@ -104,13 +100,9 @@ async def patch_session(
         row.provider_id = None
     elif body.provider_id is not None:
         try:
-            await get_provider(
-                session, user_id=user.id, provider_id=body.provider_id
-            )
+            await get_provider(session, user_id=user.id, provider_id=body.provider_id)
         except ProviderNotFoundError as exc:
-            raise HTTPException(
-                status_code=400, detail="provider_id does not exist"
-            ) from exc
+            raise HTTPException(status_code=400, detail="provider_id does not exist") from exc
         row.provider_id = body.provider_id
     if body.clear_model:
         row.model = None
@@ -144,9 +136,7 @@ async def fork_from_share(
     provider/model pin (so the conversation feels continuous) but its own
     fresh ``id``/``created_at``.
     """
-    share = await session.scalar(
-        select(MessageShare).where(MessageShare.token == body.token)
-    )
+    share = await session.scalar(select(MessageShare).where(MessageShare.token == body.token))
     if share is None:
         raise HTTPException(status_code=404, detail="share not found")
 
@@ -206,7 +196,7 @@ async def session_from_wiki(
     # (handles both org_wide and private wikis). Import lazily to
     # avoid a circular import with the wiki router.
     from api.routers.wiki import _require_wiki_role
-    from db.models import Wiki
+    from service.db.models import Wiki
 
     page = await session.get(WikiPage, page_id)
     if page is None:
@@ -232,9 +222,7 @@ async def session_from_wiki(
         f"Here's its content for context:\n\n{text}\n\n"
         f"(My questions follow.)"
     )
-    session.add(
-        Message(session_id=new_session.id, role="user", content=seed)
-    )
+    session.add(Message(session_id=new_session.id, role="user", content=seed))
     await session.commit()
     await session.refresh(new_session)
     return ChatSessionOut.model_validate(new_session)

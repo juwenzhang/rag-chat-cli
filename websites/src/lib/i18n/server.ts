@@ -1,11 +1,6 @@
 import { cookies } from "next/headers";
 
-import {
-  LOCALE_COOKIE,
-  messages,
-  resolveLocale,
-  type MessageKey,
-} from "./messages";
+import { LOCALE_COOKIE, messages, resolveLocale, type MessageKey } from "./messages";
 
 export async function getServerI18n() {
   const locale = resolveLocale((await cookies()).get(LOCALE_COOKIE)?.value);

@@ -52,20 +52,13 @@ export function OrgCard({
             owner
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 capitalize">
-            {org.role}
-          </span>
+          <span className="inline-flex items-center gap-1 capitalize">{org.role}</span>
         )}
         <span className="mx-2 text-border">·</span>
         created {formatRelative(org.created_at)}
       </p>
       <div className="mt-auto flex items-center gap-2 pt-4">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onManageMembers}
-          className="flex-1"
-        >
+        <Button variant="outline" size="sm" onClick={onManageMembers} className="flex-1">
           <Users />
           Members
         </Button>

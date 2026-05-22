@@ -68,10 +68,7 @@ export const DropdownMenuItem = forwardRef<
 export const DropdownMenuCheckboxItem = forwardRef<
   ElementRef<typeof DropdownMenuPrimitive.CheckboxItem>,
   ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.CheckboxItem>
->(function DropdownMenuCheckboxItem(
-  { className, children, checked, ...rest },
-  ref
-) {
+>(function DropdownMenuCheckboxItem({ className, children, checked, ...rest }, ref) {
   return (
     <DropdownMenuPrimitive.CheckboxItem
       ref={ref}
@@ -157,10 +154,7 @@ export function DropdownMenuShortcut({
 }: HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
-      className={cn(
-        "ml-auto text-xs tracking-widest text-muted-foreground",
-        className
-      )}
+      className={cn("ml-auto text-xs tracking-widest text-muted-foreground", className)}
       {...rest}
     />
   );

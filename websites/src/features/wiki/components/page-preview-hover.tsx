@@ -9,7 +9,10 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { Markdown } from "@/features/chat/components/markdown";
-import { documentService, wikiPageService } from "@/features/wiki/services/wiki-page-service";
+import {
+  documentService,
+  wikiPageService,
+} from "@/features/wiki/services/wiki-page-service";
 
 interface Props {
   /** "wiki-page" or "document" */

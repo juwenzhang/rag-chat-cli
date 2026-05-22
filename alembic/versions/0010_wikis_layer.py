@@ -84,11 +84,15 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["org_id"], ["orgs.id"], ondelete="CASCADE",
+            ["org_id"],
+            ["orgs.id"],
+            ondelete="CASCADE",
             name="fk_wikis_org_id_orgs",
         ),
         sa.ForeignKeyConstraint(
-            ["created_by_user_id"], ["users.id"], ondelete="CASCADE",
+            ["created_by_user_id"],
+            ["users.id"],
+            ondelete="CASCADE",
             name="fk_wikis_created_by_user_id_users",
         ),
         sa.UniqueConstraint("org_id", "slug", name="uq_wikis_org_id_slug"),
@@ -107,17 +111,19 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["wiki_id"], ["wikis.id"], ondelete="CASCADE",
+            ["wiki_id"],
+            ["wikis.id"],
+            ondelete="CASCADE",
             name="fk_wiki_members_wiki_id_wikis",
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE",
+            ["user_id"],
+            ["users.id"],
+            ondelete="CASCADE",
             name="fk_wiki_members_user_id_users",
         ),
     )
-    op.create_index(
-        "ix_wiki_members_user_id", "wiki_members", ["user_id"]
-    )
+    op.create_index("ix_wiki_members_user_id", "wiki_members", ["user_id"])
 
     # ── 2. Backfill — one default wiki per existing org ───────────
     bind = op.get_bind()
@@ -169,16 +175,16 @@ def upgrade() -> None:
     op.alter_column("wiki_pages", "wiki_id", nullable=False)
     op.create_foreign_key(
         "fk_wiki_pages_wiki_id_wikis",
-        "wiki_pages", "wikis",
-        ["wiki_id"], ["id"],
+        "wiki_pages",
+        "wikis",
+        ["wiki_id"],
+        ["id"],
         ondelete="CASCADE",
     )
     op.create_index("ix_wiki_pages_wiki_id", "wiki_pages", ["wiki_id"])
 
     op.drop_index("ix_wiki_pages_org_id", "wiki_pages")
-    op.drop_constraint(
-        "fk_wiki_pages_org_id_orgs", "wiki_pages", type_="foreignkey"
-    )
+    op.drop_constraint("fk_wiki_pages_org_id_orgs", "wiki_pages", type_="foreignkey")
     op.drop_column("wiki_pages", "org_id")
 
 
@@ -203,16 +209,16 @@ def downgrade() -> None:
     op.alter_column("wiki_pages", "org_id", nullable=False)
     op.create_foreign_key(
         "fk_wiki_pages_org_id_orgs",
-        "wiki_pages", "orgs",
-        ["org_id"], ["id"],
+        "wiki_pages",
+        "orgs",
+        ["org_id"],
+        ["id"],
         ondelete="CASCADE",
     )
     op.create_index("ix_wiki_pages_org_id", "wiki_pages", ["org_id"])
 
     op.drop_index("ix_wiki_pages_wiki_id", "wiki_pages")
-    op.drop_constraint(
-        "fk_wiki_pages_wiki_id_wikis", "wiki_pages", type_="foreignkey"
-    )
+    op.drop_constraint("fk_wiki_pages_wiki_id_wikis", "wiki_pages", type_="foreignkey")
     op.drop_column("wiki_pages", "wiki_id")
 
     op.drop_index("ix_wiki_members_user_id", "wiki_members")

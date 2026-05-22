@@ -29,13 +29,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
-from api.chat_service import get_chat_service_for_user
 from api.deps import get_current_user, get_db_session
 from api.schemas.chat import MessageIn
 from api.streaming.protocol import ErrorEvent, coerce_event
 from api.streaming.sse import event_to_sse, merge_with_keepalive
-from core.chat_service import ChatService
-from db.models import ChatSession, Message, Provider, User
+from service.chat.factory import get_chat_service_for_user
+from service.chat.service import ChatService
+from service.db.models import ChatSession, Message, Provider, User
 
 __all__ = ["router"]
 
@@ -87,7 +87,7 @@ async def chat_stream(
     provider_name: str | None = None
     provider_id_for_label = owner.provider_id
     if provider_id_for_label is None:
-        from db.models import UserPreference
+        from service.db.models import UserPreference
 
         pref = await session.get(UserPreference, user.id)
         if pref is not None:
@@ -209,7 +209,7 @@ async def chat_stream_regenerate(
     provider_name: str | None = None
     provider_id_for_label = owner.provider_id
     if provider_id_for_label is None:
-        from db.models import UserPreference
+        from service.db.models import UserPreference
 
         pref = await session.get(UserPreference, user.id)
         if pref is not None:

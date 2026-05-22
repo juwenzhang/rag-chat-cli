@@ -97,8 +97,8 @@ export function EditApiKeyDialog({
             <div className="space-y-3">
               {provider.has_api_key && (
                 <div className="rounded-md bg-success/10 px-3 py-2 text-xs text-success">
-                  A key is currently stored. Enter a new one below to replace
-                  it, or clear it entirely.
+                  A key is currently stored. Enter a new one below to replace it, or clear
+                  it entirely.
                 </div>
               )}
               <div className="space-y-1.5">
@@ -112,9 +112,7 @@ export function EditApiKeyDialog({
                     value={key}
                     onChange={(e) => setKey(e.target.value)}
                     placeholder={
-                      provider.type === "openai"
-                        ? "sk-..."
-                        : "Bearer token or API key"
+                      provider.type === "openai" ? "sk-..." : "Bearer token or API key"
                     }
                     autoFocus
                     className="pr-10 font-mono text-xs"
@@ -146,11 +144,7 @@ export function EditApiKeyDialog({
                   disabled={clearing || saving}
                   className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                 >
-                  {clearing ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <Trash2 />
-                  )}
+                  {clearing ? <Loader2 className="animate-spin" /> : <Trash2 />}
                   Clear key
                 </Button>
               )}
@@ -163,10 +157,7 @@ export function EditApiKeyDialog({
               >
                 Cancel
               </Button>
-              <Button
-                onClick={onSave}
-                disabled={!key.trim() || saving || clearing}
-              >
+              <Button onClick={onSave} disabled={!key.trim() || saving || clearing}>
                 {saving ? <Loader2 className="animate-spin" /> : <Save />}
                 {provider.has_api_key ? "Update key" : "Save key"}
               </Button>

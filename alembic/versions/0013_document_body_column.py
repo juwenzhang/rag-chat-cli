@@ -51,18 +51,18 @@ def upgrade() -> None:
 
     # 3. Make body NOT NULL.
     op.alter_column(
-        "documents", "body",
+        "documents",
+        "body",
         existing_type=sa.Text(),
         nullable=False,
         server_default="",
     )
 
     # 4. Fix title: fill NULLs, then make NOT NULL.
-    op.execute(
-        sa.text("UPDATE documents SET title = 'Untitled' WHERE title IS NULL")
-    )
+    op.execute(sa.text("UPDATE documents SET title = 'Untitled' WHERE title IS NULL"))
     op.alter_column(
-        "documents", "title",
+        "documents",
+        "title",
         existing_type=sa.String(256),
         nullable=False,
         server_default="Untitled",
@@ -72,7 +72,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Revert title back to nullable.
     op.alter_column(
-        "documents", "title",
+        "documents",
+        "title",
         existing_type=sa.String(256),
         nullable=True,
         server_default=None,

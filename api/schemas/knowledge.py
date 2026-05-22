@@ -15,8 +15,8 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
-    "DocumentIn",
     "DocumentDetailOut",
+    "DocumentIn",
     "DocumentOut",
     "DocumentUpdateIn",
     "SearchHitOut",

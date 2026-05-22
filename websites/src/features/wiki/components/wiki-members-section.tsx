@@ -126,8 +126,7 @@ export function WikiMembersSection({
       <div className="space-y-1">
         {members.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            No explicit members yet. The workspace owner sees this wiki
-            regardless.
+            No explicit members yet. The workspace owner sees this wiki regardless.
           </p>
         ) : (
           members.map((m) => {
@@ -148,9 +147,7 @@ export function WikiMembersSection({
                       </span>
                     )}
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {m.email}
-                  </div>
+                  <div className="truncate text-xs text-muted-foreground">{m.email}</div>
                 </div>
                 {isOrgOwner ? (
                   <>

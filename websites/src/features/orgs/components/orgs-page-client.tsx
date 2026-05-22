@@ -65,9 +65,7 @@ export function OrgsPageClient({ currentUserId, orgs }: Props) {
           <h1 className="text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
             {t("orgs.heading")}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            {t("orgs.description")}
-          </p>
+          <p className="text-sm text-muted-foreground">{t("orgs.description")}</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus />

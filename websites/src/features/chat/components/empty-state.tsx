@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  BookOpen,
-  Code2,
-  Lightbulb,
-  Sparkles,
-  type LucideIcon,
-} from "lucide-react";
+import { BookOpen, Code2, Lightbulb, Sparkles, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 

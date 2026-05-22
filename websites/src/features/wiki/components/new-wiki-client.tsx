@@ -12,13 +12,7 @@ import { Label } from "@/components/ui/label";
 import { wikiService } from "@/features/wiki/services/wiki-page-service";
 import type { WikiVisibility } from "@/lib/api/shared/types";
 
-export function NewWikiClient({
-  orgId,
-  orgName,
-}: {
-  orgId: string;
-  orgName: string;
-}) {
+export function NewWikiClient({ orgId, orgName }: { orgId: string; orgName: string }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -59,13 +53,10 @@ export function NewWikiClient({
           <Book className="size-5" />
         </div>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            New wiki in {orgName}
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">New wiki in {orgName}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Group related pages into a named knowledge base. RAG will scope
-            retrieval per-wiki, so this is also how you decide what the AI
-            can see.
+            Group related pages into a named knowledge base. RAG will scope retrieval
+            per-wiki, so this is also how you decide what the AI can see.
           </p>
         </div>
       </header>
@@ -84,8 +75,7 @@ export function NewWikiClient({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="description">
-            Description{" "}
-            <span className="text-xs text-muted-foreground">(optional)</span>
+            Description <span className="text-xs text-muted-foreground">(optional)</span>
           </Label>
           <Textarea
             id="description"
@@ -106,13 +96,11 @@ export function NewWikiClient({
             <option value="org_wide">
               Workspace-wide — any workspace member can read
             </option>
-            <option value="private">
-              Private — only the people you invite can read
-            </option>
+            <option value="private">Private — only the people you invite can read</option>
           </select>
           <p className="text-[11px] text-muted-foreground">
-            You can change this later. Private wikis show their own member
-            list in settings.
+            You can change this later. Private wikis show their own member list in
+            settings.
           </p>
         </div>
 

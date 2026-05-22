@@ -127,9 +127,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     with op.batch_alter_table("chat_sessions") as batch:
-        batch.drop_constraint(
-            "fk_chat_sessions_provider_id_providers", type_="foreignkey"
-        )
+        batch.drop_constraint("fk_chat_sessions_provider_id_providers", type_="foreignkey")
         batch.drop_column("model")
         batch.drop_column("provider_id")
 

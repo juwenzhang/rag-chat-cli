@@ -14,11 +14,7 @@ interface ChatStreamBody {
 export async function POST(req: Request) {
   const body = await readJson<ChatStreamBody>(req);
   if (!body.session_id || !body.content) {
-    return bffError(
-      "MISSING_FIELDS",
-      "session_id and content are required.",
-      400
-    );
+    return bffError("MISSING_FIELDS", "session_id and content are required.", 400);
   }
   return withAuthStream((token) => chatApi.openChatStream(token, body));
 }

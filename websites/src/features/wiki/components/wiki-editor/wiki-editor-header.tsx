@@ -57,7 +57,12 @@ export function WikiEditorHeader({
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-background/80 px-2 pl-14 backdrop-blur sm:gap-2 sm:px-3 md:pl-3">
-      <Button asChild variant="ghost" size="sm" className="h-8 min-w-0 gap-1.5 px-2 sm:px-3">
+      <Button
+        asChild
+        variant="ghost"
+        size="sm"
+        className="h-8 min-w-0 gap-1.5 px-2 sm:px-3"
+      >
         <Link href={`/wiki/${wiki.id}`}>
           <ArrowLeft className="size-3.5 shrink-0" />
           <span className="max-w-27.5 truncate sm:max-w-50">{wiki.name}</span>
@@ -67,7 +72,12 @@ export function WikiEditorHeader({
         <div className="hidden sm:block">
           <SaveIndicator status={status} lastSavedAt={lastSavedAt} />
         </div>
-        <Button variant="outline" size="sm" onClick={onAskAI} className="h-8 px-2 sm:px-3">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onAskAI}
+          className="h-8 px-2 sm:px-3"
+        >
           <MessageSquare className="size-3.5" />
           <span className="hidden sm:inline">{copy.askAI}</span>
         </Button>

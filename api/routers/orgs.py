@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -35,7 +36,7 @@ from api.schemas.org import (
     OrgTransferIn,
     OrgUpdateIn,
 )
-from db.models import Org, OrgMember, User
+from service.db.models import Org, OrgMember, User
 
 __all__ = ["get_membership", "require_role", "router"]
 
@@ -52,10 +53,11 @@ async def get_membership(
     session: AsyncSession, org_id: uuid.UUID, user_id: uuid.UUID
 ) -> OrgMember | None:
     """Return the membership row or ``None`` if the user isn't in the org."""
-    return await session.scalar(
-        select(OrgMember).where(
-            OrgMember.org_id == org_id, OrgMember.user_id == user_id
-        )
+    return cast(
+        OrgMember | None,
+        await session.scalar(
+            select(OrgMember).where(OrgMember.org_id == org_id, OrgMember.user_id == user_id)
+        ),
     )
 
 
@@ -74,9 +76,7 @@ async def require_role(
     if member is None:
         raise HTTPException(status_code=404, detail="org not found")
     if _ROLE_RANK[member.role] < _ROLE_RANK[min_role]:
-        raise HTTPException(
-            status_code=403, detail=f"requires {min_role} role"
-        )
+        raise HTTPException(status_code=403, detail=f"requires {min_role} role")
     return member
 
 
@@ -148,9 +148,7 @@ async def create_org(
         slug = f"{base_slug}-{suffix}"[:64]
         suffix += 1
         if suffix > 50:
-            raise HTTPException(
-                status_code=409, detail="couldn't allocate a unique slug"
-            )
+            raise HTTPException(status_code=409, detail="couldn't allocate a unique slug")
     org = Org(slug=slug, name=body.name, owner_id=user.id, is_personal=False)
     session.add(org)
     await session.flush()
@@ -205,9 +203,7 @@ async def delete_org(
     org = await session.get(Org, org_id)
     assert org is not None
     if org.is_personal:
-        raise HTTPException(
-            status_code=400, detail="cannot delete a personal org"
-        )
+        raise HTTPException(status_code=400, detail="cannot delete a personal org")
     await session.delete(org)
     await session.commit()
 
@@ -215,9 +211,7 @@ async def delete_org(
 # ── Members ──────────────────────────────────────────────────────────
 
 
-def _member_to_out(
-    member: OrgMember, target_user: User
-) -> MemberOut:
+def _member_to_out(member: OrgMember, target_user: User) -> MemberOut:
     return MemberOut(
         user_id=target_user.id,
         email=target_user.email,
@@ -262,13 +256,9 @@ async def add_member(
     session: AsyncSession = Depends(get_db_session),
 ) -> MemberOut:
     await require_role(session, org_id, user.id, "owner")
-    target = await session.scalar(
-        select(User).where(User.email == body.email.lower())
-    )
+    target = await session.scalar(select(User).where(User.email == body.email.lower()))
     if target is None:
-        raise HTTPException(
-            status_code=404, detail="no user with that email"
-        )
+        raise HTTPException(status_code=404, detail="no user with that email")
     existing = await get_membership(session, org_id, target.id)
     if existing is not None:
         # Idempotent: re-inviting an existing member updates their role.
@@ -360,9 +350,7 @@ async def transfer_ownership(
     org = await session.get(Org, org_id)
     assert org is not None
     if body.new_owner_id == user.id:
-        raise HTTPException(
-            status_code=400, detail="you're already the owner"
-        )
+        raise HTTPException(status_code=400, detail="you're already the owner")
     if org.is_personal:
         raise HTTPException(
             status_code=400,
@@ -370,9 +358,7 @@ async def transfer_ownership(
         )
     target = await get_membership(session, org_id, body.new_owner_id)
     if target is None:
-        raise HTTPException(
-            status_code=404, detail="target user is not a member"
-        )
+        raise HTTPException(status_code=404, detail="target user is not a member")
     prev_owner = await get_membership(session, org_id, user.id)
     assert prev_owner is not None
 

@@ -54,9 +54,7 @@ export default async function WikiHomePage({ params }: Props) {
             <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <Book className="size-4" />
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {wiki.name}
-            </h1>
+            <h1 className="text-2xl font-semibold tracking-tight">{wiki.name}</h1>
             {wiki.visibility === "private" && (
               <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
                 <Lock className="size-3" />

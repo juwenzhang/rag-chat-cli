@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  Book,
-  ChevronsLeft,
-  ChevronsUpDown,
-  Lock,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { Book, ChevronsLeft, ChevronsUpDown, Lock, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -64,16 +57,11 @@ export function WikiSwitcher({
             <DropdownMenuLabel>Wikis in {activeOrg.name}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {wikis.length === 0 && (
-              <p className="px-2 py-2 text-xs text-muted-foreground">
-                No wikis yet.
-              </p>
+              <p className="px-2 py-2 text-xs text-muted-foreground">No wikis yet.</p>
             )}
             {wikis.map((wiki) => (
               <DropdownMenuItem key={wiki.id} asChild>
-                <Link
-                  href={`/wiki/${wiki.id}`}
-                  className="flex items-center gap-2"
-                >
+                <Link href={`/wiki/${wiki.id}`} className="flex items-center gap-2">
                   <Book className="size-3.5 text-muted-foreground" />
                   <span className="flex-1 truncate">{wiki.name}</span>
                   {wiki.visibility === "private" && (

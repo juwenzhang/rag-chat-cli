@@ -61,9 +61,8 @@ export function CreateWikiDialog({
           <DialogHeader>
             <DialogTitle>New wiki</DialogTitle>
             <DialogDescription>
-              A wiki is a named knowledge base inside this workspace. Its
-              pages can be shared org-wide or restricted to specific
-              members.
+              A wiki is a named knowledge base inside this workspace. Its pages can be
+              shared org-wide or restricted to specific members.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-4">
@@ -82,26 +81,16 @@ export function CreateWikiDialog({
               <select
                 id="wiki-vis"
                 value={visibility}
-                onChange={(e) =>
-                  setVisibility(e.target.value as WikiVisibility)
-                }
+                onChange={(e) => setVisibility(e.target.value as WikiVisibility)}
                 className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
               >
-                <option value="org_wide">
-                  Workspace-wide (any member can read)
-                </option>
-                <option value="private">
-                  Private (only members you invite)
-                </option>
+                <option value="org_wide">Workspace-wide (any member can read)</option>
+                <option value="private">Private (only members you invite)</option>
               </select>
             </div>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={!name.trim() || busy}>

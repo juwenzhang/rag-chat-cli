@@ -64,9 +64,7 @@ export function LoginForm({ next, copy }: { next: string; copy: LoginFormCopy })
           required
         />
         {state?.fieldErrors?.password && (
-          <p className="text-xs text-destructive">
-            {state.fieldErrors.password}
-          </p>
+          <p className="text-xs text-destructive">{state.fieldErrors.password}</p>
         )}
       </div>
 
@@ -76,10 +74,14 @@ export function LoginForm({ next, copy }: { next: string; copy: LoginFormCopy })
         </Alert>
       )}
 
-      <SubmitButton idleLabel={copy.submit} pendingLabel={copy.pending} icon={<LogIn />} />
+      <SubmitButton
+        idleLabel={copy.submit}
+        pendingLabel={copy.pending}
+        icon={<LogIn />}
+      />
 
       <p className="text-center text-sm text-muted-foreground">
-        {copy.noAccount} {" "}
+        {copy.noAccount}{" "}
         <Link
           href="/register"
           className="font-medium text-foreground underline-offset-4 hover:underline"

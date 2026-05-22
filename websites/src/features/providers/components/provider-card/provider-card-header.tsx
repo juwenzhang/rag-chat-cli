@@ -43,23 +43,13 @@ export function ProviderCardHeader({
             {provider.has_api_key ? "API Key" : "Set API Key"}
           </span>
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleDefault}
-          disabled={busy}
-        >
+        <Button variant="ghost" size="sm" onClick={onToggleDefault} disabled={busy}>
           <Star className={cn(provider.is_default && "fill-current text-yellow-500")} />
           <span className="hidden sm:inline">
             {provider.is_default ? "Unset default" : "Make default"}
           </span>
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleEnabled}
-          disabled={busy}
-        >
+        <Button variant="ghost" size="sm" onClick={onToggleEnabled} disabled={busy}>
           {provider.enabled ? "Disable" : "Enable"}
         </Button>
         <Button

@@ -23,10 +23,7 @@ export async function listMyShares(token: string): Promise<ShareOut[]> {
   return apiFetch<ShareOut[]>("/shares", { token });
 }
 
-export async function revokeShare(
-  token: string,
-  shareToken: string
-): Promise<void> {
+export async function revokeShare(token: string, shareToken: string): Promise<void> {
   await apiFetch<void>(`/shares/${shareToken}`, {
     method: "DELETE",
     token,
@@ -34,9 +31,7 @@ export async function revokeShare(
 }
 
 /** Public — no Authorization header. */
-export async function fetchSharePublic(
-  shareToken: string
-): Promise<SharePublicOut> {
+export async function fetchSharePublic(shareToken: string): Promise<SharePublicOut> {
   return apiFetch<SharePublicOut>(`/shares/${shareToken}`, {
     // token omitted on purpose — the route is public.
   });

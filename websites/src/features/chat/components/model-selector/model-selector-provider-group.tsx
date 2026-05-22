@@ -59,9 +59,7 @@ function ProviderModelHeader({
         aria-label="Refresh models"
         className="rounded p-0.5 text-muted-foreground/70 hover:bg-foreground/5 hover:text-foreground"
       >
-        <RefreshCcw
-          className={cn("size-3", provider.modelsLoading && "animate-spin")}
-        />
+        <RefreshCcw className={cn("size-3", provider.modelsLoading && "animate-spin")} />
       </button>
     </div>
   );
@@ -79,7 +77,11 @@ function ProviderModels({
   onSelectModel: (providerId: string, modelId: string) => void;
 }) {
   if (provider.modelsError) {
-    return <div className="px-2 py-1.5 text-[11px] text-destructive">{provider.modelsError}</div>;
+    return (
+      <div className="px-2 py-1.5 text-[11px] text-destructive">
+        {provider.modelsError}
+      </div>
+    );
   }
   if (provider.modelsLoading && !provider.models) {
     return (
@@ -90,7 +92,11 @@ function ProviderModels({
     );
   }
   if (!provider.models || provider.models.length === 0) {
-    return <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No models exposed.</div>;
+    return (
+      <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+        No models exposed.
+      </div>
+    );
   }
 
   const chatModels = provider.models.filter((item) => item.kind !== "embedding");
@@ -139,7 +145,9 @@ function ModelOption({
       )}
     >
       <div className="flex w-full items-center gap-2">
-        <Cpu className={cn("size-3.5", active ? "text-primary" : "text-muted-foreground")} />
+        <Cpu
+          className={cn("size-3.5", active ? "text-primary" : "text-muted-foreground")}
+        />
         <span className="truncate">{model.id}</span>
         {model.size != null && (
           <span className="ml-auto text-[10px] text-muted-foreground">

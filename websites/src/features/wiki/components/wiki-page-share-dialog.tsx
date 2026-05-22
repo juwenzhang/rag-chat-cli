@@ -30,12 +30,7 @@ interface Props {
  * On open it calls POST /wiki-pages/:id/share (get-or-create) and displays
  * the resulting URL. The user can copy or revoke.
  */
-export function WikiPageShareDialog({
-  open,
-  onOpenChange,
-  pageId,
-  pageTitle,
-}: Props) {
+export function WikiPageShareDialog({ open, onOpenChange, pageId, pageTitle }: Props) {
   const [share, setShare] = useState<WikiPageShareOut | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -108,8 +103,8 @@ export function WikiPageShareDialog({
             Share this page
           </DialogTitle>
           <DialogDescription>
-            Anyone with this link can read &ldquo;{pageTitle}&rdquo;. They
-            won&apos;t need to sign in or be a workspace member.
+            Anyone with this link can read &ldquo;{pageTitle}&rdquo;. They won&apos;t need
+            to sign in or be a workspace member.
           </DialogDescription>
         </DialogHeader>
 
@@ -120,11 +115,7 @@ export function WikiPageShareDialog({
         ) : share ? (
           <div className="space-y-3">
             <div className="flex gap-2">
-              <Input
-                value={shareUrl}
-                readOnly
-                className="font-mono text-xs"
-              />
+              <Input value={shareUrl} readOnly className="font-mono text-xs" />
               <Button onClick={onCopy} variant="outline">
                 {copied ? <Check /> : <Copy />}
                 {copied ? "Copied" : "Copy"}

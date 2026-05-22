@@ -97,9 +97,11 @@ export function ProviderConnectionFields({
           <Label htmlFor="api_key">
             API key{" "}
             <span className="text-xs text-muted-foreground">
-              ({type === "ollama"
+              (
+              {type === "ollama"
                 ? "optional for local · required for cloud"
-                : "usually required"})
+                : "usually required"}
+              )
             </span>
           </Label>
           {type === "ollama" && <OllamaKeyLink />}
@@ -156,7 +158,11 @@ export function ProviderFormOptions({
   );
 }
 
-export function ConnectivityResultAlert({ result }: { result: ConnectivityResult | null }) {
+export function ConnectivityResultAlert({
+  result,
+}: {
+  result: ConnectivityResult | null;
+}) {
   if (!result) return null;
   return (
     <Alert variant={result.ok ? "default" : "destructive"}>

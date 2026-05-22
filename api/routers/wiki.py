@@ -49,7 +49,7 @@ from api.schemas.wiki import (
     WikiPageUpdateIn,
     WikiUpdateIn,
 )
-from db.models import Org, User, Wiki, WikiMember, WikiPage, WikiPageShare
+from service.db.models import Org, User, Wiki, WikiMember, WikiPage, WikiPageShare
 
 __all__ = ["router"]
 
@@ -113,9 +113,7 @@ async def _require_wiki_role(
         # 404 (not 403) so we don't leak the wiki's existence.
         raise HTTPException(status_code=404, detail="wiki not found")
     if _RANK[role] < _RANK[min_role]:
-        raise HTTPException(
-            status_code=403, detail=f"requires {min_role} role"
-        )
+        raise HTTPException(status_code=403, detail=f"requires {min_role} role")
     return role
 
 
@@ -164,12 +162,16 @@ async def list_wikis(
     # Must at least be in the org to see anything.
     await require_org_role(session, org_id, user.id, "viewer")
     rows = (
-        await session.execute(
-            select(Wiki)
-            .where(Wiki.org_id == org_id)
-            .order_by(Wiki.is_default.desc(), Wiki.created_at.asc())
+        (
+            await session.execute(
+                select(Wiki)
+                .where(Wiki.org_id == org_id)
+                .order_by(Wiki.is_default.desc(), Wiki.created_at.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     out: list[WikiOut] = []
     for w in rows:
         role = await _resolve_wiki_role(session, w, user.id)
@@ -197,15 +199,11 @@ async def create_wiki(
     base_slug = body.slug or _slugify(body.name)
     slug = base_slug
     suffix = 2
-    while await session.scalar(
-        select(Wiki.id).where(Wiki.org_id == org_id, Wiki.slug == slug)
-    ):
+    while await session.scalar(select(Wiki.id).where(Wiki.org_id == org_id, Wiki.slug == slug)):
         slug = f"{base_slug}-{suffix}"[:64]
         suffix += 1
         if suffix > 50:
-            raise HTTPException(
-                status_code=409, detail="couldn't allocate a unique slug"
-            )
+            raise HTTPException(status_code=409, detail="couldn't allocate a unique slug")
     wiki = Wiki(
         org_id=org_id,
         slug=slug,
@@ -222,9 +220,7 @@ async def create_wiki(
     # explicit row).
     if body.visibility == "private":
         await session.flush()
-        session.add(
-            WikiMember(wiki_id=wiki.id, user_id=user.id, role="editor")
-        )
+        session.add(WikiMember(wiki_id=wiki.id, user_id=user.id, role="editor"))
     await session.commit()
     await session.refresh(wiki)
     role = await _resolve_wiki_role(session, wiki, user.id)
@@ -277,16 +273,20 @@ async def update_wiki(
         # whole point of going private is to tighten.)
         if wiki.visibility == "org_wide" and body.visibility == "private":
             # Already a member? skip. Otherwise seed.
-            from db.models import OrgMember
+            from service.db.models import OrgMember
 
             org_editors = (
-                await session.execute(
-                    select(OrgMember).where(
-                        OrgMember.org_id == wiki.org_id,
-                        OrgMember.role.in_(("owner", "editor")),
+                (
+                    await session.execute(
+                        select(OrgMember).where(
+                            OrgMember.org_id == wiki.org_id,
+                            OrgMember.role.in_(("owner", "editor")),
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             for m in org_editors:
                 existing = await session.scalar(
                     select(WikiMember).where(
@@ -392,9 +392,7 @@ async def add_wiki_member(
     # actually use this table, but we still accept rows — they take
     # effect only if the wiki later goes private.
     await require_org_role(session, wiki.org_id, user.id, "owner")
-    target = await session.scalar(
-        select(User).where(User.email == body.email.lower())
-    )
+    target = await session.scalar(select(User).where(User.email == body.email.lower()))
     if target is None:
         raise HTTPException(status_code=404, detail="no user with that email")
     existing = await session.scalar(
@@ -431,9 +429,7 @@ async def update_wiki_member(
         raise HTTPException(status_code=404, detail="wiki not found")
     await require_org_role(session, wiki.org_id, user.id, "owner")
     target = await session.scalar(
-        select(WikiMember).where(
-            WikiMember.wiki_id == wiki_id, WikiMember.user_id == user_id
-        )
+        select(WikiMember).where(WikiMember.wiki_id == wiki_id, WikiMember.user_id == user_id)
     )
     if target is None:
         raise HTTPException(status_code=404, detail="member not found")
@@ -464,9 +460,7 @@ async def remove_wiki_member(
     else:
         await require_org_role(session, wiki.org_id, user.id, "owner")
     target = await session.scalar(
-        select(WikiMember).where(
-            WikiMember.wiki_id == wiki_id, WikiMember.user_id == user_id
-        )
+        select(WikiMember).where(WikiMember.wiki_id == wiki_id, WikiMember.user_id == user_id)
     )
     if target is None:
         raise HTTPException(status_code=404, detail="member not found")
@@ -494,12 +488,16 @@ async def list_pages(
         raise HTTPException(status_code=404, detail="wiki not found")
     await _require_wiki_role(session, wiki, user.id, "viewer")
     rows = (
-        await session.execute(
-            select(WikiPage)
-            .where(WikiPage.wiki_id == wiki_id)
-            .order_by(WikiPage.position.asc(), WikiPage.updated_at.desc())
+        (
+            await session.execute(
+                select(WikiPage)
+                .where(WikiPage.wiki_id == wiki_id)
+                .order_by(WikiPage.position.asc(), WikiPage.updated_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [WikiPageListOut.model_validate(r) for r in rows]
 
 
@@ -577,9 +575,7 @@ async def get_page(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> WikiPageDetailOut:
-    page, _wiki, _role = await _page_with_access(
-        session, page_id, user.id, "viewer"
-    )
+    page, _wiki, _role = await _page_with_access(session, page_id, user.id, "viewer")
     return WikiPageDetailOut.model_validate(page)
 
 
@@ -594,9 +590,7 @@ async def update_page(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> WikiPageDetailOut:
-    page, _wiki, _role = await _page_with_access(
-        session, page_id, user.id, "editor"
-    )
+    page, _wiki, _role = await _page_with_access(session, page_id, user.id, "editor")
     if body.revision != page.revision:
         raise HTTPException(
             status_code=409,
@@ -625,9 +619,7 @@ async def delete_page(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
-    page, _wiki, _role = await _page_with_access(
-        session, page_id, user.id, "editor"
-    )
+    page, _wiki, _role = await _page_with_access(session, page_id, user.id, "editor")
     await session.delete(page)
     await session.commit()
 
@@ -643,9 +635,7 @@ async def duplicate_page(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> WikiPageDetailOut:
-    src, _wiki, _role = await _page_with_access(
-        session, page_id, user.id, "editor"
-    )
+    src, _wiki, _role = await _page_with_access(session, page_id, user.id, "editor")
     next_pos = await session.scalar(
         select(WikiPage.position)
         .where(
@@ -686,17 +676,13 @@ async def move_page(
             status_code=400,
             detail="target_wiki_id or new_parent_id required",
         )
-    page, _wiki, _role = await _page_with_access(
-        session, page_id, user.id, "editor"
-    )
+    page, _wiki, _role = await _page_with_access(session, page_id, user.id, "editor")
 
     if body.target_wiki_id is not None and body.target_wiki_id != page.wiki_id:
         # Need editor in the destination wiki too.
         target_wiki = await session.get(Wiki, body.target_wiki_id)
         if target_wiki is None:
-            raise HTTPException(
-                status_code=400, detail="destination wiki not found"
-            )
+            raise HTTPException(status_code=400, detail="destination wiki not found")
         await _require_wiki_role(session, target_wiki, user.id, "editor")
         page.wiki_id = body.target_wiki_id
         # Moving across wikis invalidates the parent reference.
@@ -704,9 +690,7 @@ async def move_page(
 
     if body.new_parent_id is not None:
         if body.new_parent_id == page.id:
-            raise HTTPException(
-                status_code=400, detail="page cannot be its own parent"
-            )
+            raise HTTPException(status_code=400, detail="page cannot be its own parent")
         parent = await session.get(WikiPage, body.new_parent_id)
         if parent is None or parent.wiki_id != page.wiki_id:
             raise HTTPException(
@@ -717,9 +701,7 @@ async def move_page(
         cursor: WikiPage | None = parent
         while cursor is not None and cursor.parent_id is not None:
             if cursor.parent_id == page.id:
-                raise HTTPException(
-                    status_code=400, detail="move would create a cycle"
-                )
+                raise HTTPException(status_code=400, detail="move would create a cycle")
             cursor = await session.get(WikiPage, cursor.parent_id)
         page.parent_id = body.new_parent_id
 
@@ -763,9 +745,7 @@ async def create_page_share(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> WikiPageShareOut:
-    page, _wiki, _role = await _page_with_access(
-        session, page_id, user.id, "viewer"
-    )
+    page, _wiki, _role = await _page_with_access(session, page_id, user.id, "viewer")
 
     existing = await session.scalar(
         select(WikiPageShare).where(
@@ -820,9 +800,7 @@ async def revoke_page_share(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
-    row = await session.scalar(
-        select(WikiPageShare).where(WikiPageShare.token == token)
-    )
+    row = await session.scalar(select(WikiPageShare).where(WikiPageShare.token == token))
     if row is None or row.user_id != user.id:
         raise HTTPException(status_code=404, detail="share not found")
     await session.delete(row)
@@ -838,9 +816,7 @@ async def public_page_share(
     token: str,
     session: AsyncSession = Depends(get_db_session),
 ) -> WikiPageSharePublicOut:
-    row = await session.scalar(
-        select(WikiPageShare).where(WikiPageShare.token == token)
-    )
+    row = await session.scalar(select(WikiPageShare).where(WikiPageShare.token == token))
     if row is None:
         raise HTTPException(status_code=404, detail="share not found")
 

@@ -37,15 +37,11 @@ export default async function ChatIndex() {
         <div className="flex h-full items-center justify-center p-8 text-center">
           <div>
             <h2 className="text-lg font-semibold">Backend unreachable</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {err.message}
-            </p>
+            <p className="mt-2 text-sm text-muted-foreground">{err.message}</p>
             <p className="mt-4 text-xs text-muted-foreground">
               Start the API with{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5">
-                make dev.api
-              </code>{" "}
-              and refresh.
+              <code className="rounded bg-muted px-1.5 py-0.5">make dev.api</code> and
+              refresh.
             </p>
           </div>
         </div>

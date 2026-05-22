@@ -16,8 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db_session
 from api.schemas.common import OkResponse, Page
-from api.schemas.knowledge import DocumentDetailOut, DocumentIn, DocumentOut, DocumentUpdateIn, SearchHitOut
-from db.models import Document, User
+from api.schemas.knowledge import (
+    DocumentDetailOut,
+    DocumentIn,
+    DocumentOut,
+    DocumentUpdateIn,
+    SearchHitOut,
+)
+from service.db.models import Document, User
 
 __all__ = ["router"]
 

@@ -91,9 +91,7 @@ export function WikiDetailsSection({
           disabled={!canChangeVisibility}
           className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm disabled:opacity-60"
         >
-          <option value="org_wide">
-            Workspace-wide — any workspace member can read
-          </option>
+          <option value="org_wide">Workspace-wide — any workspace member can read</option>
           <option value="private">Private — only invited members</option>
         </select>
         {!canChangeVisibility && (

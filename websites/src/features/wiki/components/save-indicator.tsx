@@ -5,12 +5,7 @@ import { Check, Loader2 } from "lucide-react";
 import { formatRelative } from "@/lib/utils";
 
 /** Autosave lifecycle states for a wiki page edit session. */
-export type WikiSaveStatus =
-  | "idle"
-  | "dirty"
-  | "saving"
-  | "saved"
-  | "conflict";
+export type WikiSaveStatus = "idle" | "dirty" | "saving" | "saved" | "conflict";
 
 /** Compact autosave status pill shown in the wiki editor header. */
 export function SaveIndicator({

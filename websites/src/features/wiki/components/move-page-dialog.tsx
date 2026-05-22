@@ -87,17 +87,10 @@ export function MovePageDialog({
             </select>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={targetId === currentWikiId || busy}
-            >
+            <Button type="submit" disabled={targetId === currentWikiId || busy}>
               {busy ? "Moving…" : "Move"}
             </Button>
           </DialogFooter>

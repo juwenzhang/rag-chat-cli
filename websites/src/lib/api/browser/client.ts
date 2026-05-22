@@ -77,9 +77,7 @@ function toApiError(
   >;
   const code = typeof obj.error === "string" ? obj.error : `HTTP_${res.status}`;
   const message =
-    typeof obj.message === "string"
-      ? obj.message
-      : res.statusText || "Request failed";
+    typeof obj.message === "string" ? obj.message : res.statusText || "Request failed";
   return new ApiError(res.status, code, message, obj.details, {
     ...fallbackDebug,
     ...debugFromPayload(payload),

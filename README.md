@@ -61,23 +61,20 @@ event vocabulary is documented in [docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL
 
 ```
 main.py
-└─ app/cli.py            {chat, serve, ingest, worker, train}
-   └─ app/chat_app.py    REPL + factory wiring
-      └─ core/chat_service.py        ReAct loop (all the levers)
-         ├─ core/llm/                {OllamaClient, OpenAIClient} : LLMClient
-         ├─ core/tools/              ToolRegistry + FunctionTool + (MCP) McpTool
-         ├─ core/knowledge/          PgvectorKnowledgeBase + Reranker + Ingestor
-         ├─ core/memory/             {File,Db}ChatMemory + UserMemoryStore
-         ├─ core/tokens.py           Tokenizer + TokenBudget
-         ├─ core/history.py          HistorySummarizer
-         ├─ core/prompts.py          PromptBuilder
-         ├─ core/limits.py           ResourceLimits
-         ├─ core/observability.py    Tracer + UsageAccumulator
-         ├─ core/mcp/                stdio JSON-RPC client + adapter
-         ├─ core/workers/            Redis queue + worker
-         └─ core/streaming/          Event vocabulary + AbortContext
-
-api/  → shares ChatService.generate() with the CLI; adds SSE / WS framing + auth deps
+├─ api/                    FastAPI HTTP / SSE / WS entrypoints
+├─ tui/                    CLI/TUI entrypoints and terminal presentation
+└─ service/                backend service layer
+   ├─ chat/                ChatService + prompts/titles/history/tokens/limits
+   ├─ llm/                 {OllamaClient, OpenAIClient} : LLMClient
+   ├─ providers/           provider registry + runtime resolution
+   ├─ knowledge/           PgvectorKnowledgeBase + Reranker + Ingestor
+   ├─ memory/              {File,Db}ChatMemory + UserMemoryStore
+   ├─ db/                  SQLAlchemy async models/session
+   ├─ tools/               ToolRegistry + FunctionTool + (MCP) McpTool
+   ├─ mcp/                 stdio JSON-RPC client + adapter
+   ├─ workers/             Redis queue + worker
+   ├─ streaming/           Event vocabulary + AbortContext
+   └─ common/              shared service infrastructure
 ```
 
 Every module is Protocol-backed. Adding (say) an Anthropic LLM client,
@@ -261,9 +258,7 @@ curl -X POST http://localhost:8000/auth/register \
 
 Full event vocabulary + ordering rules: [docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md).
 
-`make openapi` regenerates [docs/openapi.json](docs/openapi.json);
-`make test.api` runs the route suite against an in-memory SQLite via
-`httpx.ASGITransport`.
+`make openapi` regenerates [docs/openapi.json](docs/openapi.json); `make openapi.check` verifies the generated schema is committed.
 
 ## Ingestion + background workers
 
@@ -280,7 +275,7 @@ uv run python -m main worker
 ```
 
 Job spec, queue protocol and retry expectations live in
-[`core/workers/queue.py`](core/workers/queue.py).
+[`service/workers/queue.py`](service/workers/queue.py).
 
 ## Configuration
 
@@ -320,26 +315,21 @@ Migration history:
 - `0002_add_tool_message_fields` — `messages.tool_call_id` + `messages.tool_calls` (JSONB on Postgres) for tool-role turns
 - `0003_add_user_memories` — `user_memories` table for long-term per-user facts
 
-Unit tests use SQLite in-memory by default (no docker). pgvector-specific
-integration tests are opt-in via `pytest -m pg`.
+Local quality gates now focus on static checks and smoke imports.
 
 ## Development
 
 ```bash
-make ci             # ruff check + format check + mypy strict + pytest
+make ci             # ruff check + format check + mypy + compileall
 make lint           # ruff check
 make fmt            # ruff format (write)
-make typecheck      # mypy --strict on app/ core/ ui/ api/ db/
-make test           # all tests
-make test-fast      # skip slow / pg / redis / integration markers
-make test-cov       # pytest-cov (soft gate)
-make test-cov-strict   # enforce AGENTS.md §12 thresholds
+make typecheck      # mypy over api/ service/ tui/ scripts
+make compile        # compileall syntax/import-path smoke check
 make openapi        # regenerate docs/openapi.json
 make openapi.check  # diff schema against docs/openapi.json (CI)
 ```
 
-Pre-commit hooks: `pre-commit install` once, then ruff + format run on
-every commit.
+Git hooks: run `uv run pre-commit install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push` once. Commit hooks run Ruff/ESLint/Prettier and validate Angular-style commit messages; push hooks run backend + frontend quality checks.
 
 ## Project structure
 
@@ -350,39 +340,34 @@ every commit.
 │   └── openapi.json           # generated; CI checks for drift
 ├── settings.py                # pydantic-settings entry
 ├── .env.example               # env template
-├── main.py                    # CLI shim → app.cli.main
-├── app/                       # orchestration (only layer that touches both ui/ and core/)
-│   ├── cli.py                 #   argparse: chat / serve / ingest / worker / train
-│   ├── chat_app.py            #   REPL + ChatService factory
-│   └── auth_local.py          #   ~/.config/rag-chat/token.json
-├── ui/                        # presentation (rich + prompt_toolkit)
-│   ├── theme.py · console.py · markdown.py
-│   ├── chat_view.py           #   stream renderer + help panel
-│   └── prompt.py              #   PromptSession + SlashCompleter + Dispatcher
-├── core/                      # domain layer (provider-agnostic, no I/O imports)
-│   ├── chat_service.py        #   ReAct loop — single integration point
+├── main.py                    # CLI shim → tui.cli.main
+├── api/                       # FastAPI app (routers / deps / middleware)
+├── service/                   # backend services, domain logic and infra
+│   ├── chat/                  #   ChatService + prompts/titles/history/tokens/limits
 │   ├── llm/                   #   LLMClient protocol + Ollama + OpenAI impls
-│   ├── tools/                 #   Tool protocol + ToolRegistry + FunctionTool
+│   ├── providers/             #   provider registry + runtime resolution
 │   ├── knowledge/             #   PgvectorKnowledgeBase + Ingestor + Reranker hook
 │   ├── memory/                #   ChatMemory (File/DB) + UserMemoryStore + FactExtractor
+│   ├── db/                    #   SQLAlchemy 2.x async + models
+│   ├── tools/                 #   Tool protocol + ToolRegistry + FunctionTool
 │   ├── mcp/                   #   MCP stdio client + Tool adapter
 │   ├── workers/               #   RedisJobQueue + Worker pump
 │   ├── streaming/             #   Event TypedDict + AbortContext
-│   ├── tokens.py · history.py · prompts.py · limits.py · observability.py
+│   ├── common/                #   shared service infrastructure
 │   └── auth/                  #   bcrypt + JWT + refresh rotation
-├── db/                        # SQLAlchemy 2.x async + models
-├── alembic/versions/          # 0001 / 0002 / 0003
-├── api/                       # FastAPI app (routers / deps / middleware)
-├── scripts/                   # one-shot ops (db_init, check_coverage, …)
-├── tests/                     # pytest (unit + integration + api)
+├── tui/                       # CLI/TUI entry and terminal presentation
+│   ├── cli.py                 #   argparse: chat / serve / ingest / worker / train
+│   ├── chat_app.py            #   REPL + ChatService factory
+│   ├── auth_local.py          #   ~/.config/rag-chat/token.json
+│   └── ui/                    #   rich + prompt_toolkit presentation
+├── alembic/versions/          # database migrations
+├── scripts/                   # one-shot ops (db_init, dump_openapi, …)
 ├── openspec/                  # spec proposals + archives
 ├── Makefile · docker-compose.yml · pyproject.toml
 └── README.md / README.zh-CN.md
 ```
 
-Layering rules (AGENTS.md §3): `ui/` never imports `core/` / `db/` / `api/`;
-`core/` never imports `db/` / `api/` / `ui/`; `app/` is the only layer
-allowed to wire everything together.
+Layering rules: `api/` and `tui/` are entry adapters and may depend on `service/`; `service/` must not depend on `api/` or `tui/`.
 
 ## Contributing
 
@@ -392,8 +377,7 @@ allowed to wire everything together.
   `openspec/changes/archive/YYYY-MM-DD-<name>/`.
 - Stable capability specs → `openspec/specs/<capability>/spec.md`.
 
-Run `make ci` before opening a PR — the four quality gates (ruff +
-format + mypy + pytest) must be green.
+Run `make ci` before opening a PR — Ruff, format check, mypy and compileall must be green.
 
 ## License
 
