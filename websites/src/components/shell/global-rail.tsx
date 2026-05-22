@@ -12,7 +12,6 @@ import {
   Pencil,
   Settings,
   Sun,
-  User as UserIcon,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -318,13 +317,11 @@ export function GlobalRail({ user, orgs, activeOrgId }: Props) {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem disabled>
-                <UserIcon />
-                {t("nav.profile")}
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled>
-                <Settings />
-                Settings
+              <DropdownMenuItem asChild>
+                <Link href="/settings/account" onClick={() => setMobileOpen(false)}>
+                  <Settings />
+                  {t("nav.settings")}
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
