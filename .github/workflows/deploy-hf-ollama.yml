@@ -1,0 +1,36 @@
+name: deploy hf ollama
+
+on:
+  push:
+    branches: [master, main, frontend-refactor]
+    paths:
+      - .github/workflows/deploy-hf-ollama.yml
+      - scripts/deploy-hf-ollama.sh
+      - .gitmodules
+      - ollama
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hf-ollama-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  push-space:
+    name: push Ollama Space to Hugging Face
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Push Ollama Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: luhanxin
+          HF_OLLAMA_SPACE: luhanxin/hf-ollama-service
+        run: bash scripts/deploy-hf-ollama.sh
