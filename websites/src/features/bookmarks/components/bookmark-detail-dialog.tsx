@@ -70,8 +70,8 @@ export function BookmarkDetailDialog({
         className={cn(
           "flex flex-col overflow-hidden p-0 gap-0 transition-[max-width,max-height,border-radius] duration-200",
           expanded
-            ? // Fullscreen — override the centered defaults from dialog.tsx.
-              "inset-0 left-0 top-0 translate-x-0 translate-y-0 max-w-none w-screen h-dvh rounded-none border-0"
+            ? // Fullscreen — override all centered desktop defaults from dialog.tsx.
+              "inset-0 left-0 top-0 right-0 bottom-0 translate-x-0 translate-y-0 w-screen max-w-none sm:max-w-none h-dvh max-h-none rounded-none border-0"
             : "max-w-3xl max-h-[85vh]"
         )}
       >
