@@ -29,11 +29,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
+from api.chat_deps import get_chat_service_for_user
 from api.deps import get_current_user, get_db_session
 from api.schemas.chat import MessageIn
 from api.streaming.protocol import ErrorEvent, coerce_event
 from api.streaming.sse import event_to_sse, merge_with_keepalive
-from service.chat.factory import get_chat_service_for_user
 from service.chat.service import ChatService
 from service.db.models import ChatSession, Message, Provider, User
 

@@ -152,6 +152,7 @@ class PgvectorKnowledgeBase:
             select(
                 Chunk.id,
                 Chunk.content,
+                Document.id.label("document_id"),
                 Document.title,
                 Document.source,
                 distance,
@@ -168,6 +169,8 @@ class PgvectorKnowledgeBase:
                 content=row.content,
                 score=1.0 - float(row.distance),
                 source=row.source,
+                document_id=str(row.document_id),
+                chunk_id=str(row.id),
             )
             for row in rows
         ]
@@ -201,6 +204,7 @@ class PgvectorKnowledgeBase:
             select(
                 Chunk.id,
                 Chunk.content,
+                Document.id.label("document_id"),
                 Document.title,
                 Document.source,
                 score_col,
@@ -217,6 +221,8 @@ class PgvectorKnowledgeBase:
                 content=row.content,
                 score=float(row.sim),
                 source=row.source,
+                document_id=str(row.document_id),
+                chunk_id=str(row.id),
             )
             for row in rows
         ]

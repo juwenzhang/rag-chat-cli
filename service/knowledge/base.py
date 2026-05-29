@@ -31,6 +31,8 @@ class KnowledgeHit:
     content: str
     score: float
     source: str
+    document_id: str | None = None
+    chunk_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

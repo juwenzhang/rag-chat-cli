@@ -1,14 +1,8 @@
 """Factory for per-request :class:`service.chat.service.ChatService`.
 
-Two flavours of factory live here:
-
-* :func:`build_chat_service` — file-backed memory. Used by offline scripts.
-  The corresponding FastAPI dep is :func:`get_chat_service`.
-
-* :func:`build_chat_service_for_user` — **DB-backed memory** bound to a
-  specific user. This is what the three authenticated streaming /
-  non-streaming chat routes actually use. The FastAPI dep is
-  :func:`get_chat_service_for_user`.
+This module is intentionally framework-agnostic: it builds chat services from
+plain Python inputs and must not import FastAPI or the HTTP layer. FastAPI
+``Depends`` wrappers live in :mod:`api.chat_deps`.
 
 Neither factory is a yield-style dependency on purpose: SSE / WS routes need
 to keep the :class:`ChatService` alive for the full duration of the stream,
@@ -21,9 +15,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fastapi import Depends
-
-from api.deps import get_current_user, get_session_factory
 from service.chat.service import ChatService
 
 if TYPE_CHECKING:
@@ -34,8 +25,6 @@ if TYPE_CHECKING:
 __all__ = [
     "build_chat_service",
     "build_chat_service_for_user",
-    "get_chat_service",
-    "get_chat_service_for_user",
 ]
 
 
@@ -64,8 +53,9 @@ def build_chat_service() -> ChatService:
 
 
 async def build_chat_service_for_user(
-    user: User = Depends(get_current_user),
-    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    *,
+    user: User,
+    session_factory: async_sessionmaker[AsyncSession],
 ) -> ChatService:
     """Return a DB-backed :class:`ChatService` whose memory is scoped to ``user``.
 
@@ -99,23 +89,3 @@ async def build_chat_service_for_user(
         else None
     )
     return ChatService(llm=llm, memory=memory, knowledge=kb)
-
-
-# ---------------------------------------------------------------------------
-# FastAPI dep aliases — tests override these with a fake ChatService.
-# ---------------------------------------------------------------------------
-
-
-def get_chat_service() -> ChatService:
-    """Legacy dep — returns a file-backed service. Used as the default
-    override target in test fixtures."""
-    return build_chat_service()
-
-
-async def get_chat_service_for_user(
-    user: User = Depends(get_current_user),
-    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
-) -> ChatService:
-    """Primary FastAPI dep for authenticated chat routes. Wraps
-    :func:`build_chat_service_for_user` so tests can override it."""
-    return await build_chat_service_for_user(user=user, session_factory=session_factory)

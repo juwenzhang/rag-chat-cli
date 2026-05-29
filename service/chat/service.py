@@ -234,6 +234,60 @@ class ChatService:
             return await self._summarizer.compress(messages, budget=self._token_budget)
         return trim_to_budget(messages, tokenizer=self._tokenizer, budget=self._token_budget)
 
+    async def _load_history(self, session_id: str) -> tuple[list[ChatMessage], Event | None]:
+        try:
+            return await self._memory.get(session_id), None
+        except Exception as exc:
+            return [], {
+                "type": "error",
+                "code": "memory_read_failed",
+                "message": str(exc),
+            }
+
+    async def _retrieve_for_turn(
+        self,
+        user_text: str,
+        *,
+        use_rag: bool,
+        top_k: int,
+        abort: AbortContext | None,
+    ) -> tuple[list[KnowledgeHit], Event | None]:
+        if not use_rag or self._kb is None:
+            return [], None
+        if abort is not None and abort.aborted:
+            return [], _aborted_event()
+        try:
+            hits = await self._kb.search(user_text, top_k=top_k)
+        except Exception as exc:
+            return [], {
+                "type": "error",
+                "code": "retrieval_failed",
+                "message": str(exc),
+            }
+        return hits, {
+            "type": "retrieval",
+            "hits": [
+                {
+                    "document_id": getattr(h, "document_id", None),
+                    "chunk_id": getattr(h, "chunk_id", None),
+                    "title": h.title,
+                    "content": h.content,
+                    "score": h.score,
+                    "source": h.source,
+                }
+                for h in hits
+            ],
+        }
+
+    async def _load_user_memories(self) -> list[UserMemoryEntry]:
+        if self._user_memory is None:
+            return []
+        try:
+            return await self._user_memory.recent(limit=10)
+        except Exception as exc:
+            logger.warning("user_memory.recent() failed: %s", exc)
+            return []
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -337,57 +391,28 @@ class ChatService:
             return
 
         # 0. Load prior history.
-        try:
-            history = await self._memory.get(session_id)
-        except Exception as exc:
-            yield {
-                "type": "error",
-                "code": "memory_read_failed",
-                "message": str(exc),
-            }
+        history, history_error = await self._load_history(session_id)
+        if history_error is not None:
+            yield history_error
             return
 
         # 1. Optional retrieval (one-shot, before the loop). Emit the
         # ``retrieval`` event for the UI; the hit list itself goes into
         # the prompt prelude via :class:`PromptBuilder` below.
-        hits: list[KnowledgeHit] = []
-        if use_rag and self._kb is not None:
-            if abort is not None and abort.aborted:
-                yield _aborted_event()
+        hits, retrieval_event = await self._retrieve_for_turn(
+            user_text,
+            use_rag=use_rag,
+            top_k=effective_top_k,
+            abort=abort,
+        )
+        if retrieval_event is not None:
+            yield retrieval_event
+            if retrieval_event.get("type") == "error":
                 return
-            try:
-                hits = await self._kb.search(user_text, top_k=effective_top_k)
-            except Exception as exc:
-                yield {
-                    "type": "error",
-                    "code": "retrieval_failed",
-                    "message": str(exc),
-                }
-                return
-            yield {
-                "type": "retrieval",
-                "hits": [
-                    {
-                        "document_id": getattr(h, "document_id", None),
-                        "chunk_id": getattr(h, "chunk_id", None),
-                        "title": h.title,
-                        "content": h.content,
-                        "score": h.score,
-                        "source": h.source,
-                    }
-                    for h in hits
-                ],
-            }
 
         # 2. Pull long-term user memories (#16). Soft failure: a broken DB
         # connection here must not block the reply path.
-        memories: list[UserMemoryEntry] = []
-        if self._user_memory is not None:
-            try:
-                memories = await self._user_memory.recent(limit=10)
-            except Exception as exc:
-                logger.warning("user_memory.recent() failed: %s", exc)
-                memories = []
+        memories = await self._load_user_memories()
 
         # 3. Persist the user turn immediately so a mid-loop failure doesn't
         # lose the question. ``persist_user=False`` skips this — the

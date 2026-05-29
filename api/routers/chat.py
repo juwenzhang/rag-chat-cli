@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat_deps import get_chat_service_for_user
 from api.deps import get_current_user, get_db_session
 from api.schemas.chat import (
     ChatSessionOut,
@@ -32,12 +33,13 @@ from api.schemas.chat import (
 )
 from api.schemas.common import Page
 from api.schemas.share import ForkFromShareIn
-from service.chat.factory import get_chat_service_for_user
 from service.chat.service import ChatService
 from service.chat.titles import synthesize_preview_title
-from service.db.models import ChatSession, Message, MessageShare, User, WikiPage
+from service.db.models import ChatSession, Message, MessageShare, User, Wiki, WikiPage
+from service.errors import ForbiddenError, NotFoundError
 from service.llm.client import ChatMessage
 from service.providers import ProviderNotFoundError, get_provider
+from service.wiki.policy import require_wiki_role
 
 __all__ = ["router"]
 
@@ -193,18 +195,19 @@ async def session_from_wiki(
     transcript above. That keeps the LLM call (and its cost) opt-in.
     """
     # Permission check: resolve the wiki and use its access model
-    # (handles both org_wide and private wikis). Import lazily to
-    # avoid a circular import with the wiki router.
-    from api.routers.wiki import _require_wiki_role
-    from service.db.models import Wiki
-
+    # (handles both org_wide and private wikis).
     page = await session.get(WikiPage, page_id)
     if page is None:
         raise HTTPException(status_code=404, detail="page not found")
     wiki = await session.get(Wiki, page.wiki_id)
     if wiki is None:
         raise HTTPException(status_code=404, detail="page not found")
-    await _require_wiki_role(session, wiki, user.id, "viewer")
+    try:
+        await require_wiki_role(session, wiki, user.id, "viewer")
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail="page not found") from exc
+    except ForbiddenError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     new_session = ChatSession(
         user_id=user.id,
