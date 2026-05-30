@@ -12,6 +12,7 @@ side-effect::
 
 from __future__ import annotations
 
+from service.db.models.asset import Asset
 from service.db.models.chunk import Chunk
 from service.db.models.document import Document
 from service.db.models.message import Message
@@ -32,6 +33,7 @@ from service.db.models.wiki_page import WikiPage
 from service.db.models.wiki_page_share import WikiPageShare
 
 __all__ = [
+    "Asset",
     "ChatSession",
     "Chunk",
     "Document",

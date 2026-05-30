@@ -20,6 +20,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from api.middleware.errors import install_exception_handlers
 from api.middleware.logging import AccessLogMiddleware
 from api.middleware.request_id import RequestIDMiddleware
+from api.routers import assets as assets_router
 from api.routers import auth as auth_router
 from api.routers import bookmarks as bookmarks_router
 from api.routers import chat as chat_router
@@ -105,6 +106,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     install_exception_handlers(app)
 
+    if settings.storage.backend == "local":
+        from pathlib import Path
+
+        from fastapi.staticfiles import StaticFiles
+
+        Path(settings.storage.local_root).mkdir(parents=True, exist_ok=True)
+        app.mount(
+            settings.storage.public_base_url,
+            StaticFiles(directory=settings.storage.local_root),
+            name="uploads",
+        )
+
     # Routers. ``health`` has no prefix; the others are namespaced per §5.
     app.include_router(health_router.router)
     app.include_router(auth_router.router, prefix="/auth")
@@ -115,6 +128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # WebSocket route is at /ws/chat (no extra prefix, see chat_ws.router).
     app.include_router(chat_ws_router.router)
     app.include_router(knowledge_router.router, prefix="/knowledge")
+    app.include_router(assets_router.router)
     # /providers (and /providers/test, /providers/{id}/models) + /me/preferences.
     app.include_router(providers_router.router)
     # /shares (public token-based view + owner CRUD) + /bookmarks (private).

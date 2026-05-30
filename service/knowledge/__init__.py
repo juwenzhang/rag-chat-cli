@@ -16,6 +16,7 @@ from service.knowledge.local import FileKnowledgeBase
 from service.knowledge.pgvector import PgvectorKnowledgeBase
 from service.knowledge.reflect import KB_REFLECT_PROMPT, ReflectionCritic, ReflectionResult
 from service.knowledge.rerank import NoopReranker, Reranker
+from service.knowledge.service import KnowledgeSearchHit, KnowledgeService
 
 __all__ = [
     "KB_REFLECT_PROMPT",
@@ -25,6 +26,8 @@ __all__ = [
     "IngestionResult",
     "KnowledgeBase",
     "KnowledgeHit",
+    "KnowledgeSearchHit",
+    "KnowledgeService",
     "NoopReranker",
     "PgvectorKnowledgeBase",
     "ReflectionCritic",

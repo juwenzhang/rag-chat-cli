@@ -1,6 +1,6 @@
 """``/orgs`` — workspaces and their memberships.
 
-Permission model (enforced here, not in the DB):
+Permission model:
 
 * **owner**  — full control: rename, delete, manage members, read/write
   all wiki pages.
@@ -10,17 +10,12 @@ Permission model (enforced here, not in the DB):
 The auto-provisioned per-user *personal* org (``is_personal=true``)
 cannot be deleted — that would orphan the user's default workspace.
 Renaming it is fine.
-
-Helper functions exported by this module (``get_membership``,
-``require_role``) are reused by the wiki router so authorization stays
-DRY.
 """
 
 from __future__ import annotations
 
 import re
 import uuid
-from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -37,47 +32,36 @@ from api.schemas.org import (
     OrgUpdateIn,
 )
 from service.db.models import Org, OrgMember, User
+from service.errors import ForbiddenError, NotFoundError
+from service.orgs.policy import get_membership as service_get_membership
+from service.orgs.policy import require_role as service_require_role
 
-__all__ = ["get_membership", "require_role", "router"]
+__all__ = ["router"]
 
 router = APIRouter(tags=["orgs"])
 
 
-# ── Authorization helpers (reused by wiki router) ────────────────────
+# ── Authorization adapters ───────────────────────────────────────────
 
 
-_ROLE_RANK = {"viewer": 1, "editor": 2, "owner": 3}
-
-
-async def get_membership(
+async def _get_membership(
     session: AsyncSession, org_id: uuid.UUID, user_id: uuid.UUID
 ) -> OrgMember | None:
-    """Return the membership row or ``None`` if the user isn't in the org."""
-    return cast(
-        OrgMember | None,
-        await session.scalar(
-            select(OrgMember).where(OrgMember.org_id == org_id, OrgMember.user_id == user_id)
-        ),
-    )
+    return await service_get_membership(session, org_id, user_id)
 
 
-async def require_role(
+async def _require_role(
     session: AsyncSession,
     org_id: uuid.UUID,
     user_id: uuid.UUID,
     min_role: str,
 ) -> OrgMember:
-    """Fetch the caller's membership; 404 if not a member, 403 if too low.
-
-    We return **404** (not 403) when the user isn't a member, so we don't
-    leak the existence of orgs the caller can't see.
-    """
-    member = await get_membership(session, org_id, user_id)
-    if member is None:
-        raise HTTPException(status_code=404, detail="org not found")
-    if _ROLE_RANK[member.role] < _ROLE_RANK[min_role]:
-        raise HTTPException(status_code=403, detail=f"requires {min_role} role")
-    return member
+    try:
+        return await service_require_role(session, org_id, user_id, min_role)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail="org not found") from exc
+    except ForbiddenError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 def _to_out(org: Org, role: str) -> OrgOut:
@@ -166,7 +150,7 @@ async def get_org(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> OrgOut:
-    member = await require_role(session, org_id, user.id, "viewer")
+    member = await _require_role(session, org_id, user.id, "viewer")
     org = await session.get(Org, org_id)
     assert org is not None  # require_role already proved membership
     return _to_out(org, member.role)
@@ -179,7 +163,7 @@ async def update_org(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> OrgOut:
-    member = await require_role(session, org_id, user.id, "owner")
+    member = await _require_role(session, org_id, user.id, "owner")
     org = await session.get(Org, org_id)
     assert org is not None
     if body.name is not None:
@@ -199,7 +183,7 @@ async def delete_org(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
-    await require_role(session, org_id, user.id, "owner")
+    await _require_role(session, org_id, user.id, "owner")
     org = await session.get(Org, org_id)
     assert org is not None
     if org.is_personal:
@@ -231,7 +215,7 @@ async def list_members(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[MemberOut]:
-    await require_role(session, org_id, user.id, "viewer")
+    await _require_role(session, org_id, user.id, "viewer")
     rows = (
         await session.execute(
             select(OrgMember, User)
@@ -255,11 +239,11 @@ async def add_member(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> MemberOut:
-    await require_role(session, org_id, user.id, "owner")
+    await _require_role(session, org_id, user.id, "owner")
     target = await session.scalar(select(User).where(User.email == body.email.lower()))
     if target is None:
         raise HTTPException(status_code=404, detail="no user with that email")
-    existing = await get_membership(session, org_id, target.id)
+    existing = await _get_membership(session, org_id, target.id)
     if existing is not None:
         # Idempotent: re-inviting an existing member updates their role.
         existing.role = body.role
@@ -284,8 +268,8 @@ async def update_member(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> MemberOut:
-    await require_role(session, org_id, user.id, "owner")
-    target = await get_membership(session, org_id, user_id)
+    await _require_role(session, org_id, user.id, "owner")
+    target = await _get_membership(session, org_id, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="member not found")
     org = await session.get(Org, org_id)
@@ -318,10 +302,10 @@ async def remove_member(
 ) -> None:
     # Self-removal needs only viewer role; removing others needs owner.
     if user_id == user.id:
-        await require_role(session, org_id, user.id, "viewer")
+        await _require_role(session, org_id, user.id, "viewer")
     else:
-        await require_role(session, org_id, user.id, "owner")
-    target = await get_membership(session, org_id, user_id)
+        await _require_role(session, org_id, user.id, "owner")
+    target = await _get_membership(session, org_id, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="member not found")
     org = await session.get(Org, org_id)
@@ -346,7 +330,7 @@ async def transfer_ownership(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> OrgOut:
-    await require_role(session, org_id, user.id, "owner")
+    await _require_role(session, org_id, user.id, "owner")
     org = await session.get(Org, org_id)
     assert org is not None
     if body.new_owner_id == user.id:
@@ -356,10 +340,10 @@ async def transfer_ownership(
             status_code=400,
             detail="cannot transfer a personal org",
         )
-    target = await get_membership(session, org_id, body.new_owner_id)
+    target = await _get_membership(session, org_id, body.new_owner_id)
     if target is None:
         raise HTTPException(status_code=404, detail="target user is not a member")
-    prev_owner = await get_membership(session, org_id, user.id)
+    prev_owner = await _get_membership(session, org_id, user.id)
     assert prev_owner is not None
 
     # Demote outgoing owner first so the (org_id, role=owner) invariant

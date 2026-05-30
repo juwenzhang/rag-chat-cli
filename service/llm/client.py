@@ -76,6 +76,7 @@ class ChatMessage:
     content: str
     tool_calls: tuple[ToolCall, ...] = ()
     tool_call_id: str | None = None
+    sources: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

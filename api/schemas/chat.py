@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -72,9 +72,12 @@ class MessageOut(BaseModel):
 
     id: uuid.UUID
     session_id: uuid.UUID
-    role: Literal["user", "assistant", "system"]
+    role: Literal["user", "assistant", "system", "tool"]
     content: str
     tokens: int | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
+    sources: list[dict[str, Any]] | None = None
     created_at: datetime
 
 

@@ -77,16 +77,19 @@ export async function apiFetch<T = unknown>(
   const rid = requestId ?? (await incomingRequestId()) ?? createRequestId();
   const url = buildUrl(path, query);
   const method = rest.method ?? (body === undefined ? "GET" : "POST");
+  const isFormData = body instanceof FormData;
   const init: RequestInit = {
     ...rest,
     headers: {
       Accept: "application/json",
       "x-request-id": rid,
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(body !== undefined && !isFormData
+        ? { "Content-Type": "application/json" }
+        : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(headers as Record<string, string>),
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
     cache: "no-store",
   };
 

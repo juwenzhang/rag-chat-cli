@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, Cpu, Hash } from "lucide-react";
+import { BookOpen, Clock, Cpu, Hash } from "lucide-react";
 
 import type { UIMessage } from "../types";
 
@@ -35,6 +35,14 @@ export function MessageFooter({ message }: { message: UIMessage }) {
       <span key="duration" className="inline-flex items-center gap-1">
         <Clock className="size-3" />
         {formatDuration(message.durationMs)}
+      </span>
+    );
+  }
+  if (message.sources && message.sources.length > 0) {
+    parts.push(
+      <span key="sources" className="inline-flex items-center gap-1">
+        <BookOpen className="size-3" />
+        {message.sources.length} source{message.sources.length === 1 ? "" : "s"}
       </span>
     );
   }

@@ -1,5 +1,6 @@
 import "server-only";
 
+export * as assetApi from "@/lib/api/server/assets";
 export * as authApi from "@/lib/api/server/auth";
 export * as bookmarkApi from "@/lib/api/server/bookmarks";
 export * as chatApi from "@/lib/api/server/chat";
@@ -10,6 +11,7 @@ export * as shareApi from "@/lib/api/server/shares";
 export * as wikiApi from "@/lib/api/server/wiki";
 export { ApiError } from "@/lib/api/shared/types";
 export type {
+  AssetOut,
   BookmarkDetailOut,
   BookmarkOut,
   ConnectivityTestOut,

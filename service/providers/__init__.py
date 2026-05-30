@@ -27,15 +27,22 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import httpx
-from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from service.db.models import ModelMetadata, Provider
+from service.providers.crypto import decrypt_api_key, encrypt_api_key
+from service.providers.dto import ProviderInfo
+from service.providers.errors import ProviderNotFoundError, ProviderValidationError
+from service.providers.model_kinds import (
+    classify_model_kind,
+    is_cloud_model_tag,
+    is_embedding_model_tag,
+)
+from service.providers.types import SUPPORTED_TYPES, ProviderType
 
 logger = logging.getLogger(__name__)
 
@@ -66,162 +73,7 @@ __all__ = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Model classification (chat vs embedding)
-# ---------------------------------------------------------------------------
-
-#: Family prefixes that denote an embedding-only model and don't carry the
-#: word "embed" in their tag. The list is conservative on purpose — false
-#: positives would cause a chat model to silently disappear from the chat
-#: dropdown, which is worse than the opposite.
-_EMBEDDING_PREFIXES: tuple[str, ...] = (
-    "bge-",
-    "e5-",
-    "gte-",
-    "all-minilm",
-    "instructor",
-    "paraphrase-",
-    "stella-",
-    "text-embedding-",
-    "jina-embed",
-)
-
-
-def is_embedding_model_tag(tag: str) -> bool:
-    """Heuristic: is ``tag`` an embedding model rather than a chat model?
-
-    Matches by:
-
-    * the substring ``embed`` anywhere in the tag (catches the common
-      naming convention used by ``nomic-embed-text``, ``mxbai-embed-large``,
-      ``snowflake-arctic-embed``, ``granite-embedding``, etc.);
-    * known family prefixes that don't carry "embed" in the tag (``bge-``,
-      ``e5-``, ``gte-``, ``all-minilm``, ``instructor``, ``paraphrase-``,
-      ``stella-``, ``text-embedding-``, ``jina-embed``).
-
-    The check is leaf-aware: ``library/bge-m3:latest`` matches because we
-    strip the namespace before testing the prefix list.
-    """
-    t = tag.lower()
-    if "embed" in t:
-        return True
-    leaf = t.rsplit("/", 1)[-1]
-    return leaf.startswith(_EMBEDDING_PREFIXES)
-
-
-def classify_model_kind(tag: str) -> Literal["chat", "embedding"]:
-    return "embedding" if is_embedding_model_tag(tag) else "chat"
-
-
-def is_cloud_model_tag(tag: str) -> bool:
-    """Heuristic: an Ollama tag is ``cloud`` when it ends in ``-cloud``.
-
-    Cloud models are remote-hosted by Ollama; ``ollama pull`` registers the
-    metadata in seconds rather than downloading multi-GB layers. The UI uses
-    this to decide whether to skip the "confirm large download" prompt.
-    """
-    return tag.lower().endswith("-cloud")
-
-
-ProviderType = Literal["ollama", "openai"]
-_SUPPORTED_TYPES: frozenset[str] = frozenset({"ollama", "openai"})
-
-# Dev fallback only — surfaced with a warning when the real key is
-# missing in env=dev. NEVER use in production.
-_DEV_INSECURE_FERNET_KEY = "ZGV2LXJhZy1jbGktZml4ZWQtZGV2LWtleS0zMmJ5dGU="
-
 _HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
-
-
-# ---------------------------------------------------------------------------
-# Exceptions
-# ---------------------------------------------------------------------------
-
-
-class ProviderValidationError(ValueError):
-    """Raised when input data fails validation (unknown type, bad URL …)."""
-
-
-class ProviderNotFoundError(LookupError):
-    """Raised when a provider id does not exist or is not owned by the user."""
-
-
-# ---------------------------------------------------------------------------
-# DTO
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class ProviderInfo:
-    """Safe projection of a :class:`db.models.Provider` row.
-
-    Never carries the plaintext API key. ``has_api_key`` lets the UI
-    decide whether to show a "stored" badge versus an "add a key" CTA.
-    """
-
-    id: uuid.UUID
-    user_id: uuid.UUID
-    name: str
-    type: str
-    base_url: str
-    has_api_key: bool
-    is_default: bool
-    enabled: bool
-
-    @classmethod
-    def from_row(cls, row: Provider) -> ProviderInfo:
-        return cls(
-            id=row.id,
-            user_id=row.user_id,
-            name=row.name,
-            type=row.type,
-            base_url=row.base_url,
-            has_api_key=bool(row.api_key_encrypted),
-            is_default=row.is_default,
-            enabled=row.enabled,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Fernet
-# ---------------------------------------------------------------------------
-
-
-def _fernet() -> Fernet:
-    """Lazy-build the process-wide Fernet using the configured key."""
-    from settings import settings
-
-    key = settings.security.provider_encryption_key
-    if not key:
-        if settings.app.env == "prod":
-            raise RuntimeError("PROVIDER_ENCRYPTION_KEY is required when APP_ENV=prod")
-        logger.warning(
-            "PROVIDER_ENCRYPTION_KEY unset — falling back to a known dev key. "
-            "DO NOT deploy to production with this configuration."
-        )
-        key = _DEV_INSECURE_FERNET_KEY
-    return Fernet(key.encode("ascii") if isinstance(key, str) else key)
-
-
-def encrypt_api_key(plaintext: str) -> str:
-    """Encrypt ``plaintext`` for at-rest storage in ``providers.api_key_encrypted``."""
-    return _fernet().encrypt(plaintext.encode("utf-8")).decode("ascii")
-
-
-def decrypt_api_key(ciphertext: str | None) -> str | None:
-    """Inverse of :func:`encrypt_api_key`. Returns ``None`` for ``None`` input.
-
-    A corrupted ciphertext (e.g. rotated key without re-encrypting) raises
-    :class:`cryptography.fernet.InvalidToken`. Callers should treat this
-    as a configuration error, not a user-facing condition.
-    """
-    if ciphertext is None:
-        return None
-    try:
-        return _fernet().decrypt(ciphertext.encode("ascii")).decode("utf-8")
-    except InvalidToken:
-        logger.error("provider api_key decrypt failed — key rotated without re-encrypting?")
-        raise
 
 
 # ---------------------------------------------------------------------------
@@ -230,9 +82,9 @@ def decrypt_api_key(ciphertext: str | None) -> str | None:
 
 
 def _validate_type(t: str) -> None:
-    if t not in _SUPPORTED_TYPES:
+    if t not in SUPPORTED_TYPES:
         raise ProviderValidationError(
-            f"unsupported provider type: {t!r}. Must be one of {sorted(_SUPPORTED_TYPES)}"
+            f"unsupported provider type: {t!r}. Must be one of {sorted(SUPPORTED_TYPES)}"
         )
 
 

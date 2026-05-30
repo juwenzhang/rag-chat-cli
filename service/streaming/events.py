@@ -60,6 +60,7 @@ class Event(TypedDict, total=False):
     message_id: str
     usage: dict[str, Any]
     duration_ms: int
+    sources: list[dict[str, Any]]
     code: str
     message: str
     # done — Sprint 2: reveal resolved model + provider for the answer footer

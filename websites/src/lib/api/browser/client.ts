@@ -114,6 +114,40 @@ export async function bff<T = unknown>(
   return payload as T;
 }
 
+export async function bffForm<T = unknown>(path: string, formData: FormData): Promise<T> {
+  const requestId = createRequestId();
+  const startedAt = performance.now();
+  const res = await fetch(path, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "x-request-id": requestId,
+    },
+    body: formData,
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  const durationMs = Math.round(performance.now() - startedAt);
+  const responseRequestId = res.headers.get("x-request-id") ?? requestId;
+  const payload = await parseBody(res);
+  const meta: ApiDebugMeta = {
+    requestId: responseRequestId,
+    method: "POST",
+    path,
+    status: res.status,
+    durationMs,
+  };
+
+  debugGroup(`[api] POST ${path} ${res.status} ${durationMs}ms`, {
+    requestId: responseRequestId,
+    request: { method: "POST", path, body: "<form-data>" },
+    response: payload,
+  });
+
+  if (!res.ok) throw toApiError(res, payload, meta);
+  return payload as T;
+}
+
 export async function bffStream(
   path: string,
   opts: BffRequestOptions = {}

@@ -25,15 +25,12 @@ import re
 import secrets
 import string
 import uuid
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db_session
-from api.routers.orgs import get_membership as get_org_membership
-from api.routers.orgs import require_role as require_org_role
 from api.schemas.wiki import (
     WikiCreateIn,
     WikiMemberAddIn,
@@ -49,7 +46,12 @@ from api.schemas.wiki import (
     WikiPageUpdateIn,
     WikiUpdateIn,
 )
-from service.db.models import Org, User, Wiki, WikiMember, WikiPage, WikiPageShare
+from service.db.models import User, Wiki, WikiMember, WikiPage, WikiPageShare
+from service.errors import ForbiddenError, NotFoundError
+from service.orgs.policy import require_role as service_require_org_role
+from service.wiki.policy import EffectiveRole
+from service.wiki.policy import require_wiki_role as service_require_wiki_role
+from service.wiki.policy import resolve_wiki_role as service_resolve_wiki_role
 
 __all__ = ["router"]
 
@@ -57,49 +59,28 @@ router = APIRouter(tags=["wiki"])
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Permission helpers — single source of truth for access decisions.
+# Permission adapters
 # ─────────────────────────────────────────────────────────────────────
 
-EffectiveRole = Literal["owner", "editor", "viewer"]
-_RANK = {"viewer": 1, "editor": 2, "owner": 3}
+
+async def _require_org_role(
+    session: AsyncSession,
+    org_id: uuid.UUID,
+    user_id: uuid.UUID,
+    min_role: str,
+) -> None:
+    try:
+        await service_require_org_role(session, org_id, user_id, min_role)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail="org not found") from exc
+    except ForbiddenError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 async def _resolve_wiki_role(
     session: AsyncSession, wiki: Wiki, user_id: uuid.UUID
 ) -> EffectiveRole | None:
-    """Return the caller's effective role in ``wiki`` or ``None`` if no
-    access.
-
-    Resolution order:
-
-    1. Org owner → ``owner`` (workspace boss always wins).
-    2. ``visibility == "private"`` → only explicit wiki_members get
-       through. The org owner already short-circuited in step 1.
-    3. ``visibility == "org_wide"`` → org membership role propagates
-       (with the small twist that org viewers see wikis read-only).
-    """
-    org = await session.get(Org, wiki.org_id)
-    if org is None:
-        return None  # dangling — should be impossible thanks to CASCADE
-    if org.owner_id == user_id:
-        return "owner"
-
-    org_member = await get_org_membership(session, wiki.org_id, user_id)
-    if wiki.visibility == "private":
-        wiki_member = await session.scalar(
-            select(WikiMember).where(
-                WikiMember.wiki_id == wiki.id,
-                WikiMember.user_id == user_id,
-            )
-        )
-        if wiki_member is None:
-            return None
-        return wiki_member.role  # type: ignore[return-value]
-
-    # org_wide path
-    if org_member is None:
-        return None
-    return org_member.role  # type: ignore[return-value]
+    return await service_resolve_wiki_role(session, wiki, user_id)
 
 
 async def _require_wiki_role(
@@ -108,13 +89,12 @@ async def _require_wiki_role(
     user_id: uuid.UUID,
     min_role: EffectiveRole,
 ) -> EffectiveRole:
-    role = await _resolve_wiki_role(session, wiki, user_id)
-    if role is None:
-        # 404 (not 403) so we don't leak the wiki's existence.
-        raise HTTPException(status_code=404, detail="wiki not found")
-    if _RANK[role] < _RANK[min_role]:
-        raise HTTPException(status_code=403, detail=f"requires {min_role} role")
-    return role
+    try:
+        return await service_require_wiki_role(session, wiki, user_id, min_role)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail="wiki not found") from exc
+    except ForbiddenError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 def _to_wiki_out(wiki: Wiki, role: EffectiveRole) -> WikiOut:
@@ -160,7 +140,7 @@ async def list_wikis(
     session: AsyncSession = Depends(get_db_session),
 ) -> list[WikiOut]:
     # Must at least be in the org to see anything.
-    await require_org_role(session, org_id, user.id, "viewer")
+    await _require_org_role(session, org_id, user.id, "viewer")
     rows = (
         (
             await session.execute(
@@ -195,7 +175,7 @@ async def create_wiki(
     session: AsyncSession = Depends(get_db_session),
 ) -> WikiOut:
     # Editor or above in the org may add new wikis.
-    await require_org_role(session, org_id, user.id, "editor")
+    await _require_org_role(session, org_id, user.id, "editor")
     base_slug = body.slug or _slugify(body.name)
     slug = base_slug
     suffix = 2
@@ -327,7 +307,7 @@ async def delete_wiki(
     # cascades all pages). ``is_default`` is no longer enforced as a
     # deletion guard since fresh orgs no longer auto-provision one —
     # the flag is kept on the row only as historical metadata.
-    await require_org_role(session, wiki.org_id, user.id, "owner")
+    await _require_org_role(session, wiki.org_id, user.id, "owner")
     await session.delete(wiki)
     await session.commit()
 
@@ -391,7 +371,7 @@ async def add_wiki_member(
     # viewer who then has equal power" surprises). Org-wide wikis don't
     # actually use this table, but we still accept rows — they take
     # effect only if the wiki later goes private.
-    await require_org_role(session, wiki.org_id, user.id, "owner")
+    await _require_org_role(session, wiki.org_id, user.id, "owner")
     target = await session.scalar(select(User).where(User.email == body.email.lower()))
     if target is None:
         raise HTTPException(status_code=404, detail="no user with that email")
@@ -427,7 +407,7 @@ async def update_wiki_member(
     wiki = await session.get(Wiki, wiki_id)
     if wiki is None:
         raise HTTPException(status_code=404, detail="wiki not found")
-    await require_org_role(session, wiki.org_id, user.id, "owner")
+    await _require_org_role(session, wiki.org_id, user.id, "owner")
     target = await session.scalar(
         select(WikiMember).where(WikiMember.wiki_id == wiki_id, WikiMember.user_id == user_id)
     )
@@ -458,7 +438,7 @@ async def remove_wiki_member(
         # Self-removal: any current member can leave.
         await _require_wiki_role(session, wiki, user.id, "viewer")
     else:
-        await require_org_role(session, wiki.org_id, user.id, "owner")
+        await _require_org_role(session, wiki.org_id, user.id, "owner")
     target = await session.scalar(
         select(WikiMember).where(WikiMember.wiki_id == wiki_id, WikiMember.user_id == user_id)
     )

@@ -76,6 +76,7 @@ export interface MessageOut {
   content: string;
   tool_call_id?: string | null;
   tool_calls?: ToolCallOut[] | null;
+  sources?: AnswerSource[] | null;
   created_at: string;
 }
 
@@ -83,6 +84,16 @@ export interface ToolCallOut {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+}
+
+export interface AssetOut {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  url: string;
+  description?: string | null;
+  created_at: string;
 }
 
 export interface DocumentOut {
@@ -105,6 +116,19 @@ export interface KnowledgeHit {
   score: number;
   content: string;
   title?: string | null;
+  source?: string | null;
+}
+
+export interface AnswerSource {
+  source_type: "document" | "web" | "image" | "tool";
+  rank: number;
+  title?: string | null;
+  quote?: string | null;
+  score?: number | null;
+  source?: string | null;
+  url?: string | null;
+  document_id?: string | null;
+  chunk_id?: string | null;
 }
 
 /** A single message rendered inside a public share / bookmark payload. */
@@ -190,6 +214,7 @@ export type StreamEvent =
         message_id?: string;
         usage?: Record<string, number>;
         duration_ms?: number;
+        sources?: AnswerSource[] | null;
         /** The model the backend actually resolved for this answer. */
         model?: string | null;
         /** Friendly name of the provider that produced this answer. */
