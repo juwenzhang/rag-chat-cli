@@ -45,6 +45,14 @@ class S3ObjectStorage:
         )
         return StoredObject(key=key, url=await self.presigned_get_url(key))
 
+    async def get_bytes(self, key: str) -> bytes:
+        obj = await asyncio.to_thread(
+            self._client.get_object,
+            Bucket=self._bucket,
+            Key=key,
+        )
+        return await asyncio.to_thread(obj["Body"].read)
+
     async def presigned_get_url(self, key: str, *, expires_in: int = 3600) -> str:
         url = await asyncio.to_thread(
             self._client.generate_presigned_url,

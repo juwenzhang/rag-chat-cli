@@ -43,7 +43,13 @@ def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
     **string**, not an object — that's the one wire difference from how
     we hold the data internally.
     """
-    out: dict[str, Any] = {"role": m.role, "content": m.content or ""}
+    content: str | list[dict[str, Any]] = m.content or ""
+    if m.image_urls:
+        content = [{"type": "text", "text": m.content or "Describe this image."}]
+        content.extend(
+            {"type": "image_url", "image_url": {"url": image_url}} for image_url in m.image_urls
+        )
+    out: dict[str, Any] = {"role": m.role, "content": content}
     if m.tool_calls:
         out["tool_calls"] = [
             {

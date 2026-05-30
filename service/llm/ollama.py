@@ -29,6 +29,8 @@ def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
     for plain user/assistant turns.
     """
     out: dict[str, Any] = {"role": m.role, "content": m.content}
+    if m.image_urls:
+        out["images"] = [_image_url_to_ollama_payload(image_url) for image_url in m.image_urls]
     if m.tool_calls:
         out["tool_calls"] = [
             {
@@ -40,6 +42,13 @@ def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
     if m.tool_call_id is not None:
         out["tool_call_id"] = m.tool_call_id
     return out
+
+
+def _image_url_to_ollama_payload(image_url: str) -> str:
+    if image_url.startswith("data:"):
+        _prefix, _sep, payload = image_url.partition(",")
+        return payload
+    return image_url
 
 
 def _tool_to_wire(t: ToolSpec) -> dict[str, Any]:
