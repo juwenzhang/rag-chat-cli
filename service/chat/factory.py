@@ -42,6 +42,7 @@ def build_chat_service() -> ChatService:
     from service.knowledge import FileKnowledgeBase, KnowledgeBase
     from service.llm.ollama import OllamaClient
     from service.memory.chat_memory import FileChatMemory
+    from service.tools.factory import build_builtin_tool_registry
     from settings import settings
 
     llm = OllamaClient.from_settings(settings)
@@ -49,7 +50,8 @@ def build_chat_service() -> ChatService:
     kb: KnowledgeBase | None = (
         FileKnowledgeBase.from_settings(llm=llm, s=settings) if settings.retrieval.enabled else None
     )
-    return ChatService(llm=llm, memory=memory, knowledge=kb)
+    tools = build_builtin_tool_registry()
+    return ChatService(llm=llm, memory=memory, knowledge=kb, tools=tools)
 
 
 async def build_chat_service_for_user(
@@ -74,6 +76,7 @@ async def build_chat_service_for_user(
     from service.knowledge import KnowledgeBase, PgvectorKnowledgeBase
     from service.memory.chat_memory import DbChatMemory
     from service.providers.runtime import build_llm_for_user
+    from service.tools.factory import build_builtin_tool_registry
     from settings import settings
 
     llm, _default_model = await build_llm_for_user(session_factory, user.id)
@@ -88,4 +91,5 @@ async def build_chat_service_for_user(
         if settings.retrieval.enabled
         else None
     )
-    return ChatService(llm=llm, memory=memory, knowledge=kb)
+    tools = build_builtin_tool_registry()
+    return ChatService(llm=llm, memory=memory, knowledge=kb, tools=tools)

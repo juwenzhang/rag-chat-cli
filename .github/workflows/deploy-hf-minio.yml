@@ -1,0 +1,36 @@
+name: deploy hf minio
+
+on:
+  push:
+    branches: [master, main, frontend-refactor]
+    paths:
+      - .github/workflows/deploy-hf-minio.yml
+      - scripts/deploy-hf-minio.sh
+      - .gitmodules
+      - minio
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hf-minio-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  push-space:
+    name: push MinIO Space to Hugging Face
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Push MinIO Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: luhanxin
+          HF_MINIO_SPACE: luhanxin/hf-luhanxin-minio
+        run: bash scripts/deploy-hf-minio.sh

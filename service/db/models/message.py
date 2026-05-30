@@ -64,3 +64,11 @@ class Message(UUIDMixin, TimestampMixin, Base):
         _JSON,
         nullable=True,
     )
+
+    # On assistant rows: the evidence used to ground this answer. RAG hits,
+    # web-search results, image OCR/captions, and future tool evidence all share
+    # this JSON shape so the UI can render clickable citations after reload.
+    sources: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        _JSON,
+        nullable=True,
+    )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Annotated
 
@@ -17,7 +18,7 @@ from api.schemas.knowledge import (
     DocumentUpdateIn,
     SearchHitOut,
 )
-from service.db.models import User
+from service.db.models import Document, User
 from service.errors import NotFoundError
 from service.knowledge import KnowledgeService
 from service.providers.runtime import build_llm_for_user
@@ -25,6 +26,7 @@ from service.providers.runtime import build_llm_for_user
 __all__ = ["router"]
 
 router = APIRouter(tags=["knowledge"])
+logger = logging.getLogger(__name__)
 
 
 def _knowledge_service(session: AsyncSession, user: User) -> KnowledgeService:
@@ -35,6 +37,27 @@ def _document_404(exc: NotFoundError) -> HTTPException:
     return HTTPException(status_code=404, detail="document not found")
 
 
+async def _try_index_document(
+    request: Request,
+    user: User,
+    service: KnowledgeService,
+    doc: Document,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    llm, _default_model = await build_llm_for_user(session_factory, user.id)
+    try:
+        await service.index_document(
+            doc,
+            session_factory=session_factory,
+            llm=llm,
+            settings=request.app.state.settings,
+        )
+    except Exception as exc:
+        logger.warning("knowledge auto-index failed user_id=%s: %s", user.id, exc)
+    finally:
+        await llm.aclose()
+
+
 @router.post(
     "/documents",
     response_model=DocumentDetailOut,
@@ -43,14 +66,18 @@ def _document_404(exc: NotFoundError) -> HTTPException:
 )
 async def upload_document(
     body: DocumentIn,
+    request: Request,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> DocumentDetailOut:
-    doc = await _knowledge_service(session, user).create_document(
+    service = _knowledge_service(session, user)
+    doc = await service.create_document(
         source=body.source,
         title=body.title,
         body=body.body,
     )
+    await _try_index_document(request, user, service, doc, session_factory)
     return DocumentDetailOut.model_validate(doc)
 
 
@@ -99,17 +126,22 @@ async def get_document(
 async def update_document(
     document_id: uuid.UUID,
     body: DocumentUpdateIn,
+    request: Request,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> DocumentDetailOut:
+    service = _knowledge_service(session, user)
     try:
-        doc = await _knowledge_service(session, user).update_document(
+        doc = await service.update_document(
             document_id,
             title=body.title,
             body=body.body,
         )
     except NotFoundError as exc:
         raise _document_404(exc) from exc
+    if body.body is not None:
+        await _try_index_document(request, user, service, doc, session_factory)
     return DocumentDetailOut.model_validate(doc)
 
 

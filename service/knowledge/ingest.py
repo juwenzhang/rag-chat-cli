@@ -144,6 +144,7 @@ class DocumentIngestor:
         source: str,
         title: str | None = None,
         meta: dict[str, Any] | None = None,
+        document_id: uuid.UUID | None = None,
     ) -> IngestionResult:
         """Split → embed → persist ``text`` as a Document + N Chunks.
 
@@ -182,7 +183,9 @@ class DocumentIngestor:
                 s,
                 source=source,
                 title=title,
+                body=text,
                 meta=meta or {},
+                document_id=document_id,
             )
             # Wipe prior chunks for idempotency.
             await s.execute(delete(Chunk).where(Chunk.document_id == doc_id))
@@ -239,7 +242,9 @@ class DocumentIngestor:
         *,
         source: str,
         title: str | None,
+        body: str,
         meta: dict[str, Any],
+        document_id: uuid.UUID | None = None,
     ) -> uuid.UUID:
         """Return an existing Document.id matching (user_id, source) or insert one.
 
@@ -253,16 +258,28 @@ class DocumentIngestor:
 
         from service.db.models import Document
 
-        stmt = select(Document).where(
-            Document.user_id.is_(self._user_id)
-            if self._user_id is None
-            else Document.user_id == self._user_id,
-            Document.source == source,
-        )
-        existing = (await s.execute(stmt)).scalar_one_or_none()
+        existing = None
+        if document_id is not None:
+            existing = await s.get(Document, document_id)
+            if existing is not None and existing.user_id != self._user_id:
+                existing = None
+
+        if existing is None:
+            stmt = (
+                select(Document)
+                .where(
+                    Document.user_id.is_(self._user_id)
+                    if self._user_id is None
+                    else Document.user_id == self._user_id,
+                    Document.source == source,
+                )
+                .limit(1)
+            )
+            existing = (await s.execute(stmt)).scalar_one_or_none()
         if existing is not None:
             if title is not None:
                 existing.title = title
+            existing.body = body
             if meta:
                 existing.meta = meta
             await s.flush()
@@ -272,6 +289,7 @@ class DocumentIngestor:
             user_id=self._user_id,
             source=source,
             title=title,
+            body=body,
             meta=meta,
         )
         s.add(doc)

@@ -81,6 +81,16 @@ _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
     "RATE_LIMIT_PER_MIN": ("rate_limit", "per_min"),
     # security (Sprint 2): Fernet key for at-rest encryption of provider API keys.
     "PROVIDER_ENCRYPTION_KEY": ("security", "provider_encryption_key"),
+    # object storage
+    "STORAGE_BACKEND": ("storage", "backend"),
+    "STORAGE_LOCAL_ROOT": ("storage", "local_root"),
+    "STORAGE_PUBLIC_BASE_URL": ("storage", "public_base_url"),
+    "S3_ENDPOINT_URL": ("storage", "s3_endpoint_url"),
+    "S3_PUBLIC_ENDPOINT_URL": ("storage", "s3_public_endpoint_url"),
+    "S3_ACCESS_KEY": ("storage", "s3_access_key"),
+    "S3_SECRET_KEY": ("storage", "s3_secret_key"),
+    "S3_BUCKET": ("storage", "s3_bucket"),
+    "S3_REGION": ("storage", "s3_region"),
 }
 
 
@@ -193,6 +203,36 @@ class SecuritySettings(_GroupBase):
     provider_encryption_key: str | None = None
 
 
+class StorageSettings(_GroupBase):
+    backend: Literal["local", "s3"] = "local"
+    local_root: str = "uploads"
+    public_base_url: str = "/uploads"
+    s3_endpoint_url: str | None = None
+    s3_public_endpoint_url: str | None = None
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
+    s3_bucket: str | None = None
+    s3_region: str | None = None
+
+    @model_validator(mode="after")
+    def _require_s3_config(self) -> StorageSettings:
+        if self.backend != "s3":
+            return self
+        missing = [
+            name
+            for name in (
+                "s3_endpoint_url",
+                "s3_access_key",
+                "s3_secret_key",
+                "s3_bucket",
+            )
+            if not getattr(self, name)
+        ]
+        if missing:
+            raise ValueError(f"S3 storage requires: {', '.join(missing)}")
+        return self
+
+
 # ---------------------------------------------------------------------------
 # Top-level Settings
 # ---------------------------------------------------------------------------
@@ -276,6 +316,7 @@ class Settings(BaseSettings):
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
+    storage: StorageSettings = Field(default_factory=StorageSettings)
 
     model_config = SettingsConfigDict(
         env_file=".env",

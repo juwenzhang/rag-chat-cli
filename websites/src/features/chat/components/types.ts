@@ -1,4 +1,4 @@
-import type { KnowledgeHit, ToolCallOut } from "@/lib/api/shared/types";
+import type { AnswerSource, KnowledgeHit, ToolCallOut } from "@/lib/api/shared/types";
 
 export interface UIMessage {
   /** Local id (uuid-ish) — distinct from backend id during streaming. */
@@ -11,6 +11,8 @@ export interface UIMessage {
   toolResults?: Array<{ id: string; name: string; output: string; error?: string }>;
   /** RAG hits surfaced before generation. */
   retrieval?: KnowledgeHit[];
+  /** Normalized answer sources persisted by the backend. */
+  sources?: AnswerSource[];
   /** True while the SSE stream is still appending. */
   streaming?: boolean;
   /** Failure message if the stream errored out. */

@@ -16,7 +16,14 @@ export function formatRelative(date: Date | string): string {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.floor(hr / 24);
   if (day < 7) return `${day}d ago`;
-  return d.toLocaleDateString();
+  return formatDateOnly(d);
+}
+
+function formatDateOnly(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  return `${year}/${month}/${day}`;
 }
 
 export function initials(name?: string | null, fallback = "?"): string {

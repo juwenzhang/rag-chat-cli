@@ -78,6 +78,14 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=<你的 key>
 OPENAI_CHAT_MODEL=gpt-4o-mini
 OPENAI_EMBED_MODEL=text-embedding-3-small
+
+STORAGE_BACKEND=s3
+S3_ENDPOINT_URL=https://你的-minio-api
+S3_PUBLIC_ENDPOINT_URL=https://你的-minio-api
+S3_ACCESS_KEY=<MinIO access key>
+S3_SECRET_KEY=<MinIO secret key>
+S3_BUCKET=rag-assets
+S3_REGION=us-east-1
 ```
 
 如果用 OpenRouter：

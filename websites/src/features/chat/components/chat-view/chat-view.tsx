@@ -1,16 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-  type MutableRefObject,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import type {
@@ -124,6 +114,7 @@ export function ChatView({
       sessionProvider: sessionProviderName,
       providerId: sessionMeta?.provider_id ?? null,
       model: sessionMeta?.model ?? null,
+      defaultUseRag: initialPreferences.default_use_rag,
     });
   }, [
     initSession,
@@ -132,6 +123,7 @@ export function ChatView({
     sessionMeta?.model,
     sessionMeta?.provider_id,
     sessionProviderName,
+    initialPreferences.default_use_rag,
   ]);
 
   useScrollFollow({
@@ -163,24 +155,13 @@ export function ChatView({
   const submit = useCallback(
     (content: string) => {
       const trimmed = content.trim();
-      if (!trimmed || streaming) return;
+      if (!trimmed || streaming) return false;
       setInput("");
       void send(trimmed, { onTurnStart });
+      return true;
     },
     [onTurnStart, send, streaming]
   );
-
-  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    submit(input);
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
-      event.preventDefault();
-      submit(input);
-    }
-  };
 
   const jumpToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -220,8 +201,7 @@ export function ChatView({
         initialPreferences={initialPreferences}
         copy={copy.composer}
         onInputChange={setInput}
-        onSubmit={onSubmit}
-        onKeyDown={onKeyDown}
+        onSubmit={submit}
         onToggleRag={() => setUseRag(!useRag)}
         onModelChange={setModelSelection}
         onAbort={abort}
@@ -237,7 +217,7 @@ function useScrollFollow({
   setAtBottom,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
-  stickToBottomRef: MutableRefObject<boolean>;
+  stickToBottomRef: RefObject<boolean>;
   messages: unknown[];
   setAtBottom: (next: boolean) => void;
 }) {

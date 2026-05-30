@@ -399,12 +399,15 @@ class ChatService:
         # 1. Optional retrieval (one-shot, before the loop). Emit the
         # ``retrieval`` event for the UI; the hit list itself goes into
         # the prompt prelude via :class:`PromptBuilder` below.
+        if use_rag and self._kb is not None:
+            yield {"type": "thought", "text": "Searching local knowledge base"}
         hits, retrieval_event = await self._retrieve_for_turn(
             user_text,
             use_rag=use_rag,
             top_k=effective_top_k,
             abort=abort,
         )
+        turn_sources = _sources_from_hits(hits)
         if retrieval_event is not None:
             yield retrieval_event
             if retrieval_event.get("type") == "error":
@@ -513,6 +516,7 @@ class ChatService:
                 role="assistant",
                 content=assistant_text,
                 tool_calls=tuple(collected_tool_calls),
+                sources=tuple(turn_sources),
             )
             try:
                 await self._memory.append(session_id, assistant_msg)
@@ -548,6 +552,10 @@ class ChatService:
                     yield _aborted_event()
                     return
                 yield {
+                    "type": "thought",
+                    "text": f"Running tool: {tc.name}",
+                }
+                yield {
                     "type": "tool_call",
                     "tool_call_id": tc.id,
                     "tool_name": tc.name,
@@ -565,6 +573,9 @@ class ChatService:
                     )
                 else:
                     result = await self._dispatch_tool_with_timeout(tc, abort=abort)
+                new_sources = _sources_from_tool_result(result, start_rank=len(turn_sources) + 1)
+                if new_sources:
+                    turn_sources.extend(new_sources)
                 yield {
                     "type": "tool_result",
                     "tool_call_id": tc.id,
@@ -645,6 +656,8 @@ class ChatService:
             done["usage"] = usage
         if effective_model:
             done["model"] = effective_model
+        if turn_sources:
+            done["sources"] = turn_sources
         yield done
 
     # ------------------------------------------------------------------
@@ -685,6 +698,7 @@ class ChatService:
         hits: list[dict[str, Any]] | None = None
         usage: dict[str, Any] | None = None
         duration_ms: int | None = None
+        sources: list[dict[str, Any]] | None = None
         tool_calls: list[dict[str, Any]] = []
         tool_results: list[dict[str, Any]] = []
         error: dict[str, str] | None = None
@@ -731,6 +745,9 @@ class ChatService:
                 raw_duration = event.get("duration_ms")
                 if isinstance(raw_duration, int):
                     duration_ms = raw_duration
+                raw_sources = event.get("sources")
+                if isinstance(raw_sources, list):
+                    sources = [s for s in raw_sources if isinstance(s, dict)]
             elif etype == "error":
                 error = {
                     "code": str(event.get("code", "UNKNOWN")),
@@ -743,6 +760,7 @@ class ChatService:
             "hits": hits,
             "usage": usage,
             "duration_ms": duration_ms,
+            "sources": sources,
             "tool_calls": tool_calls or None,
             "tool_results": tool_results or None,
             "error": error,
@@ -755,6 +773,43 @@ def _aborted_event() -> Event:
         "code": "ABORTED",
         "message": "client aborted the stream",
     }
+
+
+def _sources_from_hits(hits: list[KnowledgeHit]) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for rank, hit in enumerate(hits, start=1):
+        source: dict[str, Any] = {
+            "source_type": "document",
+            "rank": rank,
+            "title": hit.title,
+            "quote": hit.content,
+            "score": hit.score,
+            "source": hit.source,
+        }
+        if hit.document_id is not None:
+            source["document_id"] = hit.document_id
+        if hit.chunk_id is not None:
+            source["chunk_id"] = hit.chunk_id
+        sources.append(source)
+    return sources
+
+
+def _sources_from_tool_result(result: ToolResult, *, start_rank: int) -> list[dict[str, Any]]:
+    metadata = result.metadata or {}
+    raw_sources = metadata.get("sources")
+    if not isinstance(raw_sources, list):
+        return []
+    sources: list[dict[str, Any]] = []
+    rank = start_rank
+    for raw in raw_sources:
+        if not isinstance(raw, dict):
+            continue
+        source = dict(raw)
+        source.setdefault("source_type", "tool")
+        source["rank"] = rank
+        rank += 1
+        sources.append(source)
+    return sources
 
 
 def _maybe_uuid(s: str) -> uuid.UUID | None:

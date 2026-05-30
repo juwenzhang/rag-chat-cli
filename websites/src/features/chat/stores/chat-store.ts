@@ -16,6 +16,7 @@ interface InitSessionInput {
   sessionProvider?: string | null;
   providerId?: string | null;
   model?: string | null;
+  defaultUseRag?: boolean;
 }
 
 interface TurnOptions {
@@ -53,6 +54,17 @@ function hydrateMessages(
         role: "assistant",
         content: m.content,
         toolCalls: m.tool_calls ?? undefined,
+        sources: m.sources ?? undefined,
+        retrieval: m.sources
+          ?.filter((s) => s.source_type === "document" && s.document_id)
+          .map((s) => ({
+            document_id: s.document_id!,
+            chunk_id: s.chunk_id ?? `${s.document_id}-${s.rank}`,
+            score: s.score ?? 0,
+            content: s.quote ?? "",
+            title: s.title,
+            source: s.source,
+          })),
         model: sessionModel ?? undefined,
         provider: sessionProvider ?? undefined,
         persisted: true,
@@ -229,12 +241,14 @@ export const useChatStore = create<ChatStore>((set, get) => {
       sessionProvider,
       providerId,
       model,
+      defaultUseRag,
     }) => {
       const current = get();
       if (current.sessionId === sessionId) {
         set({
           providerId: providerId ?? null,
           model: model ?? null,
+          useRag: defaultUseRag ?? current.useRag,
         });
         return;
       }
@@ -246,6 +260,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
         abortController: null,
         providerId: providerId ?? null,
         model: model ?? null,
+        useRag: defaultUseRag ?? false,
       });
     },
 

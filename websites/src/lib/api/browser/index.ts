@@ -12,7 +12,7 @@
  * so the `server-only` guard is never tripped).
  */
 
-import { bff, bffStream } from "@/lib/api/browser/client";
+import { bff, bffForm, bffStream } from "@/lib/api/browser/client";
 import type { CreateBookmarkBody } from "@/lib/api/server/bookmarks";
 import type {
   ChatStreamParams,
@@ -45,6 +45,7 @@ import type {
   UpdateWikiPageBody,
 } from "@/lib/api/server/wiki";
 import type {
+  AssetOut,
   BookmarkDetailOut,
   BookmarkOut,
   ConnectivityTestOut,
@@ -306,6 +307,14 @@ const shares = {
   remove: (token: string) => bff<void>(`/api/shares/${token}`, { method: "DELETE" }),
 };
 
+const assets = {
+  uploadImage: (file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    return bffForm<AssetOut>("/api/assets/images", form);
+  },
+};
+
 const documents = {
   list: () => bff<DocumentOut[]>("/api/documents"),
 
@@ -350,10 +359,11 @@ export const api = {
   wikiPageShares,
   bookmarks,
   shares,
+  assets,
   documents,
   activeOrg,
   auth,
 };
 
-export { bff, bffStream } from "@/lib/api/browser/client";
+export { bff, bffForm, bffStream } from "@/lib/api/browser/client";
 export type { BffRequestOptions } from "@/lib/api/browser/client";

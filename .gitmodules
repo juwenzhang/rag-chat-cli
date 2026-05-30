@@ -1,3 +1,7 @@
 [submodule "ollama"]
 	path = ollama
 	url = https://huggingface.co/spaces/luhanxin/hf-ollama-service
+
+[submodule "minio"]
+	path = minio
+	url = https://huggingface.co/spaces/luhanxin/hf-luhanxin-minio

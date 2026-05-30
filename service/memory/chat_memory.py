@@ -61,6 +61,8 @@ def _message_to_dict(msg: ChatMessage) -> dict[str, Any]:
         ]
     if msg.tool_call_id is not None:
         out["tool_call_id"] = msg.tool_call_id
+    if msg.sources:
+        out["sources"] = list(msg.sources)
     return out
 
 
@@ -90,11 +92,15 @@ def _parse_tool_calls(raw: Any) -> tuple[ToolCall, ...]:
 def _dict_to_message(item: dict[str, Any]) -> ChatMessage:
     """Inverse of :func:`_message_to_dict`. Tolerates missing tool fields."""
     tool_call_id = item.get("tool_call_id")
+    sources = item.get("sources")
     return ChatMessage(
         role=cast("Role", item["role"]),
         content=item.get("content") or "",
         tool_calls=_parse_tool_calls(item.get("tool_calls")),
         tool_call_id=tool_call_id if isinstance(tool_call_id, str) else None,
+        sources=tuple(s for s in sources if isinstance(s, dict))
+        if isinstance(sources, list)
+        else (),
     )
 
 
@@ -106,11 +112,17 @@ def _db_row_to_message(row: Any) -> ChatMessage:
     eagerly here would drag SQLAlchemy into ``FileChatMemory`` users).
     """
     tool_call_id = getattr(row, "tool_call_id", None)
+    raw_sources = getattr(row, "sources", None)
     return ChatMessage(
         role=cast("Role", row.role),
         content=row.content,
         tool_calls=_parse_tool_calls(getattr(row, "tool_calls", None)),
         tool_call_id=tool_call_id if isinstance(tool_call_id, str) else None,
+        sources=(
+            tuple(s for s in raw_sources if isinstance(s, dict))
+            if isinstance(raw_sources, list)
+            else ()
+        ),
     )
 
 
@@ -417,6 +429,7 @@ class DbChatMemory:
                         if msg.tool_calls
                         else None
                     ),
+                    sources=list(msg.sources) if msg.sources else None,
                 )
             )
             await s.commit()

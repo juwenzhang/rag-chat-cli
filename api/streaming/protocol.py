@@ -91,6 +91,7 @@ class DoneEvent(BaseModel):
     message_id: str | None = None
     duration_ms: int | None = None
     usage: dict[str, Any] | None = None
+    sources: list[dict[str, Any]] | None = None
     # The model + provider that actually produced the reply. Surfaced so the
     # UI can show ground-truth "this answer came from qwen2.5:7b on local-ollama"
     # in the message footer (and so users can verify a model switch took effect).

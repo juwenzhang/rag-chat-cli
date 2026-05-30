@@ -1,7 +1,9 @@
 "use client";
 
-import { Brain, Send, Square } from "lucide-react";
-import type { FormEvent, KeyboardEvent, RefObject } from "react";
+import { Brain, ImagePlus, Loader2, Send, Square, X } from "lucide-react";
+import type { ClipboardEvent, ComponentProps, KeyboardEvent, RefObject } from "react";
+import { useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,10 +14,18 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { ProviderOut, SessionMeta, UserPreferenceOut } from "@/lib/api/shared/types";
+import { api } from "@/lib/api/browser";
+import type {
+  AssetOut,
+  ProviderOut,
+  SessionMeta,
+  UserPreferenceOut,
+} from "@/lib/api/shared/types";
 import { cn } from "@/lib/utils";
 
 import { ModelSelector } from "../model-selector";
+
+type FormSubmitEvent = Parameters<NonNullable<ComponentProps<"form">["onSubmit"]>>[0];
 
 export interface ChatComposerCopy {
   placeholder: string;
@@ -42,7 +52,6 @@ export function ChatComposer({
   copy,
   onInputChange,
   onSubmit,
-  onKeyDown,
   onToggleRag,
   onModelChange,
   onAbort,
@@ -59,15 +68,72 @@ export function ChatComposer({
   initialPreferences: UserPreferenceOut;
   copy: ChatComposerCopy;
   onInputChange: (next: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onSubmit: (content: string) => boolean;
   onToggleRag: () => void;
   onModelChange: (next: { provider_id: string | null; model: string | null }) => void;
   onAbort: () => void;
 }) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [assets, setAssets] = useState<AssetOut[]>([]);
+  const uploading = uploadingCount > 0;
+
+  const uploadImages = async (files: File[]) => {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) return;
+
+    setUploadingCount((count) => count + imageFiles.length);
+    for (const file of imageFiles) {
+      try {
+        const asset = await api.assets.uploadImage(file);
+        setAssets((prev) => [...prev, asset]);
+      } catch (err) {
+        toast.error((err as Error).message || `Failed to upload ${file.name}`);
+      } finally {
+        setUploadingCount((count) => Math.max(0, count - 1));
+      }
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeAsset = (assetId: string) => {
+    setAssets((prev) => prev.filter((asset) => asset.id !== assetId));
+  };
+
+  const submitCurrent = () => {
+    if (streaming || uploading) return;
+    const content = buildOutgoingContent(input, assets);
+    if (!content) return;
+    if (onSubmit(content)) {
+      setAssets([]);
+    }
+  };
+
+  const handleSubmit = (event: FormSubmitEvent) => {
+    event.preventDefault();
+    submitCurrent();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      submitCurrent();
+    }
+  };
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
+    if (files.length === 0) return;
+    event.preventDefault();
+    void uploadImages(files);
+  };
+
   return (
     <form
-      onSubmit={onSubmit}
+      onSubmit={handleSubmit}
       className="border-t border-border bg-background/80 px-3 py-3 backdrop-blur sm:px-4 sm:py-4"
     >
       <div className="mx-auto max-w-3xl">
@@ -77,11 +143,38 @@ export function ChatComposer({
             "focus-within:border-primary/50 focus-within:shadow-md focus-within:shadow-primary/5"
           )}
         >
+          {assets.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-2 pt-1">
+              {assets.map((asset) => (
+                <div
+                  key={asset.id}
+                  className="flex max-w-full items-center gap-2 rounded-lg border border-border bg-muted/50 px-2 py-1 text-xs"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- signed asset URLs are already optimized upstream */}
+                  <img
+                    src={asset.url}
+                    alt={asset.filename}
+                    className="size-8 rounded object-cover"
+                  />
+                  <span className="max-w-40 truncate">{asset.filename}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAsset(asset.id)}
+                    className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    aria-label="Remove image"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <Textarea
             ref={inputRef}
             value={input}
             onChange={(event) => onInputChange(event.target.value)}
-            onKeyDown={onKeyDown}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={copy.placeholder}
             rows={1}
             className={cn(
@@ -96,6 +189,17 @@ export function ChatComposer({
             }}
             disabled={streaming}
           />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              const files = Array.from(event.target.files ?? []);
+              if (files.length > 0) void uploadImages(files);
+            }}
+          />
           <ComposerActions
             sessionId={sessionId}
             sessionMeta={sessionMeta}
@@ -107,6 +211,9 @@ export function ChatComposer({
             initialProviders={initialProviders}
             initialPreferences={initialPreferences}
             copy={copy}
+            uploading={uploading}
+            hasAssets={assets.length > 0}
+            onPickImage={() => fileInputRef.current?.click()}
             onToggleRag={onToggleRag}
             onModelChange={onModelChange}
             onAbort={onAbort}
@@ -131,6 +238,9 @@ function ComposerActions({
   initialProviders,
   initialPreferences,
   copy,
+  uploading,
+  hasAssets,
+  onPickImage,
   onToggleRag,
   onModelChange,
   onAbort,
@@ -145,12 +255,30 @@ function ComposerActions({
   initialProviders: ProviderOut[];
   initialPreferences: UserPreferenceOut;
   copy: ChatComposerCopy;
+  uploading: boolean;
+  hasAssets: boolean;
+  onPickImage: () => void;
   onToggleRag: () => void;
   onModelChange: (next: { provider_id: string | null; model: string | null }) => void;
   onAbort: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-1 border-t border-border/60 pt-1.5">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={streaming || uploading}
+        onClick={onPickImage}
+        className="gap-1.5 px-2 text-xs font-normal text-muted-foreground hover:text-foreground sm:px-3"
+      >
+        {uploading ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <ImagePlus className="size-3.5" />
+        )}
+        <span>Image</span>
+      </Button>
       <RagToggle
         enabled={useRag}
         disabled={streaming}
@@ -182,7 +310,7 @@ function ComposerActions({
           <Button
             type="submit"
             size="icon"
-            disabled={!input.trim()}
+            disabled={(!input.trim() && !hasAssets) || uploading}
             className="size-9 shrink-0 rounded-xl"
             aria-label={copy.send}
           >
@@ -192,6 +320,25 @@ function ComposerActions({
       </div>
     </div>
   );
+}
+
+function buildOutgoingContent(input: string, assets: AssetOut[]): string {
+  const text = input.trim();
+  const attachmentText = assets.map(formatImageAttachment).join("\n\n");
+  if (!attachmentText) return text;
+  return [text || "Please review the attached image.", attachmentText]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function formatImageAttachment(asset: AssetOut): string {
+  const filename = sanitizeAttachmentLine(asset.filename);
+  const description = sanitizeAttachmentLine(asset.description ?? "");
+  return `[Attached image: ${filename}](${asset.url})${description ? `\n${description}` : ""}`;
+}
+
+function sanitizeAttachmentLine(value: string): string {
+  return value.replace(/[\r\n\]]+/g, " ").trim();
 }
 
 function RagToggle({

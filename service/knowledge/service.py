@@ -96,6 +96,31 @@ class KnowledgeService:
         await self._session.delete(doc)
         await self._session.commit()
 
+    async def index_document(
+        self,
+        doc: Document,
+        *,
+        session_factory: async_sessionmaker[AsyncSession],
+        llm: LLMClient,
+        settings: Settings,
+    ) -> bool:
+        if not doc.body.strip():
+            return False
+        ingestor = DocumentIngestor(
+            session_factory=session_factory,
+            llm=llm,
+            user_id=self._user_id,
+            embed_model=await self._embedding_model(settings),
+        )
+        await ingestor.ingest_text(
+            doc.body,
+            source=doc.source,
+            title=doc.title,
+            meta=doc.meta,
+            document_id=doc.id,
+        )
+        return True
+
     async def reindex_documents(
         self,
         *,
@@ -106,11 +131,11 @@ class KnowledgeService:
         docs = (
             await self._session.scalars(select(Document).where(Document.user_id == self._user_id))
         ).all()
-        ingestor = DocumentIngestor.from_settings(
+        ingestor = DocumentIngestor(
             session_factory=session_factory,
             llm=llm,
             user_id=self._user_id,
-            s=settings,
+            embed_model=await self._embedding_model(settings),
         )
         indexed = 0
         for doc in docs:
@@ -121,6 +146,7 @@ class KnowledgeService:
                 source=doc.source,
                 title=doc.title,
                 meta=doc.meta,
+                document_id=doc.id,
             )
             indexed += 1
         return indexed
@@ -136,11 +162,12 @@ class KnowledgeService:
     ) -> list[KnowledgeSearchHit]:
         if not settings.retrieval.enabled:
             return []
-        kb = PgvectorKnowledgeBase.from_settings(
+        kb = PgvectorKnowledgeBase(
             session_factory=session_factory,
             llm=llm,
             user_id=self._user_id,
-            s=settings,
+            embed_model=await self._embedding_model(settings),
+            min_score=float(settings.retrieval.min_score),
         )
         hits = await kb.search(query, top_k=top_k)
         out: list[KnowledgeSearchHit] = []
@@ -156,3 +183,12 @@ class KnowledgeService:
                 )
             )
         return out
+
+    async def _embedding_model(self, settings: Settings) -> str | None:
+        from service.db.models import UserPreference
+
+        pref = await self._session.get(UserPreference, self._user_id)
+        del settings
+        if pref is not None and pref.default_embedding_model:
+            return pref.default_embedding_model
+        return None
