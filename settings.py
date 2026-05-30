@@ -183,6 +183,8 @@ class RetrievalSettings(_GroupBase):
     # Embedding dimension used by pgvector `Vector(dim)` column.
     # Defaults to 768 for `nomic-embed-text`; switch with the model.
     embed_dim: int = 768
+    image_caption_enabled: bool = False
+    image_caption_model: str | None = None
 
 
 class RateLimitSettings(_GroupBase):

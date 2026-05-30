@@ -22,6 +22,10 @@ class LocalObjectStorage:
         await asyncio.to_thread(path.write_bytes, data)
         return StoredObject(key=key, url=await self.presigned_get_url(key))
 
+    async def get_bytes(self, key: str) -> bytes:
+        path = self._path_for_key(key)
+        return await asyncio.to_thread(path.read_bytes)
+
     async def presigned_get_url(self, key: str, *, expires_in: int = 3600) -> str:
         del expires_in
         return f"{self._public_base_url}/{key.lstrip('/')}"

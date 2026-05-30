@@ -99,8 +99,9 @@ function ProviderModels({
     );
   }
 
-  const chatModels = provider.models.filter((item) => item.kind !== "embedding");
-  const embedCount = provider.models.length - chatModels.length;
+  const chatModels = provider.models.filter((item) => item.kind === "chat" || !item.kind);
+  const embedCount = provider.models.filter((item) => item.kind === "embedding").length;
+  const visionCount = provider.models.filter((item) => item.kind === "vision").length;
 
   return (
     <>

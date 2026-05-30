@@ -51,8 +51,8 @@ export interface ProviderOut {
 export interface ModelListItem {
   id: string;
   size: number | null;
-  /** ``"embedding"`` means this model is meant for vectorisation, not chat. */
-  kind?: "chat" | "embedding";
+  /** Special-purpose models are filtered into their own UI surfaces. */
+  kind?: "chat" | "embedding" | "vision";
   /** User-authored free-text note shown as a hover tooltip in pickers. */
   description?: string | null;
 }

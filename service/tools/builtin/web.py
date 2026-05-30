@@ -20,7 +20,11 @@ from service.tools import FunctionTool, Tool, ToolResult
 __all__ = ["build_web_tools"]
 
 _TIMEOUT = httpx.Timeout(12.0, connect=5.0)
-_UA = "rag-ai-cli/0.1 (+https://localhost)"
+_UA = "Mozilla/5.0 (compatible; rag-ai-cli/0.1; +https://localhost)"
+_SEARCH_ENDPOINTS = (
+    "https://html.duckduckgo.com/html/",
+    "https://duckduckgo.com/html/",
+)
 
 
 class _SearchParser(HTMLParser):
@@ -128,9 +132,12 @@ async def _web_search(args: dict[str, Any]) -> ToolResult:
         return ToolResult(content="query is required", is_error=True)
     limit = _clamp_int(args.get("limit"), default=5, low=1, high=8)
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": _UA}) as client:
-            resp = await client.get("https://duckduckgo.com/html/", params={"q": query})
-            resp.raise_for_status()
+        async with httpx.AsyncClient(
+            timeout=_TIMEOUT,
+            headers={"User-Agent": _UA, "Accept-Language": "en-US,en;q=0.9"},
+            follow_redirects=True,
+        ) as client:
+            resp = await _fetch_search_results(client, query)
     except httpx.HTTPError as exc:
         return ToolResult(content=f"web_search failed: {type(exc).__name__}: {exc}", is_error=True)
 
@@ -145,6 +152,18 @@ async def _web_search(args: dict[str, Any]) -> ToolResult:
         content=json.dumps({"query": query, "results": results}, ensure_ascii=False),
         metadata={"sources": sources},
     )
+
+
+async def _fetch_search_results(client: httpx.AsyncClient, query: str) -> httpx.Response:
+    last_response: httpx.Response | None = None
+    for endpoint in _SEARCH_ENDPOINTS:
+        resp = await client.get(endpoint, params={"q": query})
+        last_response = resp
+        if resp.status_code < 400 and "result__a" in resp.text:
+            return resp
+    assert last_response is not None
+    last_response.raise_for_status()
+    return last_response
 
 
 async def _web_fetch(args: dict[str, Any]) -> ToolResult:

@@ -77,10 +77,9 @@ class ConnectivityTestOut(BaseModel):
 class ModelListItem(BaseModel):
     id: str
     size: int | None = None
-    #: ``"chat"`` (the default) or ``"embedding"``. The UI uses this to keep
-    #: embed-only models out of the chat model dropdown — they belong to a
-    #: separate per-user preference managed in Settings.
-    kind: Literal["chat", "embedding"] = "chat"
+    #: ``"chat"`` (the default), ``"embedding"`` or ``"vision"``. The UI uses
+    #: this to keep special-purpose models out of the generic chat dropdown.
+    kind: Literal["chat", "embedding", "vision"] = "chat"
     #: User-authored free-text note, joined from ``model_metadata``. ``None``
     #: when the user hasn't attached one.
     description: str | None = None

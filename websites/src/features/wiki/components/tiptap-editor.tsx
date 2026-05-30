@@ -1,15 +1,22 @@
 "use client";
 
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { ImagePlus, Loader2 } from "lucide-react";
 import { all, createLowlight } from "lowlight";
+import { useRef, useState, type ComponentProps } from "react";
+import { toast } from "sonner";
 import { Markdown } from "tiptap-markdown";
 
+import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api/browser";
+import type { AssetOut } from "@/lib/api/shared/types";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -25,6 +32,12 @@ interface Props {
 }
 
 const lowlight = createLowlight(all);
+
+type FileInputChangeEvent = Parameters<
+  NonNullable<ComponentProps<"input">["onChange"]>
+>[0];
+type EditorPasteEvent = Parameters<NonNullable<ComponentProps<"div">["onPaste"]>>[0];
+type EditorDropEvent = Parameters<NonNullable<ComponentProps<"div">["onDrop"]>>[0];
 
 /**
  * Feishu/Notion-style WYSIWYG markdown editor backed by TipTap +
@@ -53,6 +66,10 @@ export function TipTapEditor({
   onReady,
   className,
 }: Props) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const uploading = uploadingCount > 0;
+
   const editor = useEditor({
     immediatelyRender: false, // avoid hydration mismatch in Next App Router
     extensions: [
@@ -71,6 +88,13 @@ export function TipTapEditor({
         HTMLAttributes: {
           rel: "noopener noreferrer nofollow",
           target: "_blank",
+        },
+      }),
+      Image.configure({
+        inline: false,
+        allowBase64: false,
+        HTMLAttributes: {
+          loading: "lazy",
         },
       }),
       TaskList,
@@ -118,6 +142,98 @@ export function TipTapEditor({
     },
   });
 
+  const uploadImages = async (files: File[]) => {
+    if (!editor || readOnly) return;
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) return;
+
+    setUploadingCount((count) => count + imageFiles.length);
+    for (const file of imageFiles) {
+      try {
+        const asset = await api.assets.uploadImage(file);
+        insertImage(editor, asset);
+      } catch (err) {
+        toast.error((err as Error).message || `Failed to upload ${file.name}`);
+      } finally {
+        setUploadingCount((count) => Math.max(0, count - 1));
+      }
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const onPickImage = () => fileInputRef.current?.click();
+
+  const onFileChange = (event: FileInputChangeEvent) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length > 0) void uploadImages(files);
+  };
+
+  const onPaste = (event: EditorPasteEvent) => {
+    const files = filesFromClipboard(event.clipboardData);
+    if (files.length === 0) return;
+    event.preventDefault();
+    void uploadImages(files);
+  };
+
+  const onDrop = (event: EditorDropEvent) => {
+    const files = Array.from(event.dataTransfer.files).filter((file) =>
+      file.type.startsWith("image/")
+    );
+    if (files.length === 0) return;
+    event.preventDefault();
+    void uploadImages(files);
+  };
+
   if (!editor) return null;
-  return <EditorContent editor={editor} className={className} />;
+  return (
+    <div className={cn("relative", className)} onPaste={onPaste} onDrop={onDrop}>
+      {!readOnly && (
+        <div className="sticky top-0 z-10 mb-3 flex justify-end bg-background/80 py-1 backdrop-blur">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            className="hidden"
+            onChange={onFileChange}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-2 text-xs"
+            disabled={uploading}
+            onClick={onPickImage}
+          >
+            {uploading ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <ImagePlus className="size-3.5" />
+            )}
+            <span>{uploading ? "Uploading…" : "Image"}</span>
+          </Button>
+        </div>
+      )}
+      <EditorContent editor={editor} />
+    </div>
+  );
+}
+
+function filesFromClipboard(data: DataTransfer): File[] {
+  return Array.from(data.items)
+    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+}
+
+function insertImage(editor: Editor, asset: AssetOut) {
+  editor
+    .chain()
+    .focus()
+    .setImage({
+      src: asset.url,
+      alt: asset.filename,
+      title: asset.description ?? undefined,
+    })
+    .run();
 }

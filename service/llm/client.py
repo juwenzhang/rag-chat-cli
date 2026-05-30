@@ -77,6 +77,7 @@ class ChatMessage:
     tool_calls: tuple[ToolCall, ...] = ()
     tool_call_id: str | None = None
     sources: tuple[dict[str, Any], ...] = ()
+    image_urls: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

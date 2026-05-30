@@ -41,8 +41,21 @@ class KnowledgeService:
         self._session = session
         self._user_id = user_id
 
-    async def create_document(self, *, source: str, title: str, body: str) -> Document:
-        doc = Document(user_id=self._user_id, source=source, title=title, body=body)
+    async def create_document(
+        self,
+        *,
+        source: str,
+        title: str,
+        body: str,
+        meta: dict[str, object] | None = None,
+    ) -> Document:
+        doc = Document(
+            user_id=self._user_id,
+            source=source,
+            title=title,
+            body=body,
+            meta=meta or {},
+        )
         self._session.add(doc)
         await self._session.commit()
         await self._session.refresh(doc)
