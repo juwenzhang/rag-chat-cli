@@ -31,6 +31,11 @@ _SEARCH_ENDPOINTS = (
     "https://duckduckgo.com/html/",
     "https://lite.duckduckgo.com/lite/",
 )
+_MAX_SEARCH_QUERY_CHARS = 240
+_MAX_SEARCH_RESULTS = 5
+_MAX_SEARCH_SNIPPET_CHARS = 700
+_MAX_SEARCH_TOTAL_SNIPPET_CHARS = 3_000
+_MAX_FETCH_CHARS = 6_000
 
 
 class _SearchParser(HTMLParser):
@@ -103,12 +108,12 @@ def build_web_tools(
     return [
         FunctionTool(
             name="web_search",
-            description="Search the web for up-to-date information. Returns top result titles and URLs.",
+            description="Search the web for up-to-date information. Returns compact result titles, URLs, and short snippets.",
             parameters={
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search query."},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 8, "default": 5},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 5, "default": 5},
                 },
                 "required": ["query"],
             },
@@ -124,7 +129,7 @@ def build_web_tools(
                     "max_chars": {
                         "type": "integer",
                         "minimum": 500,
-                        "maximum": 12000,
+                        "maximum": 6000,
                         "default": 4000,
                     },
                 },
@@ -140,10 +145,11 @@ def _resolve_api_key(value: str | Callable[[], str | None] | None) -> str | None
 
 
 async def _web_search(args: dict[str, Any], *, ollama_api_key: str | None = None) -> ToolResult:
-    query = str(args.get("query") or "").strip()
+    raw_query = str(args.get("query") or "").strip()
+    query = _compact_query(raw_query)
     if not query:
         return ToolResult(content="query is required", is_error=True)
-    limit = _clamp_int(args.get("limit"), default=5, low=1, high=8)
+    limit = _clamp_int(args.get("limit"), default=5, low=1, high=_MAX_SEARCH_RESULTS)
 
     official_error: str | None = None
     if ollama_api_key:
@@ -178,7 +184,7 @@ async def _web_search(args: dict[str, Any], *, ollama_api_key: str | None = None
 
     parser = _SearchParser()
     parser.feed(resp.text)
-    results = parser.results[:limit]
+    results = _clip_search_results(parser.results[:limit])
     sources = _sources_from_search_results(results)
     payload: dict[str, Any] = {"query": query, "results": results, "provider": "duckduckgo"}
     if official_error:
@@ -198,7 +204,7 @@ async def _ollama_web_search(query: str, *, limit: int, api_key: str) -> ToolRes
         resp.raise_for_status()
         data = resp.json()
 
-    results = _normalize_ollama_search_results(data, limit=limit)
+    results = _clip_search_results(_normalize_ollama_search_results(data, limit=limit))
     return ToolResult(
         content=json.dumps(
             {"query": query, "results": results, "provider": "ollama"},
@@ -220,8 +226,11 @@ def _normalize_ollama_search_results(data: Any, *, limit: int) -> list[dict[str,
         url = str(item.get("url") or "").strip()
         if not url:
             continue
-        title = str(item.get("title") or url).strip()
-        quote = str(item.get("content") or item.get("snippet") or item.get("text") or "").strip()
+        title = _compact_text(str(item.get("title") or url).strip(), max_chars=240)
+        quote = _compact_text(
+            str(item.get("content") or item.get("snippet") or item.get("text") or "").strip(),
+            max_chars=_MAX_SEARCH_SNIPPET_CHARS,
+        )
         result = {"title": title, "url": url}
         if quote:
             result["content"] = quote
@@ -229,6 +238,27 @@ def _normalize_ollama_search_results(data: Any, *, limit: int) -> list[dict[str,
         if len(results) >= limit:
             break
     return results
+
+
+def _clip_search_results(results: list[dict[str, str]]) -> list[dict[str, str]]:
+    clipped: list[dict[str, str]] = []
+    remaining_snippet_chars = _MAX_SEARCH_TOTAL_SNIPPET_CHARS
+    for result in results[:_MAX_SEARCH_RESULTS]:
+        item = {
+            "title": _compact_text(result.get("title", ""), max_chars=240),
+            "url": result.get("url", ""),
+        }
+        content = result.get("content")
+        if content and remaining_snippet_chars > 0:
+            snippet = _compact_text(
+                content,
+                max_chars=min(_MAX_SEARCH_SNIPPET_CHARS, remaining_snippet_chars),
+            )
+            if snippet:
+                item["content"] = snippet
+                remaining_snippet_chars -= len(snippet)
+        clipped.append(item)
+    return clipped
 
 
 def _sources_from_search_results(results: list[dict[str, str]]) -> list[dict[str, Any]]:
@@ -280,7 +310,7 @@ async def _web_fetch(args: dict[str, Any], *, ollama_api_key: str | None = None)
     url = str(args.get("url") or "").strip()
     if not _is_http_url(url):
         return ToolResult(content="url must start with http:// or https://", is_error=True)
-    max_chars = _clamp_int(args.get("max_chars"), default=4000, low=500, high=12000)
+    max_chars = _clamp_int(args.get("max_chars"), default=4000, low=500, high=_MAX_FETCH_CHARS)
 
     official_error: str | None = None
     if ollama_api_key:
@@ -303,8 +333,8 @@ async def _web_fetch(args: dict[str, Any], *, ollama_api_key: str | None = None)
 
     parser = _TextParser()
     parser.feed(resp.text)
-    text = re.sub(r"\s+", " ", " ".join(parser.text)).strip()[:max_chars]
-    title = parser.title.strip() or url
+    text = _compact_text(" ".join(parser.text), max_chars=max_chars)
+    title = _compact_text(parser.title.strip() or url, max_chars=240)
     source = {"source_type": "web", "rank": 1, "title": title, "url": str(resp.url), "quote": text}
     payload: dict[str, Any] = {
         "url": str(resp.url),
@@ -358,6 +388,17 @@ def _clean_duckduckgo_url(href: str) -> str:
 def _is_http_url(url: str) -> bool:
     parsed = urlparse(url)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _compact_query(query: str) -> str:
+    return _compact_text(query, max_chars=_MAX_SEARCH_QUERY_CHARS)
+
+
+def _compact_text(text: str, *, max_chars: int) -> str:
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return cleaned[: max(0, max_chars - 1)].rstrip() + "…"
 
 
 def _clamp_int(value: object, *, default: int, low: int, high: int) -> int:

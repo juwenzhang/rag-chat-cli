@@ -407,6 +407,7 @@ class ChatService:
         # 1. Optional retrieval (one-shot, before the loop). Emit the
         # ``retrieval`` event for the UI; the hit list itself goes into
         # the prompt prelude via :class:`PromptBuilder` below.
+        history = _compact_history_tool_messages(history)
         if think is not False:
             yield {"type": "thought", "text": "Thinking through the request"}
         if use_rag and self._kb is not None:
@@ -480,7 +481,7 @@ class ChatService:
             tc = ToolCall(
                 id=f"call_auto_web_{uuid.uuid4().hex[:12]}",
                 name="web_search",
-                arguments={"query": user_text, "limit": 5},
+                arguments={"query": _build_web_search_query(user_text), "limit": 5},
             )
             executed_tool_keys.add(_tool_call_key(tc))
             yield {"type": "thought", "text": "Searching web"}
@@ -502,6 +503,7 @@ class ChatService:
                 "content": result.content,
                 "is_error": result.is_error,
             }
+            messages.append(ChatMessage(role="system", content=_WEB_EVIDENCE_INSTRUCTION))
             messages.append(ChatMessage(role="assistant", content="", tool_calls=(tc,)))
             messages.append(
                 ChatMessage(
@@ -1008,6 +1010,13 @@ def _aborted_event() -> Event:
     }
 
 
+_WEB_EVIDENCE_INSTRUCTION = (
+    "Use the following web/tool evidence for factual claims when relevant. Evidence may be "
+    "compressed; do not assume omitted details. Preserve exact option names, commands, "
+    "versions, defaults, and caveats. If evidence is insufficient, state the gap explicitly."
+)
+
+
 def _empty_answer_fallback(sources: list[dict[str, Any]]) -> str:
     if sources:
         return (
@@ -1015,6 +1024,80 @@ def _empty_answer_fallback(sources: list[dict[str, Any]]) -> str:
             "Please retry, or open the sources panel to inspect the collected evidence."
         )
     return "The model stopped before producing a final answer. Please retry."
+
+
+def _compact_history_tool_messages(messages: list[ChatMessage]) -> list[ChatMessage]:
+    compacted: list[ChatMessage] = []
+    for message in messages:
+        if message.role != "tool":
+            compacted.append(message)
+            continue
+        content = _compact_tool_result_for_history(message.content, message.tool_name)
+        compacted.append(
+            ChatMessage(
+                role="tool",
+                content=content,
+                tool_call_id=message.tool_call_id,
+                tool_name=message.tool_name,
+            )
+        )
+    return compacted
+
+
+def _compact_tool_result_for_history(content: str, tool_name: str | None) -> str:
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        return _compact_context_text(content, max_chars=1_500)
+    if not isinstance(data, dict):
+        return _compact_context_text(content, max_chars=1_500)
+
+    if tool_name == "web_search" or "results" in data:
+        compact: dict[str, Any] = {
+            "summary": "Previous web_search result compacted for context budget.",
+            "query": data.get("query"),
+            "provider": data.get("provider"),
+        }
+        if data.get("warning"):
+            compact["warning"] = data.get("warning")
+        raw_results = data.get("results")
+        results: list[dict[str, str]] = []
+        if isinstance(raw_results, list):
+            for item in raw_results[:5]:
+                if not isinstance(item, dict):
+                    continue
+                title = _compact_context_text(str(item.get("title") or ""), max_chars=160)
+                url = str(item.get("url") or "")
+                if title or url:
+                    results.append({"title": title, "url": url})
+        compact["results"] = results
+        return json.dumps(compact, ensure_ascii=False)
+
+    if tool_name == "web_fetch" or "text" in data:
+        compact = {
+            "summary": "Previous web_fetch result compacted for context budget.",
+            "title": data.get("title"),
+            "url": data.get("url"),
+            "provider": data.get("provider"),
+            "text": _compact_context_text(str(data.get("text") or ""), max_chars=1_200),
+        }
+        return json.dumps(compact, ensure_ascii=False)
+
+    return _compact_context_text(content, max_chars=1_500)
+
+
+def _build_web_search_query(text: str) -> str:
+    query = " ".join(text.split())
+    if len(query) <= 240:
+        return query
+    return query[:239].rstrip() + "…"
+
+
+def _compact_context_text(text: str, *, max_chars: int) -> str:
+    cleaned = " ".join(text.split())
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return cleaned[: max(0, max_chars - 1)].rstrip() + "…"
 
 
 def _tool_call_key(call: ToolCall) -> str:
