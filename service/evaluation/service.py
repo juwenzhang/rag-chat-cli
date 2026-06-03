@@ -1,0 +1,126 @@
+"""Answer quality evaluation using a resident judge model."""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass
+from typing import Any
+
+from service.llm.client import ChatMessage, LLMClient
+
+__all__ = ["AnswerEvaluation", "evaluate_answer"]
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerEvaluation:
+    overall: int
+    helpfulness: int
+    groundedness: int
+    citation_quality: int
+    completeness: int
+    risk: str
+    comment: str
+    raw: dict[str, Any]
+
+
+_SYSTEM_PROMPT = """You are an answer-quality evaluator. Return ONLY valid JSON.
+Score each dimension from 1 to 5.
+Risk must be one of: low, medium, high.
+Comment must be concise Chinese.
+Do not include markdown fences."""
+
+
+async def evaluate_answer(
+    *,
+    llm: LLMClient,
+    model: str,
+    question: str,
+    answer: str,
+    sources: list[dict[str, Any]] | None,
+) -> AnswerEvaluation:
+    source_text = _format_sources(sources or [])
+    prompt = f"""Evaluate this assistant answer.
+
+User question:
+{question or "(unknown)"}
+
+Assistant answer:
+{answer}
+
+Sources used by the answer:
+{source_text or "(none)"}
+
+Return JSON with exactly these keys:
+overall, helpfulness, groundedness, citation_quality, completeness, risk, comment
+"""
+    chunks: list[str] = []
+    async for chunk in llm.chat_stream(
+        [
+            ChatMessage(role="system", content=_SYSTEM_PROMPT),
+            ChatMessage(role="user", content=prompt),
+        ],
+        model=model,
+        tools=None,
+    ):
+        if chunk.delta:
+            chunks.append(chunk.delta)
+        if chunk.done:
+            break
+    raw_text = "".join(chunks).strip()
+    parsed = _parse_json_object(raw_text)
+    return AnswerEvaluation(
+        overall=_score(parsed.get("overall")),
+        helpfulness=_score(parsed.get("helpfulness")),
+        groundedness=_score(parsed.get("groundedness")),
+        citation_quality=_score(parsed.get("citation_quality")),
+        completeness=_score(parsed.get("completeness")),
+        risk=_risk(parsed.get("risk")),
+        comment=str(parsed.get("comment") or "评分完成。")[:1000],
+        raw={"text": raw_text, "parsed": parsed},
+    )
+
+
+def _format_sources(sources: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for source in sources[:12]:
+        rank = source.get("rank") or len(lines) + 1
+        title = source.get("title") or source.get("source") or source.get("url") or "source"
+        quote = source.get("quote") or ""
+        url = source.get("url") or ""
+        lines.append(f"[{rank}] {title}\nURL: {url}\nQUOTE: {quote[:1200]}")
+    return "\n\n".join(lines)
+
+
+def _parse_json_object(text: str) -> dict[str, Any]:
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", text, flags=re.S)
+    if not match:
+        return {}
+    try:
+        data = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _score(value: object) -> int:
+    if isinstance(value, bool):
+        n = 3
+    elif isinstance(value, (str, bytes, bytearray, int, float)):
+        try:
+            n = int(value)
+        except ValueError:
+            n = 3
+    else:
+        n = 3
+    return max(1, min(5, n))
+
+
+def _risk(value: object) -> str:
+    text = str(value or "low").lower().strip()
+    return text if text in {"low", "medium", "high"} else "low"

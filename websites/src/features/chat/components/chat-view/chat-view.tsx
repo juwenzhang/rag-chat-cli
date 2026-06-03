@@ -38,10 +38,12 @@ export function ChatView({
   const messages = useChatStore((state) => state.messages);
   const streaming = useChatStore((state) => state.streaming);
   const useRag = useChatStore((state) => state.useRag);
+  const think = useChatStore((state) => state.think);
   const providerId = useChatStore((state) => state.providerId);
   const model = useChatStore((state) => state.model);
   const initSession = useChatStore((state) => state.initSession);
   const setUseRag = useChatStore((state) => state.setUseRag);
+  const setThink = useChatStore((state) => state.setThink);
   const setModelSelection = useChatStore((state) => state.setModelSelection);
   const send = useChatStore((state) => state.send);
   const regenerate = useChatStore((state) => state.regenerate);
@@ -97,6 +99,10 @@ export function ChatView({
         ragOff: t("chat.composer.ragOff"),
         ragEnabledTip: t("chat.composer.ragEnabledTip"),
         ragDisabledTip: t("chat.composer.ragDisabledTip"),
+        thinkOn: t("chat.composer.thinkOn"),
+        thinkOff: t("chat.composer.thinkOff"),
+        thinkEnabledTip: t("chat.composer.thinkEnabledTip"),
+        thinkDisabledTip: t("chat.composer.thinkDisabledTip"),
       },
     }),
     [t]
@@ -194,6 +200,7 @@ export function ChatView({
         input={input}
         streaming={streaming}
         useRag={useRag}
+        think={think}
         providerId={providerId}
         model={model}
         inputRef={inputRef}
@@ -203,6 +210,7 @@ export function ChatView({
         onInputChange={setInput}
         onSubmit={submit}
         onToggleRag={() => setUseRag(!useRag)}
+        onToggleThink={() => setThink(think === false ? true : false)}
         onModelChange={setModelSelection}
         onAbort={abort}
       />

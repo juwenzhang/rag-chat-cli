@@ -98,12 +98,14 @@ chat in five minutes" path. Every command is copy-paste ready.
 # 1. Install Python deps
 uv sync --all-extras
 
-# 2. Make sure Ollama is running and pull the two models the CLI uses:
-#    - the chat model (defaults to qwen2.5:1.5b — adjust as you wish)
+# 2. Make sure Ollama is running and pull the models the app uses:
+#    - the chat model (defaults to qwen3-coder-next:cloud — adjust as you wish)
 #    - the embed model (required for /save, /reflect, /kb search, RAG)
+#    - the vision model (required for uploaded image captions)
 ollama serve &                       # in a separate terminal if not already up
-ollama pull qwen2.5:1.5b
+ollama pull qwen3-coder-next:cloud
 ollama pull nomic-embed-text         # MUST pull this — /save will error 404 otherwise
+ollama pull qwen3-vl:235b-cloud      # required for image captioning
 
 # 3. Configure environment
 cp .env.example .env

@@ -26,7 +26,7 @@ from typing import Any
 
 import httpx
 
-from service.llm.client import ChatChunk, ChatMessage, LLMError, ToolCall, ToolSpec
+from service.llm.client import ChatChunk, ChatMessage, LLMError, ThinkingMode, ToolCall, ToolSpec
 
 __all__ = ["OpenAIClient"]
 
@@ -236,6 +236,7 @@ class OpenAIClient:
         *,
         model: str | None = None,
         tools: list[ToolSpec] | None = None,
+        think: ThinkingMode | None = None,
     ) -> AsyncIterator[ChatChunk]:
         """Stream chat completions as :class:`ChatChunk` events.
 
@@ -245,6 +246,7 @@ class OpenAIClient:
             On non-2xx HTTP, malformed SSE line, or transport failure.
         """
 
+        del think  # OpenAI-compatible providers vary; keep native thinking Ollama-only for now.
         payload: dict[str, Any] = {
             "model": model or self._chat_model,
             "messages": [_message_to_wire(m) for m in messages],

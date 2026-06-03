@@ -65,5 +65,6 @@ def classify_model_kind(tag: str) -> Literal["chat", "embedding", "vision"]:
 
 
 def is_cloud_model_tag(tag: str) -> bool:
-    """Heuristic: an Ollama tag is ``cloud`` when it ends in ``-cloud``."""
-    return tag.lower().endswith("-cloud")
+    """Heuristic: an Ollama tag is cloud-hosted when it uses cloud suffix syntax."""
+    t = tag.strip().lower()
+    return t.endswith(":cloud") or t.endswith("-cloud")

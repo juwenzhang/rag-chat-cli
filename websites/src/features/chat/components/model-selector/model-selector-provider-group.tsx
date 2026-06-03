@@ -120,6 +120,7 @@ function ProviderModels({
         ))
       )}
       {embedCount > 0 && <HiddenEmbeddingNote count={embedCount} />}
+      {visionCount > 0 && <HiddenVisionNote count={visionCount} />}
     </>
   );
 }
@@ -172,6 +173,14 @@ function HiddenEmbeddingNote({ count }: { count: number }) {
       <Link href="/settings/providers" className="underline hover:text-foreground">
         Settings
       </Link>
+    </div>
+  );
+}
+
+function HiddenVisionNote({ count }: { count: number }) {
+  return (
+    <div className="px-3 py-1 text-[10px] text-muted-foreground/80">
+      +{count} vision model{count === 1 ? "" : "s"} hidden — used by image features
     </div>
   );
 }

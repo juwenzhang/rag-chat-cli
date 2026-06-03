@@ -4,6 +4,8 @@ import { BookOpen, Clock, Cpu, Hash } from "lucide-react";
 
 import type { UIMessage } from "../types";
 
+import { SourcesDrawerTrigger } from "./sources-block";
+
 /** Compact metadata line under a finished answer — model, tokens, duration. */
 export function MessageFooter({ message }: { message: UIMessage }) {
   const parts: React.ReactNode[] = [];
@@ -40,10 +42,15 @@ export function MessageFooter({ message }: { message: UIMessage }) {
   }
   if (message.sources && message.sources.length > 0) {
     parts.push(
-      <span key="sources" className="inline-flex items-center gap-1">
-        <BookOpen className="size-3" />
-        {message.sources.length} source{message.sources.length === 1 ? "" : "s"}
-      </span>
+      <SourcesDrawerTrigger key="sources" sources={message.sources}>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 transition-colors hover:text-foreground hover:underline"
+        >
+          <BookOpen className="size-3" />
+          {message.sources.length} source{message.sources.length === 1 ? "" : "s"}
+        </button>
+      </SourcesDrawerTrigger>
     );
   }
   if (parts.length === 0) return null;

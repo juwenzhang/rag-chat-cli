@@ -23,6 +23,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from service.llm.client import ThinkingMode
+
 __all__ = ["Settings", "settings"]
 
 logger = logging.getLogger(__name__)
@@ -65,6 +67,7 @@ _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
     "OLLAMA_EMBED_MODEL": ("ollama", "embed_model"),
     "OLLAMA_TIMEOUT": ("ollama", "timeout"),
     "OLLAMA_API_KEY": ("ollama", "api_key"),
+    "OLLAMA_THINK": ("ollama", "think"),
     # openai (P5.1)
     "OPENAI_BASE_URL": ("openai", "base_url"),
     "OPENAI_CHAT_MODEL": ("openai", "chat_model"),
@@ -77,6 +80,12 @@ _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
     "RAG_TOP_K": ("retrieval", "top_k"),
     "RAG_MIN_SCORE": ("retrieval", "min_score"),
     "RAG_EMBED_DIM": ("retrieval", "embed_dim"),
+    "RAG_IMAGE_CAPTION_ENABLED": ("retrieval", "image_caption_enabled"),
+    "RAG_IMAGE_CAPTION_MODEL": ("retrieval", "image_caption_model"),
+    # evaluation
+    "EVALUATION_ENABLED": ("evaluation", "enabled"),
+    "EVALUATION_MODEL": ("evaluation", "model"),
+    "EVALUATION_TIMEOUT": ("evaluation", "timeout"),
     # rate limit
     "RATE_LIMIT_PER_MIN": ("rate_limit", "per_min"),
     # security (Sprint 2): Fernet key for at-rest encryption of provider API keys.
@@ -150,7 +159,7 @@ class RedisSettings(_GroupBase):
 
 class OllamaSettings(_GroupBase):
     base_url: str = "http://ollama:11434"
-    chat_model: str = "qwen2.5:1.5b"
+    chat_model: str = "qwen3-coder-next:cloud"
     embed_model: str = "nomic-embed-text"
     timeout: int = 120
     # Bearer token for hosted/proxied Ollama (e.g. ollama.com cloud,
@@ -158,6 +167,23 @@ class OllamaSettings(_GroupBase):
     # Sent as `Authorization: Bearer <api_key>` on every request when set.
     # Local default `http://localhost:11434` does not require this.
     api_key: str | None = None
+    # Native Ollama thinking control. ``None`` leaves provider/model default.
+    think: ThinkingMode | None = None
+
+    @field_validator("think", mode="before")
+    @classmethod
+    def _parse_think(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in {"", "none", "auto", "default"}:
+                return None
+            if text in {"true", "1", "yes", "on"}:
+                return True
+            if text in {"false", "0", "no", "off"}:
+                return False
+            if text in {"low", "medium", "high"}:
+                return text
+        return value
 
 
 class OpenAISettings(_GroupBase):
@@ -183,8 +209,14 @@ class RetrievalSettings(_GroupBase):
     # Embedding dimension used by pgvector `Vector(dim)` column.
     # Defaults to 768 for `nomic-embed-text`; switch with the model.
     embed_dim: int = 768
-    image_caption_enabled: bool = False
-    image_caption_model: str | None = None
+    image_caption_enabled: bool = True
+    image_caption_model: str | None = "qwen3-vl:235b-cloud"
+
+
+class EvaluationSettings(_GroupBase):
+    enabled: bool = True
+    model: str = "gemma4:31b-cloud"
+    timeout: int = 120
 
 
 class RateLimitSettings(_GroupBase):
@@ -316,6 +348,7 @@ class Settings(BaseSettings):
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
     openai: OpenAISettings = Field(default_factory=OpenAISettings)
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
+    evaluation: EvaluationSettings = Field(default_factory=EvaluationSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
@@ -361,7 +394,7 @@ class Settings(BaseSettings):
         保证首次本地启动不因缺配置而失败；`prod` 环境则必须显式配置。
         """
         try:
-            return cls()
+            return cls()  # pyright: ignore[reportCallIssue] - BaseSettings populates required fields from env.
         except Exception:
             # 检查当前 env；优先看显式 env var，再看 .env 通过 AppSettings 默认解析
             env_name = os.environ.get("APP_ENV") or os.environ.get("APP__ENV")

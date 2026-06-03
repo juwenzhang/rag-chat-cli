@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
+from typing import cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.deps import get_current_user, get_db_session, get_session_factory
@@ -13,7 +17,7 @@ from api.schemas.asset import AssetOut
 from service.db.models import Asset, User
 from service.knowledge import KnowledgeService
 from service.providers.runtime import build_llm_for_user
-from service.storage import build_object_storage
+from service.storage import ObjectStorage, build_object_storage
 from service.storage.images import normalize_image_to_webp
 from service.storage.vision import describe_image_asset
 
@@ -32,6 +36,7 @@ _WEBP_QUALITY = 82
 async def upload_image(
     file: UploadFile,
     request: Request,
+    response: Response,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
@@ -45,6 +50,16 @@ async def upload_image(
     if len(data) > _MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="image too large")
 
+    source_hash = _sha256_hex(data)
+    existing = await _find_existing_image_by_source_hash(
+        session,
+        user_id=user.id,
+        source_hash=source_hash,
+    )
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        return await _to_out(existing, request)
+
     try:
         normalized = await normalize_image_to_webp(
             data=data,
@@ -56,9 +71,28 @@ async def upload_image(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    asset_id = uuid.uuid4()
-    key = f"assets/{user.id}/{asset_id}.webp"
     storage = build_object_storage(request.app.state.settings)
+    content_hash = _sha256_hex(normalized.data)
+    existing = await _find_existing_image_by_content_hash(
+        session,
+        user_id=user.id,
+        content_hash=content_hash,
+    )
+    if existing is None:
+        existing = await _find_legacy_image_by_content_hash(
+            session,
+            storage,
+            user_id=user.id,
+            content_hash=content_hash,
+            size_bytes=len(normalized.data),
+        )
+    if existing is not None:
+        await _remember_source_hash(session, existing, source_hash)
+        response.status_code = status.HTTP_200_OK
+        return await _to_out(existing, request)
+
+    asset_id = uuid.uuid4()
+    key = f"assets/{user.id}/{content_hash}.webp"
     stored = await storage.put_bytes(
         key=key,
         data=normalized.data,
@@ -72,10 +106,30 @@ async def upload_image(
         content_type=normalized.content_type,
         size_bytes=len(normalized.data),
         storage_path=stored.key,
+        source_hash=source_hash,
+        content_hash=content_hash,
         description=normalized.description,
     )
     session.add(row)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing = await _find_existing_image_by_source_hash(
+            session,
+            user_id=user.id,
+            source_hash=source_hash,
+        )
+        if existing is None:
+            existing = await _find_existing_image_by_content_hash(
+                session,
+                user_id=user.id,
+                content_hash=content_hash,
+            )
+        if existing is None:
+            raise
+        response.status_code = status.HTTP_200_OK
+        return await _to_out(existing, request)
     await session.refresh(row)
     await _try_index_image_asset(request, user, row, session, session_factory)
     return await _to_out(row, request)
@@ -92,6 +146,93 @@ async def get_asset(
     if row is None or row.user_id != user.id:
         raise HTTPException(status_code=404, detail="asset not found")
     return await _to_out(row, request)
+
+
+def _sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+async def _find_existing_image_by_source_hash(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    source_hash: str,
+) -> Asset | None:
+    return cast(
+        Asset | None,
+        await session.scalar(
+            select(Asset)
+            .where(Asset.user_id == user_id, Asset.source_hash == source_hash)
+            .order_by(Asset.created_at.desc())
+            .limit(1)
+        ),
+    )
+
+
+async def _find_existing_image_by_content_hash(
+    session: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    content_hash: str,
+) -> Asset | None:
+    return cast(
+        Asset | None,
+        await session.scalar(
+            select(Asset)
+            .where(Asset.user_id == user_id, Asset.content_hash == content_hash)
+            .order_by(Asset.created_at.desc())
+            .limit(1)
+        ),
+    )
+
+
+async def _find_legacy_image_by_content_hash(
+    session: AsyncSession,
+    storage: ObjectStorage,
+    *,
+    user_id: uuid.UUID,
+    content_hash: str,
+    size_bytes: int,
+) -> Asset | None:
+    rows = (
+        await session.scalars(
+            select(Asset)
+            .where(
+                Asset.user_id == user_id,
+                Asset.content_hash.is_(None),
+                Asset.content_type == "image/webp",
+                Asset.size_bytes == size_bytes,
+            )
+            .order_by(Asset.created_at.desc())
+        )
+    ).all()
+    for row in rows:
+        try:
+            existing_data = await storage.get_bytes(row.storage_path)
+        except Exception as exc:
+            logger.warning(
+                "legacy image asset hash check failed asset_id=%s user_id=%s: %s",
+                row.id,
+                user_id,
+                exc,
+            )
+            continue
+        if _sha256_hex(existing_data) == content_hash:
+            row.content_hash = content_hash
+            return row
+    return None
+
+
+async def _remember_source_hash(
+    session: AsyncSession,
+    row: Asset,
+    source_hash: str,
+) -> None:
+    if row.source_hash is not None:
+        return
+    row.source_hash = source_hash
+    await session.commit()
+    await session.refresh(row)
 
 
 async def _try_index_image_asset(

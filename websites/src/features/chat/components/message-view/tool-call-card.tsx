@@ -49,7 +49,7 @@ export function ToolCallCard({
             <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               Arguments
             </div>
-            <pre className="overflow-x-auto rounded bg-background/70 p-2 font-mono text-[11px]">
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap wrap-break-word rounded bg-background/70 p-2 font-mono text-[11px]">
               {JSON.stringify(call.arguments, null, 2)}
             </pre>
           </div>
@@ -60,7 +60,7 @@ export function ToolCallCard({
               </div>
               <pre
                 className={cn(
-                  "overflow-x-auto rounded p-2 font-mono text-[11px]",
+                  "max-h-56 overflow-auto whitespace-pre-wrap wrap-break-word rounded p-2 font-mono text-[11px]",
                   result.error
                     ? "border border-destructive/30 bg-destructive/10 text-destructive"
                     : "bg-background/70"

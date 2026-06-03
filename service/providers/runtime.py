@@ -86,6 +86,7 @@ async def build_llm_for_user(
                 embed_model=settings.ollama.embed_model,
                 timeout=float(settings.ollama.timeout),
                 api_key=api_key,
+                think=settings.ollama.think,
             ),
             default_model,
         )

@@ -123,6 +123,7 @@ class ChatServiceProvider:
             user_text,
             use_rag=self._use_rag,
             model=self._model,
+            think=True,
         ):
             # ChatService now emits ``core.streaming.events.Event`` directly.
             yield event
@@ -173,6 +174,7 @@ async def build_default_chat_service() -> tuple[ChatService, str, uuid.UUID | No
     from service.chat.service import ChatService
     from service.knowledge import FileKnowledgeBase, KnowledgeBase, PgvectorKnowledgeBase
     from service.llm.ollama import OllamaClient
+    from service.tools.factory import build_builtin_tool_registry
     from settings import settings
 
     llm = OllamaClient.from_settings(settings)
@@ -196,7 +198,8 @@ async def build_default_chat_service() -> tuple[ChatService, str, uuid.UUID | No
         # stays consistent with whatever the user is running in Ollama.
         knowledge = FileKnowledgeBase.from_settings(llm=llm, s=settings)
 
-    service = ChatService(llm=llm, memory=bundle.memory, knowledge=knowledge)
+    tools = build_builtin_tool_registry(ollama_api_key=lambda: llm.api_key)
+    service = ChatService(llm=llm, memory=bundle.memory, knowledge=knowledge, tools=tools)
     return service, bundle.label, bundle.user_id
 
 
@@ -696,7 +699,7 @@ async def run_legacy_chat(
         # /model <name>     → switch the active model at runtime
         if args and args[0] == "pull":
             if len(args) < 2:
-                view.error("model", "usage: /model pull <name>  (e.g. qwen2.5:1.5b)")
+                view.error("model", "usage: /model pull <name>  (e.g. qwen3-coder-next:cloud)")
                 return
             name = args[1]
             view.system_notice(f"pulling {name} … (Ctrl+C to abort)")
@@ -740,7 +743,7 @@ async def run_legacy_chat(
             finally:
                 await probe.aclose()
             if not models:
-                view.system_notice("no models pulled — try `/model pull qwen2.5:1.5b`")
+                view.system_notice("no models pulled — try `/model pull qwen3-coder-next:cloud`")
                 return
             cur = cs._model or _s.ollama.chat_model
             for m in models:

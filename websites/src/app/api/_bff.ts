@@ -86,6 +86,37 @@ export async function withAuth<T>(
   }
 }
 
+export async function withAuthResponse(
+  inner: (token: string, ctx: BffContext) => Promise<Response>
+): Promise<Response> {
+  const requestId = await requestIdFromHeaders();
+  const startedAt = performance.now();
+  const token = await getAccessTokenWithRefresh();
+  if (!token) {
+    return bffError("UNAUTHENTICATED", "Session expired or missing.", 401, undefined, {
+      requestId,
+    });
+  }
+  try {
+    const upstream = await inner(token, { requestId });
+    const durationMs = Math.round(performance.now() - startedAt);
+    debugServer(`[bff:response] ${requestId} ${upstream.status} ${durationMs}ms`, {
+      requestId,
+      durationMs,
+    });
+    const headers = new Headers(upstream.headers);
+    headers.set("x-request-id", requestId);
+    return new Response(upstream.body, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers,
+    });
+  } catch (err) {
+    const durationMs = Math.round(performance.now() - startedAt);
+    return bffErrorFrom(err, { requestId, durationMs });
+  }
+}
+
 export async function withAuthStream(
   inner: (token: string, ctx: BffContext) => Promise<Response>
 ): Promise<Response> {

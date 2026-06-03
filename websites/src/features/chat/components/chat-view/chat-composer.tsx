@@ -19,6 +19,7 @@ import type {
   AssetOut,
   ProviderOut,
   SessionMeta,
+  ThinkMode,
   UserPreferenceOut,
 } from "@/lib/api/shared/types";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,10 @@ export interface ChatComposerCopy {
   ragOff: string;
   ragEnabledTip: string;
   ragDisabledTip: string;
+  thinkOn: string;
+  thinkOff: string;
+  thinkEnabledTip: string;
+  thinkDisabledTip: string;
 }
 
 export function ChatComposer({
@@ -44,6 +49,7 @@ export function ChatComposer({
   input,
   streaming,
   useRag,
+  think,
   providerId,
   model,
   inputRef,
@@ -53,6 +59,7 @@ export function ChatComposer({
   onInputChange,
   onSubmit,
   onToggleRag,
+  onToggleThink,
   onModelChange,
   onAbort,
 }: {
@@ -61,6 +68,7 @@ export function ChatComposer({
   input: string;
   streaming: boolean;
   useRag: boolean;
+  think: ThinkMode;
   providerId: string | null;
   model: string | null;
   inputRef: RefObject<HTMLTextAreaElement | null>;
@@ -70,6 +78,7 @@ export function ChatComposer({
   onInputChange: (next: string) => void;
   onSubmit: (content: string) => boolean;
   onToggleRag: () => void;
+  onToggleThink: () => void;
   onModelChange: (next: { provider_id: string | null; model: string | null }) => void;
   onAbort: () => void;
 }) {
@@ -150,7 +159,7 @@ export function ChatComposer({
                   key={asset.id}
                   className="flex max-w-full items-center gap-2 rounded-lg border border-border bg-muted/50 px-2 py-1 text-xs"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element -- signed asset URLs are already optimized upstream */}
+                  {/* eslint-disable-next-line @next/next/no-img-element -- uploaded asset thumbnails are served by the app */}
                   <img
                     src={asset.url}
                     alt={asset.filename}
@@ -206,6 +215,7 @@ export function ChatComposer({
             input={input}
             streaming={streaming}
             useRag={useRag}
+            think={think}
             providerId={providerId}
             model={model}
             initialProviders={initialProviders}
@@ -215,6 +225,7 @@ export function ChatComposer({
             hasAssets={assets.length > 0}
             onPickImage={() => fileInputRef.current?.click()}
             onToggleRag={onToggleRag}
+            onToggleThink={onToggleThink}
             onModelChange={onModelChange}
             onAbort={onAbort}
           />
@@ -233,6 +244,7 @@ function ComposerActions({
   input,
   streaming,
   useRag,
+  think,
   providerId,
   model,
   initialProviders,
@@ -242,6 +254,7 @@ function ComposerActions({
   hasAssets,
   onPickImage,
   onToggleRag,
+  onToggleThink,
   onModelChange,
   onAbort,
 }: {
@@ -250,6 +263,7 @@ function ComposerActions({
   input: string;
   streaming: boolean;
   useRag: boolean;
+  think: ThinkMode;
   providerId: string | null;
   model: string | null;
   initialProviders: ProviderOut[];
@@ -259,6 +273,7 @@ function ComposerActions({
   hasAssets: boolean;
   onPickImage: () => void;
   onToggleRag: () => void;
+  onToggleThink: () => void;
   onModelChange: (next: { provider_id: string | null; model: string | null }) => void;
   onAbort: () => void;
 }) {
@@ -284,6 +299,12 @@ function ComposerActions({
         disabled={streaming}
         copy={copy}
         onToggle={onToggleRag}
+      />
+      <ThinkToggle
+        enabled={think !== false}
+        disabled={streaming}
+        copy={copy}
+        onToggle={onToggleThink}
       />
       <div className="ml-auto flex min-w-0 items-center gap-1">
         <ModelSelector
@@ -339,6 +360,55 @@ function formatImageAttachment(asset: AssetOut): string {
 
 function sanitizeAttachmentLine(value: string): string {
   return value.replace(/[\r\n\]]+/g, " ").trim();
+}
+
+function ThinkToggle({
+  enabled,
+  disabled,
+  copy,
+  onToggle,
+}: {
+  enabled: boolean;
+  disabled: boolean;
+  copy: ChatComposerCopy;
+  onToggle: () => void;
+}) {
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onToggle}
+            disabled={disabled}
+            className={cn(
+              "gap-1.5 px-2 text-xs font-normal sm:px-3",
+              enabled ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Brain
+              className={cn(
+                "size-3.5",
+                enabled ? "text-primary" : "text-muted-foreground"
+              )}
+            />
+            <span>Think</span>
+            <Badge
+              variant={enabled ? "success" : "outline"}
+              className="ml-0.5 text-[9px]"
+            >
+              {enabled ? copy.thinkOn : copy.thinkOff}
+            </Badge>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {enabled ? copy.thinkEnabledTip : copy.thinkDisabledTip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 function RagToggle({

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
 
 __all__ = [
     "ChatChunk",
@@ -22,12 +22,14 @@ __all__ = [
     "LLMClient",
     "LLMError",
     "Role",
+    "ThinkingMode",
     "ToolCall",
     "ToolSpec",
 ]
 
 
 Role = Literal["user", "assistant", "system", "tool"]
+ThinkingMode: TypeAlias = bool | Literal["low", "medium", "high"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,8 +76,10 @@ class ChatMessage:
 
     role: Role
     content: str
+    thinking: str = ""
     tool_calls: tuple[ToolCall, ...] = ()
     tool_call_id: str | None = None
+    tool_name: str | None = None
     sources: tuple[dict[str, Any], ...] = ()
     image_urls: tuple[str, ...] = ()
 
@@ -95,6 +99,7 @@ class ChatChunk:
     """
 
     delta: str = ""
+    thinking: str = ""
     done: bool = False
     usage: dict[str, object] | None = None
     tool_calls: tuple[ToolCall, ...] = field(default_factory=tuple)
@@ -131,6 +136,7 @@ class LLMClient(Protocol):
         *,
         model: str | None = None,
         tools: list[ToolSpec] | None = None,
+        think: ThinkingMode | None = None,
     ) -> AsyncIterator[ChatChunk]:
         """Stream an assistant reply token-by-token."""
         ...

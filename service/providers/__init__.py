@@ -341,7 +341,8 @@ async def pull_ollama_model(
     contract — no try/except around the iteration.
 
     Cloud-flagged tags (see :func:`is_cloud_model_tag`) complete near-instantly
-    because there are no GB-sized layers to download; this generator yields the
+    because there are no GB-sized layers to download; both ``:cloud`` and
+    ``-cloud`` suffixes are accepted. This generator yields the
     same shape regardless, so the caller doesn't need to branch.
     """
     _validate_base_url(base_url)

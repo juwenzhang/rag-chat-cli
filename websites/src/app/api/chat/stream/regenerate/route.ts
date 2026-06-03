@@ -1,4 +1,4 @@
-import { chatApi } from "@/lib/api";
+import { chatApi, type ThinkMode } from "@/lib/api";
 
 import { bffError, readJson, withAuthStream } from "../../../_bff";
 
@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 interface RegenerateBody {
   session_id: string;
   use_rag?: boolean;
+  think?: ThinkMode | null;
 }
 
 export async function POST(req: Request) {

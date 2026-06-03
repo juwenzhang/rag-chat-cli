@@ -41,7 +41,7 @@ jwt_secret = settings.auth.jwt_secret  # 生产环境必须是强随机值
 | `auth`       | `jwt_secret`   | `jwt_alg="HS256"`, `access_token_ttl_min=15`, `refresh_token_ttl_day=7`                               |
 | `db`         | —              | `database_url="postgresql+asyncpg://rag:rag@postgres:5432/ragdb"`                                      |
 | `redis`      | —              | `redis_url="redis://redis:6379/0"`                                                                    |
-| `ollama`     | —              | `base_url="http://ollama:11434"`, `chat_model="qwen2.5:1.5b"`, `embed_model="nomic-embed-text"`, `timeout=120` |
+| `ollama`     | —              | `base_url="http://ollama:11434"`, `chat_model="qwen3-coder-next:cloud"`, `embed_model="nomic-embed-text"`, `timeout=120` |
 | `retrieval`  | —              | `enabled=True`, `top_k=4`, `min_score=0.25`                                                           |
 | `rate_limit` | —              | `per_min=60`                                                                                          |
 

@@ -17,7 +17,7 @@ from typing import Any
 
 import httpx
 
-from service.llm.client import ChatChunk, ChatMessage, LLMError, ToolCall, ToolSpec
+from service.llm.client import ChatChunk, ChatMessage, LLMError, ThinkingMode, ToolCall, ToolSpec
 
 
 def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
@@ -29,6 +29,8 @@ def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
     for plain user/assistant turns.
     """
     out: dict[str, Any] = {"role": m.role, "content": m.content}
+    if m.thinking:
+        out["thinking"] = m.thinking
     if m.image_urls:
         out["images"] = [_image_url_to_ollama_payload(image_url) for image_url in m.image_urls]
     if m.tool_calls:
@@ -41,6 +43,8 @@ def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
         ]
     if m.tool_call_id is not None:
         out["tool_call_id"] = m.tool_call_id
+    if m.tool_name is not None:
+        out["tool_name"] = m.tool_name
     return out
 
 
@@ -126,12 +130,14 @@ class OllamaClient:
         embed_model: str,
         timeout: float = 120.0,
         api_key: str | None = None,
+        think: ThinkingMode | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._chat_model = chat_model
         self._embed_model = embed_model
         self._timeout = timeout
         self._api_key = api_key
+        self._think = think
         self._client: httpx.AsyncClient | None = None
 
     # ------------------------------------------------------------------
@@ -150,6 +156,7 @@ class OllamaClient:
             embed_model=s.ollama.embed_model,
             timeout=float(s.ollama.timeout),
             api_key=s.ollama.api_key,
+            think=s.ollama.think,
         )
 
     # ------------------------------------------------------------------
@@ -166,6 +173,10 @@ class OllamaClient:
     @property
     def embed_model(self) -> str:
         return self._embed_model
+
+    @property
+    def api_key(self) -> str | None:
+        return self._api_key
 
     def __repr__(self) -> str:  # pragma: no cover — debug aid
         return f"OllamaClient(base_url={self._base_url!r}, chat_model={self._chat_model!r})"
@@ -210,6 +221,7 @@ class OllamaClient:
         *,
         model: str | None = None,
         tools: list[ToolSpec] | None = None,
+        think: ThinkingMode | None = None,
     ) -> AsyncIterator[ChatChunk]:
         """Stream chat completions as :class:`ChatChunk` events.
 
@@ -231,6 +243,9 @@ class OllamaClient:
         }
         if tools:
             payload["tools"] = [_tool_to_wire(t) for t in tools]
+        effective_think = self._think if think is None else think
+        if effective_think is not None:
+            payload["think"] = effective_think
 
         client = self._ensure_client()
         try:
@@ -255,9 +270,11 @@ class OllamaClient:
                     except json.JSONDecodeError as exc:
                         raise LLMError(f"ollama returned non-JSON line: {line[:200]!r}") from exc
                     delta = ""
+                    thinking = ""
                     tool_calls: tuple[ToolCall, ...] = ()
                     msg = data.get("message")
                     if isinstance(msg, dict):
+                        thinking = msg.get("thinking", "") or ""
                         delta = msg.get("content", "") or ""
                         tool_calls = _parse_tool_calls(msg)
                     done = bool(data.get("done"))
@@ -280,6 +297,7 @@ class OllamaClient:
                         } or None
                     yield ChatChunk(
                         delta=delta,
+                        thinking=thinking,
                         done=done,
                         usage=usage,
                         tool_calls=tool_calls,
@@ -299,8 +317,23 @@ class OllamaClient:
 
         client = self._ensure_client()
         target_model = model or self._embed_model
-        vectors: list[list[float]] = []
         try:
+            resp = await client.post(
+                "/api/embed",
+                json={"model": target_model, "input": texts, "truncate": True},
+            )
+            if resp.status_code < 400:
+                data = resp.json()
+                embeddings = data.get("embeddings")
+                if isinstance(embeddings, list):
+                    return [
+                        [float(x) for x in item] for item in embeddings if isinstance(item, list)
+                    ]
+            elif resp.status_code != 404:
+                body = resp.text[:200]
+                raise LLMError(f"ollama /api/embed failed: {resp.status_code} {body!r}")
+
+            vectors: list[list[float]] = []
             for text in texts:
                 resp = await client.post(
                     "/api/embeddings",
@@ -308,11 +341,6 @@ class OllamaClient:
                 )
                 if resp.status_code >= 400:
                     body = resp.text[:200]
-                    # Ollama returns 404 + ``"model ... not found"`` when the
-                    # embed model isn't pulled. Rewrite to actionable advice
-                    # so the user reaches for ``ollama pull`` instead of
-                    # opening the source. ``try pulling it first`` is the
-                    # literal upstream phrasing we sniff for here.
                     if resp.status_code == 404 and "not found" in body:
                         raise LLMError(
                             f"embed model {target_model!r} is not pulled on this "
@@ -375,7 +403,7 @@ class OllamaClient:
         *,
         insecure: bool = False,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Stream pull progress for ``name`` (e.g. ``"qwen2.5:1.5b"``).
+        """Stream pull progress for ``name`` (e.g. ``"qwen3-coder-next:cloud"``).
 
         Yields the raw NDJSON frames from ``POST /api/pull``. Common shapes:
 

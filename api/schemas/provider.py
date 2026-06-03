@@ -99,7 +99,7 @@ class ModelMetaIn(BaseModel):
 class PullModelIn(BaseModel):
     """Body for ``POST /providers/{id}/models/pull``.
 
-    ``model`` is the Ollama tag, e.g. ``qwen2.5:7b`` or ``gpt-oss:120b-cloud``.
+    ``model`` is the Ollama tag, e.g. ``qwen2.5:7b`` or ``qwen3-coder-next:cloud``.
     """
 
     model: Annotated[str, Field(min_length=1, max_length=256)]

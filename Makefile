@@ -21,7 +21,7 @@ PY      ?= uv run
 PY_DEV  ?= uv run --extra dev
 PNPM    ?= pnpm --dir websites
 
-OLLAMA_CHAT_MODEL  ?= qwen2.5:1.5b
+OLLAMA_CHAT_MODEL  ?= qwen3-coder-next:cloud
 OLLAMA_EMBED_MODEL ?= nomic-embed-text
 
 # ─── Help ────────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ __all__ = [
     "ChatSessionOut",
     "ChatSessionUpdateIn",
     "CreateSessionIn",
+    "MessageEvaluationOut",
     "MessageIn",
     "MessageOut",
 ]
@@ -63,6 +64,7 @@ class MessageIn(BaseModel):
     session_id: uuid.UUID
     content: Annotated[str, Field(min_length=1, max_length=32_000)]
     use_rag: bool = False
+    think: bool | Literal["low", "medium", "high"] | None = None
 
 
 class MessageOut(BaseModel):
@@ -79,6 +81,25 @@ class MessageOut(BaseModel):
     tool_calls: list[dict[str, Any]] | None = None
     sources: list[dict[str, Any]] | None = None
     created_at: datetime
+
+
+class MessageEvaluationOut(BaseModel):
+    """Stored AI quality evaluation for one assistant message."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    message_id: uuid.UUID
+    model: str
+    overall: int
+    helpfulness: int
+    groundedness: int
+    citation_quality: int
+    completeness: int
+    risk: Literal["low", "medium", "high"]
+    comment: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class MessageUpdateIn(BaseModel):

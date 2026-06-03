@@ -34,7 +34,6 @@ htmlcov/
 .claude/
 .codex/
 .trae/
-.codebuddy/
 
 # ─── IDE / editor ────────────────────────────────────────
 .idea/
