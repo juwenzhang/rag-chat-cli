@@ -29,11 +29,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, ClassVar, Literal
 
 from service.chat.history import HistorySummarizer
 from service.chat.limits import DEFAULT_LIMITS, ResourceLimits
@@ -41,7 +42,7 @@ from service.chat.prompts import DEFAULT_TEMPLATES, PromptBuilder
 from service.chat.tokens import TokenBudget, Tokenizer, trim_to_budget
 from service.common.observability import UsageAccumulator, get_tracer
 from service.knowledge.base import KnowledgeBase, KnowledgeHit
-from service.llm.client import ChatMessage, LLMClient, LLMError, ToolCall, ToolSpec
+from service.llm.client import ChatMessage, LLMClient, LLMError, ThinkingMode, ToolCall, ToolSpec
 from service.memory.chat_memory import ChatMemory
 from service.memory.user_memory import FactExtractor, UserMemoryEntry, UserMemoryStore
 from service.streaming.abort import AbortContext
@@ -355,6 +356,8 @@ class ChatService:
         abort: AbortContext | None = None,
         model: str | None = None,
         persist_user: bool = True,
+        think: ThinkingMode | None = None,
+        auto_web_search: bool | Literal["auto", "always", "off"] = "auto",
     ) -> AsyncIterator[Event]:
         """Stream the full reply loop as UI-facing events.
 
@@ -368,6 +371,11 @@ class ChatService:
 
         ``use_tools=False`` runs a single LLM call (legacy linear mode) even
         when a registry is attached — useful for "raw chat" tests.
+
+        ``auto_web_search`` controls the pre-answer web-search policy:
+        ``"auto"`` searches only for freshness / official-doc / research-style
+        prompts, ``"always"`` searches every turn, and ``"off"`` disables the
+        pre-answer search. Boolean values map to always/off for compatibility.
 
         Side-effects: the ``user`` message is persisted *before* the loop so
         the user's question survives a mid-loop crash. Each assistant /
@@ -399,6 +407,8 @@ class ChatService:
         # 1. Optional retrieval (one-shot, before the loop). Emit the
         # ``retrieval`` event for the UI; the hit list itself goes into
         # the prompt prelude via :class:`PromptBuilder` below.
+        if think is not False:
+            yield {"type": "thought", "text": "Thinking through the request"}
         if use_rag and self._kb is not None:
             yield {"type": "thought", "text": "Searching local knowledge base"}
         hits, retrieval_event = await self._retrieve_for_turn(
@@ -458,6 +468,49 @@ class ChatService:
         tools_for_call: list[ToolSpec] | None = None
         if use_tools and self._tools is not None and len(self._tools) > 0:
             tools_for_call = self._tools.as_specs()
+        executed_tool_keys: set[str] = set()
+        executed_tool_counts: dict[str, int] = {}
+
+        if (
+            tools_for_call
+            and self._tools is not None
+            and "web_search" in self._tools
+            and _should_auto_web_search(user_text, mode=auto_web_search, has_local_hits=bool(hits))
+        ):
+            tc = ToolCall(
+                id=f"call_auto_web_{uuid.uuid4().hex[:12]}",
+                name="web_search",
+                arguments={"query": user_text, "limit": 5},
+            )
+            executed_tool_keys.add(_tool_call_key(tc))
+            yield {"type": "thought", "text": "Searching web"}
+            yield {
+                "type": "tool_call",
+                "tool_call_id": tc.id,
+                "tool_name": tc.name,
+                "arguments": tc.arguments,
+            }
+            result = await self._dispatch_tool_with_timeout(tc, abort=abort)
+            executed_tool_counts[tc.name] = executed_tool_counts.get(tc.name, 0) + 1
+            new_sources = _sources_from_tool_result(result, start_rank=len(turn_sources) + 1)
+            if new_sources:
+                turn_sources.extend(new_sources)
+            yield {
+                "type": "tool_result",
+                "tool_call_id": tc.id,
+                "tool_name": tc.name,
+                "content": result.content,
+                "is_error": result.is_error,
+            }
+            messages.append(ChatMessage(role="assistant", content="", tool_calls=(tc,)))
+            messages.append(
+                ChatMessage(
+                    role="tool",
+                    content=result.content,
+                    tool_call_id=tc.id,
+                    tool_name=tc.name,
+                )
+            )
 
         for _ in range(effective_max_steps):
             if abort is not None and abort.aborted:
@@ -471,7 +524,9 @@ class ChatService:
             messages_for_call = await self._fit_to_budget(messages)
 
             collected_text: list[str] = []
+            collected_thinking: list[str] = []
             collected_tool_calls: list[ToolCall] = []
+            think_filter = _ThinkTagStreamFilter()
 
             try:
                 with _tracer.start_as_current_span("chat.llm_stream") as llm_span:
@@ -485,17 +540,31 @@ class ChatService:
                         messages_for_call,
                         model=model,
                         tools=tools_for_call,
+                        think=think,
                     ):
                         if abort is not None and abort.aborted:
                             yield _aborted_event()
                             return
+                        if chunk.thinking:
+                            collected_thinking.append(chunk.thinking)
+                            yield {"type": "thought", "text": chunk.thinking}
                         if chunk.delta:
-                            collected_text.append(chunk.delta)
-                            yield {"type": "token", "delta": chunk.delta}
+                            for kind, text in think_filter.feed(chunk.delta):
+                                if kind == "thought":
+                                    yield {"type": "thought", "text": text}
+                                elif text:
+                                    collected_text.append(text)
+                                    yield {"type": "token", "delta": text}
                         if chunk.tool_calls:
                             collected_tool_calls.extend(chunk.tool_calls)
                         if chunk.done and chunk.usage:
                             usage = dict(chunk.usage)
+                    for kind, text in think_filter.flush():
+                        if kind == "thought":
+                            yield {"type": "thought", "text": text}
+                        elif text:
+                            collected_text.append(text)
+                            yield {"type": "token", "delta": text}
             except LLMError as exc:
                 yield {
                     "type": "error",
@@ -512,9 +581,13 @@ class ChatService:
                 return
 
             assistant_text = "".join(collected_text)
+            if not collected_tool_calls and not assistant_text.strip():
+                assistant_text = _empty_answer_fallback(turn_sources)
+                yield {"type": "token", "delta": assistant_text}
             assistant_msg = ChatMessage(
                 role="assistant",
                 content=assistant_text,
+                thinking="".join(collected_thinking),
                 tool_calls=tuple(collected_tool_calls),
                 sources=tuple(turn_sources),
             )
@@ -561,6 +634,8 @@ class ChatService:
                     "tool_name": tc.name,
                     "arguments": tc.arguments,
                 }
+                tool_key = _tool_call_key(tc)
+                tool_limit = _tool_turn_limit(tc.name)
                 if idx >= cap:
                     # Past the per-step cap — return a synthetic error
                     # result rather than executing the tool.
@@ -571,8 +646,28 @@ class ChatService:
                         ),
                         is_error=True,
                     )
+                elif tool_limit is not None and executed_tool_counts.get(tc.name, 0) >= tool_limit:
+                    result = ToolResult(
+                        content=(
+                            f"{tc.name} call skipped: per-turn limit={tool_limit}. "
+                            "Use the tool results already present in this conversation and produce "
+                            "the final answer now."
+                        ),
+                        is_error=False,
+                    )
+                elif tool_key in executed_tool_keys:
+                    result = ToolResult(
+                        content=(
+                            f"duplicate tool call skipped: {tc.name}. "
+                            "This exact tool call already ran in this turn; use the previous "
+                            "tool result in the conversation and produce the final answer now."
+                        ),
+                        is_error=False,
+                    )
                 else:
+                    executed_tool_keys.add(tool_key)
                     result = await self._dispatch_tool_with_timeout(tc, abort=abort)
+                    executed_tool_counts[tc.name] = executed_tool_counts.get(tc.name, 0) + 1
                 new_sources = _sources_from_tool_result(result, start_rank=len(turn_sources) + 1)
                 if new_sources:
                     turn_sources.extend(new_sources)
@@ -587,6 +682,7 @@ class ChatService:
                     role="tool",
                     content=result.content,
                     tool_call_id=tc.id,
+                    tool_name=tc.name,
                 )
                 try:
                     await self._memory.append(session_id, tool_msg)
@@ -600,13 +696,89 @@ class ChatService:
                 messages.append(tool_msg)
             # ...next loop iteration: re-invoke the LLM with tool results
         else:
-            # Loop exhausted without producing a tool-free assistant turn.
+            # Loop exhausted without producing a tool-free assistant turn. Do one
+            # final synthesis call with tools disabled so the user gets an answer
+            # instead of a bare "agent exceeded N reasoning steps" failure.
             yield {
-                "type": "error",
-                "code": "max_steps_reached",
-                "message": f"agent exceeded {effective_max_steps} reasoning steps",
+                "type": "thought",
+                "text": "Tool step limit reached; synthesizing from collected results",
             }
-            return
+            messages.append(
+                ChatMessage(
+                    role="system",
+                    content=(
+                        "Stop calling tools. Use the existing tool results and sources above to "
+                        "produce the final answer now. If evidence is insufficient, say so plainly."
+                    ),
+                )
+            )
+            messages_for_call = await self._fit_to_budget(messages)
+            final_text: list[str] = []
+            final_thinking: list[str] = []
+            think_filter = _ThinkTagStreamFilter()
+            try:
+                async for chunk in self._llm.chat_stream(
+                    messages_for_call,
+                    model=model,
+                    tools=None,
+                    think=think,
+                ):
+                    if abort is not None and abort.aborted:
+                        yield _aborted_event()
+                        return
+                    if chunk.thinking:
+                        final_thinking.append(chunk.thinking)
+                        yield {"type": "thought", "text": chunk.thinking}
+                    if chunk.delta:
+                        for kind, text in think_filter.feed(chunk.delta):
+                            if kind == "thought":
+                                yield {"type": "thought", "text": text}
+                            elif text:
+                                final_text.append(text)
+                                yield {"type": "token", "delta": text}
+                    if chunk.done and chunk.usage:
+                        usage = dict(chunk.usage)
+                for kind, text in think_filter.flush():
+                    if kind == "thought":
+                        yield {"type": "thought", "text": text}
+                    elif text:
+                        final_text.append(text)
+                        yield {"type": "token", "delta": text}
+            except LLMError as exc:
+                yield {
+                    "type": "error",
+                    "code": "llm_error",
+                    "message": str(exc),
+                }
+                return
+            except Exception as exc:
+                yield {
+                    "type": "error",
+                    "code": "unexpected",
+                    "message": f"{type(exc).__name__}: {exc}",
+                }
+                return
+
+            final_answer = "".join(final_text)
+            if not final_answer.strip():
+                final_answer = _empty_answer_fallback(turn_sources)
+                yield {"type": "token", "delta": final_answer}
+            assistant_msg = ChatMessage(
+                role="assistant",
+                content=final_answer,
+                thinking="".join(final_thinking),
+                sources=tuple(turn_sources),
+            )
+            try:
+                await self._memory.append(session_id, assistant_msg)
+            except Exception as exc:
+                yield {
+                    "type": "error",
+                    "code": "memory_write_failed",
+                    "message": str(exc),
+                }
+                return
+            messages.append(assistant_msg)
 
         # 4. Fact extraction (post-success, fire-and-forget semantics —
         # failure here must not surface as an error to the user). We extract
@@ -673,6 +845,8 @@ class ChatService:
         use_tools: bool = True,
         max_steps: int | None = None,
         model: str | None = None,
+        think: ThinkingMode | None = None,
+        auto_web_search: bool | Literal["auto", "always", "off"] = "auto",
     ) -> dict[str, Any]:
         """Run :meth:`generate` to completion and return an aggregated result.
 
@@ -711,6 +885,8 @@ class ChatService:
             use_tools=use_tools,
             max_steps=max_steps,
             model=model,
+            think=think,
+            auto_web_search=auto_web_search,
         ):
             etype = event.get("type")
             if etype == "token":
@@ -767,12 +943,177 @@ class ChatService:
         }
 
 
+class _ThinkTagStreamFilter:
+    """Split streamed text into answer tokens and ``<think>`` thought text."""
+
+    _OPEN: ClassVar[str] = "<think>"
+    _CLOSE: ClassVar[str] = "</think>"
+
+    def __init__(self) -> None:
+        self._buffer: str = ""
+        self._in_think: bool = False
+
+    def feed(self, text: str) -> list[tuple[str, str]]:
+        self._buffer += text
+        return self._drain(final=False)
+
+    def flush(self) -> list[tuple[str, str]]:
+        return self._drain(final=True)
+
+    def _drain(self, *, final: bool) -> list[tuple[str, str]]:
+        out: list[tuple[str, str]] = []
+        while self._buffer:
+            if self._in_think:
+                idx = self._find(self._CLOSE)
+                if idx >= 0:
+                    self._emit(out, "thought", self._buffer[:idx])
+                    self._buffer = self._buffer[idx + len(self._CLOSE) :]
+                    self._in_think = False
+                    continue
+                if final:
+                    self._emit(out, "thought", self._buffer)
+                    self._buffer = ""
+                break
+
+            idx = self._find(self._OPEN)
+            if idx >= 0:
+                self._emit(out, "token", self._buffer[:idx])
+                self._buffer = self._buffer[idx + len(self._OPEN) :]
+                self._in_think = True
+                continue
+            keep = 0 if final else len(self._OPEN) - 1
+            safe_len = max(0, len(self._buffer) - keep)
+            if safe_len:
+                self._emit(out, "token", self._buffer[:safe_len])
+                self._buffer = self._buffer[safe_len:]
+            break
+        if final:
+            self._buffer = ""
+        return out
+
+    def _find(self, tag: str) -> int:
+        return self._buffer.lower().find(tag)
+
+    @staticmethod
+    def _emit(out: list[tuple[str, str]], kind: str, text: str) -> None:
+        if text:
+            out.append((kind, text))
+
+
 def _aborted_event() -> Event:
     return {
         "type": "error",
         "code": "ABORTED",
         "message": "client aborted the stream",
     }
+
+
+def _empty_answer_fallback(sources: list[dict[str, Any]]) -> str:
+    if sources:
+        return (
+            "I gathered supporting sources but the model did not produce a final answer. "
+            "Please retry, or open the sources panel to inspect the collected evidence."
+        )
+    return "The model stopped before producing a final answer. Please retry."
+
+
+def _tool_call_key(call: ToolCall) -> str:
+    try:
+        args = json.dumps(call.arguments, sort_keys=True, ensure_ascii=False, default=str)
+    except TypeError:
+        args = repr(call.arguments)
+    return f"{call.name}:{args}"
+
+
+def _tool_turn_limit(name: str) -> int | None:
+    if name == "web_search":
+        return 1
+    if name == "web_fetch":
+        return 2
+    return None
+
+
+_WEB_SEARCH_OFF_MARKERS = (
+    "不要联网",
+    "不用联网",
+    "不要搜索",
+    "不用搜索",
+    "仅根据本地",
+    "只根据本地",
+    "no web",
+    "don't search",
+    "do not search",
+)
+
+_WEB_SEARCH_STRONG_MARKERS = (
+    "最新",
+    "当前",
+    "现在",
+    "今天",
+    "实时",
+    "近期",
+    "官方",
+    "官网",
+    "文档",
+    "资料来源",
+    "引用",
+    "来源",
+    "查一下",
+    "搜索",
+    "联网",
+    "202",
+    "latest",
+    "current",
+    "today",
+    "official",
+    "docs",
+    "documentation",
+    "source",
+    "citation",
+)
+
+_WEB_SEARCH_RESEARCH_MARKERS = (
+    "深度",
+    "总结",
+    "综述",
+    "调研",
+    "对比",
+    "比较",
+    "最佳实践",
+    "架构",
+    "原理",
+    "核心概念",
+    "deep dive",
+    "research",
+    "survey",
+    "compare",
+    "best practice",
+    "architecture",
+    "core concept",
+)
+
+
+def _should_auto_web_search(
+    text: str,
+    *,
+    mode: bool | Literal["auto", "always", "off"],
+    has_local_hits: bool,
+) -> bool:
+    if mode is True or mode == "always":
+        return True
+    if mode is False or mode == "off":
+        return False
+
+    normalized = " ".join(text.lower().split())
+    if not normalized:
+        return False
+    if any(marker in normalized for marker in _WEB_SEARCH_OFF_MARKERS):
+        return False
+    if any(marker in normalized for marker in _WEB_SEARCH_STRONG_MARKERS):
+        return True
+    if any(marker in normalized for marker in _WEB_SEARCH_RESEARCH_MARKERS):
+        return not has_local_hits or len(normalized) >= 24
+    return False
 
 
 def _sources_from_hits(hits: list[KnowledgeHit]) -> list[dict[str, Any]]:

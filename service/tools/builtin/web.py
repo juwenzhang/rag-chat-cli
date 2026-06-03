@@ -1,14 +1,17 @@
 """Small web tools for the agent loop.
 
-These are intentionally provider-free: they use public HTTP endpoints and
-return compact JSON payloads for the LLM, while attaching normalized web
-sources in ``ToolResult.metadata`` for UI citations.
+When an Ollama API key is available, web search/fetch use Ollama's official
+web endpoints first. They fall back to public HTTP endpoints so local/dev
+setups without a key still have a best-effort path. Results are returned as
+compact JSON payloads for the LLM, with normalized web sources attached in
+``ToolResult.metadata`` for UI citations.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
@@ -21,9 +24,12 @@ __all__ = ["build_web_tools"]
 
 _TIMEOUT = httpx.Timeout(12.0, connect=5.0)
 _UA = "Mozilla/5.0 (compatible; rag-ai-cli/0.1; +https://localhost)"
+_OLLAMA_WEB_SEARCH_URL = "https://ollama.com/api/web_search"
+_OLLAMA_WEB_FETCH_URL = "https://ollama.com/api/web_fetch"
 _SEARCH_ENDPOINTS = (
     "https://html.duckduckgo.com/html/",
     "https://duckduckgo.com/html/",
+    "https://lite.duckduckgo.com/lite/",
 )
 
 
@@ -40,7 +46,7 @@ class _SearchParser(HTMLParser):
         d = dict(attrs)
         cls = d.get("class") or ""
         href = d.get("href")
-        if href and "result__a" in cls:
+        if href and ("result__a" in cls or "result-link" in cls):
             self._href = href
             self._buf = []
 
@@ -90,7 +96,10 @@ class _TextParser(HTMLParser):
             self.text.append(cleaned)
 
 
-def build_web_tools() -> list[Tool]:
+def build_web_tools(
+    *,
+    ollama_api_key: str | Callable[[], str | None] | None = None,
+) -> list[Tool]:
     return [
         FunctionTool(
             name="web_search",
@@ -103,7 +112,7 @@ def build_web_tools() -> list[Tool]:
                 },
                 "required": ["query"],
             },
-            fn=_web_search,
+            fn=lambda args: _web_search(args, ollama_api_key=_resolve_api_key(ollama_api_key)),
         ),
         FunctionTool(
             name="web_fetch",
@@ -121,16 +130,28 @@ def build_web_tools() -> list[Tool]:
                 },
                 "required": ["url"],
             },
-            fn=_web_fetch,
+            fn=lambda args: _web_fetch(args, ollama_api_key=_resolve_api_key(ollama_api_key)),
         ),
     ]
 
 
-async def _web_search(args: dict[str, Any]) -> ToolResult:
+def _resolve_api_key(value: str | Callable[[], str | None] | None) -> str | None:
+    return value() if callable(value) else value
+
+
+async def _web_search(args: dict[str, Any], *, ollama_api_key: str | None = None) -> ToolResult:
     query = str(args.get("query") or "").strip()
     if not query:
         return ToolResult(content="query is required", is_error=True)
     limit = _clamp_int(args.get("limit"), default=5, low=1, high=8)
+
+    official_error: str | None = None
+    if ollama_api_key:
+        try:
+            return await _ollama_web_search(query, limit=limit, api_key=ollama_api_key)
+        except (httpx.HTTPError, ValueError) as exc:
+            official_error = f"ollama web_search: {type(exc).__name__}: {exc}"
+
     try:
         async with httpx.AsyncClient(
             timeout=_TIMEOUT,
@@ -139,38 +160,135 @@ async def _web_search(args: dict[str, Any]) -> ToolResult:
         ) as client:
             resp = await _fetch_search_results(client, query)
     except httpx.HTTPError as exc:
-        return ToolResult(content=f"web_search failed: {type(exc).__name__}: {exc}", is_error=True)
+        warning = f"duckduckgo web_search: {type(exc).__name__}: {exc}"
+        if official_error:
+            warning = f"{official_error}; {warning}"
+        return ToolResult(
+            content=json.dumps(
+                {
+                    "query": query,
+                    "results": [],
+                    "warning": f"web_search unavailable: {warning}",
+                },
+                ensure_ascii=False,
+            ),
+            is_error=True,
+            metadata={"sources": []},
+        )
 
     parser = _SearchParser()
     parser.feed(resp.text)
     results = parser.results[:limit]
-    sources = [
-        {"source_type": "web", "rank": i, "title": r["title"], "url": r["url"]}
-        for i, r in enumerate(results, start=1)
-    ]
+    sources = _sources_from_search_results(results)
+    payload: dict[str, Any] = {"query": query, "results": results, "provider": "duckduckgo"}
+    if official_error:
+        payload["warning"] = f"official search unavailable; used fallback: {official_error}"
     return ToolResult(
-        content=json.dumps({"query": query, "results": results}, ensure_ascii=False),
+        content=json.dumps(payload, ensure_ascii=False),
         metadata={"sources": sources},
     )
 
 
+async def _ollama_web_search(query: str, *, limit: int, api_key: str) -> ToolResult:
+    async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_ollama_headers(api_key)) as client:
+        resp = await client.post(
+            _OLLAMA_WEB_SEARCH_URL,
+            json={"query": query, "max_results": limit},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    results = _normalize_ollama_search_results(data, limit=limit)
+    return ToolResult(
+        content=json.dumps(
+            {"query": query, "results": results, "provider": "ollama"},
+            ensure_ascii=False,
+        ),
+        metadata={"sources": _sources_from_search_results(results)},
+    )
+
+
+def _normalize_ollama_search_results(data: Any, *, limit: int) -> list[dict[str, str]]:
+    raw_results = data.get("results") if isinstance(data, dict) else None
+    if not isinstance(raw_results, list):
+        return []
+
+    results: list[dict[str, str]] = []
+    for item in raw_results:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        title = str(item.get("title") or url).strip()
+        quote = str(item.get("content") or item.get("snippet") or item.get("text") or "").strip()
+        result = {"title": title, "url": url}
+        if quote:
+            result["content"] = quote
+        results.append(result)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _sources_from_search_results(results: list[dict[str, str]]) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for i, result in enumerate(results, start=1):
+        source: dict[str, Any] = {
+            "source_type": "web",
+            "rank": i,
+            "title": result["title"],
+            "url": result["url"],
+        }
+        quote = result.get("content")
+        if quote:
+            source["quote"] = quote
+        sources.append(source)
+    return sources
+
+
 async def _fetch_search_results(client: httpx.AsyncClient, query: str) -> httpx.Response:
+    last_success: httpx.Response | None = None
     last_response: httpx.Response | None = None
+    errors: list[str] = []
     for endpoint in _SEARCH_ENDPOINTS:
-        resp = await client.get(endpoint, params={"q": query})
+        try:
+            resp = await client.get(endpoint, params={"q": query})
+        except httpx.HTTPError as exc:
+            errors.append(f"{endpoint}: {type(exc).__name__}: {exc}")
+            continue
         last_response = resp
-        if resp.status_code < 400 and "result__a" in resp.text:
+        if resp.status_code >= 400:
+            errors.append(f"{endpoint}: HTTP {resp.status_code}")
+            continue
+        last_success = resp
+        if _has_search_result_marker(resp.text):
             return resp
-    assert last_response is not None
-    last_response.raise_for_status()
-    return last_response
+    if last_success is not None:
+        return last_success
+    if last_response is not None:
+        last_response.raise_for_status()
+        return last_response
+    raise httpx.HTTPError("; ".join(errors) or "no search endpoints configured")
 
 
-async def _web_fetch(args: dict[str, Any]) -> ToolResult:
+def _has_search_result_marker(html: str) -> bool:
+    return "result__a" in html or "result-link" in html
+
+
+async def _web_fetch(args: dict[str, Any], *, ollama_api_key: str | None = None) -> ToolResult:
     url = str(args.get("url") or "").strip()
     if not _is_http_url(url):
         return ToolResult(content="url must start with http:// or https://", is_error=True)
     max_chars = _clamp_int(args.get("max_chars"), default=4000, low=500, high=12000)
+
+    official_error: str | None = None
+    if ollama_api_key:
+        try:
+            return await _ollama_web_fetch(url, max_chars=max_chars, api_key=ollama_api_key)
+        except (httpx.HTTPError, ValueError) as exc:
+            official_error = f"ollama web_fetch: {type(exc).__name__}: {exc}"
+
     try:
         async with httpx.AsyncClient(
             timeout=_TIMEOUT, headers={"User-Agent": _UA}, follow_redirects=True
@@ -178,19 +296,53 @@ async def _web_fetch(args: dict[str, Any]) -> ToolResult:
             resp = await client.get(url)
             resp.raise_for_status()
     except httpx.HTTPError as exc:
-        return ToolResult(content=f"web_fetch failed: {type(exc).__name__}: {exc}", is_error=True)
+        message = f"direct web_fetch: {type(exc).__name__}: {exc}"
+        if official_error:
+            message = f"{official_error}; {message}"
+        return ToolResult(content=f"web_fetch failed: {message}", is_error=True)
 
     parser = _TextParser()
     parser.feed(resp.text)
     text = re.sub(r"\s+", " ", " ".join(parser.text)).strip()[:max_chars]
     title = parser.title.strip() or url
     source = {"source_type": "web", "rank": 1, "title": title, "url": str(resp.url), "quote": text}
+    payload: dict[str, Any] = {
+        "url": str(resp.url),
+        "title": title,
+        "text": text,
+        "provider": "direct",
+    }
+    if official_error:
+        payload["warning"] = f"official fetch unavailable; used fallback: {official_error}"
+    return ToolResult(
+        content=json.dumps(payload, ensure_ascii=False),
+        metadata={"sources": [source]},
+    )
+
+
+async def _ollama_web_fetch(url: str, *, max_chars: int, api_key: str) -> ToolResult:
+    async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_ollama_headers(api_key)) as client:
+        resp = await client.post(_OLLAMA_WEB_FETCH_URL, json={"url": url})
+        resp.raise_for_status()
+        data = resp.json()
+
+    if not isinstance(data, dict):
+        raise ValueError("malformed Ollama web_fetch response")
+    final_url = str(data.get("url") or url).strip()
+    title = str(data.get("title") or final_url).strip()
+    text = str(data.get("content") or data.get("text") or "").strip()[:max_chars]
+    source = {"source_type": "web", "rank": 1, "title": title, "url": final_url, "quote": text}
     return ToolResult(
         content=json.dumps(
-            {"url": str(resp.url), "title": title, "text": text}, ensure_ascii=False
+            {"url": final_url, "title": title, "text": text, "provider": "ollama"},
+            ensure_ascii=False,
         ),
         metadata={"sources": [source]},
     )
+
+
+def _ollama_headers(api_key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
 
 def _clean_duckduckgo_url(href: str) -> str:

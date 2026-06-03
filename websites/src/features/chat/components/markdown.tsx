@@ -2,11 +2,20 @@
 
 import { Check, Copy } from "lucide-react";
 import { all } from "lowlight";
-import { memo, useState, type ComponentProps, type ReactNode } from "react";
+import {
+  memo,
+  useEffect,
+  useId,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 
+import { normalizeAssetUrl } from "@/lib/assets";
+import { externalLinkHref, isHttpUrl } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -22,6 +31,7 @@ interface Props {
  *   ``all`` grammar set from lowlight so every language hljs ships with
  *   is registered (Dart, Elixir, Haskell, Scala, Julia, Dockerfile,
  *   Nginx, …) — not just the 37-language ``common`` default.
+ * - Mermaid fences render as diagrams for architecture / flow charts.
  *
  * We deliberately avoid raw HTML — a malicious model can't smuggle in
  * <script>, <iframe>, etc. Custom renderers add a language badge and
@@ -36,16 +46,28 @@ function MarkdownImpl({ children, className }: Props) {
           [rehypeHighlight, { detect: true, ignoreMissing: true, languages: all }],
         ]}
         components={{
-          a: ({ href, children, ...rest }) => (
-            <a
-              href={href}
-              target={href?.startsWith("http") ? "_blank" : undefined}
-              rel={href?.startsWith("http") ? "noopener noreferrer" : undefined}
-              {...rest}
-            >
-              {children}
-            </a>
-          ),
+          a: ({ href, children, ...rest }) => {
+            const normalizedHref = normalizeAssetUrl(href);
+            const external = isHttpUrl(normalizedHref);
+            return (
+              <a
+                href={external ? externalLinkHref(normalizedHref) : normalizedHref}
+                target={external ? "_blank" : undefined}
+                rel={external ? "noopener noreferrer" : undefined}
+                {...rest}
+              >
+                {children}
+              </a>
+            );
+          },
+          img: ({ src, alt, ...rest }) => {
+            const normalizedSrc =
+              typeof src === "string" ? normalizeAssetUrl(src) : undefined;
+            return (
+              // eslint-disable-next-line @next/next/no-img-element -- markdown may reference authenticated app asset routes
+              <img src={normalizedSrc} alt={alt ?? ""} {...rest} />
+            );
+          },
           // Slug-attach heading renderers. Used by the wiki TOC so a
           // user can click an outline entry and scroll the rendered
           // preview to the matching heading. The slug logic must
@@ -102,6 +124,10 @@ function CodeBlock({ children, ...rest }: ComponentProps<"pre">) {
   const language = extractLanguage(children);
   const text = extractText(children);
 
+  if (isMermaidLanguage(language)) {
+    return <MermaidBlock chart={text} />;
+  }
+
   const onCopy = async () => {
     try {
       await navigator.clipboard.writeText(text);
@@ -134,6 +160,74 @@ function CodeBlock({ children, ...rest }: ComponentProps<"pre">) {
       <pre {...rest}>{children}</pre>
     </div>
   );
+}
+
+function MermaidBlock({ chart }: { chart: string }) {
+  const reactId = useId();
+  const diagramId = `mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const [svg, setSvg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function renderDiagram() {
+      setSvg(null);
+      setError(null);
+      try {
+        const mermaid = (await import("mermaid")).default;
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: document.documentElement.classList.contains("dark") ? "dark" : "default",
+        });
+        const rendered = await mermaid.render(`${diagramId}-${hashString(chart)}`, chart);
+        if (!cancelled) setSvg(rendered.svg);
+      } catch (err) {
+        if (!cancelled)
+          setError(
+            err instanceof Error ? err.message : "Failed to render Mermaid diagram"
+          );
+      }
+    }
+
+    void renderDiagram();
+    return () => {
+      cancelled = true;
+    };
+  }, [chart, diagramId]);
+
+  return (
+    <div className="my-4 overflow-x-auto rounded-xl border border-border bg-card p-4">
+      {svg ? (
+        <div
+          className="min-w-fit [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      ) : error ? (
+        <div className="space-y-2">
+          <p className="text-xs text-destructive">Mermaid render failed: {error}</p>
+          <pre className="overflow-x-auto rounded-lg bg-muted/60 p-3 text-xs">
+            <code>{chart}</code>
+          </pre>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">Rendering Mermaid diagram…</p>
+      )}
+    </div>
+  );
+}
+
+function isMermaidLanguage(language: string | null): boolean {
+  return language === "mermaid" || language === "mmd" || language === "marmaid";
+}
+
+function hashString(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(36);
 }
 
 function extractLanguage(node: ReactNode): string | null {

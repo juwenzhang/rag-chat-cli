@@ -50,7 +50,7 @@ def build_chat_service() -> ChatService:
     kb: KnowledgeBase | None = (
         FileKnowledgeBase.from_settings(llm=llm, s=settings) if settings.retrieval.enabled else None
     )
-    tools = build_builtin_tool_registry()
+    tools = build_builtin_tool_registry(ollama_api_key=lambda: llm.api_key)
     return ChatService(llm=llm, memory=memory, knowledge=kb, tools=tools)
 
 
@@ -91,5 +91,5 @@ async def build_chat_service_for_user(
         if settings.retrieval.enabled
         else None
     )
-    tools = build_builtin_tool_registry()
+    tools = build_builtin_tool_registry(ollama_api_key=lambda: getattr(llm, "api_key", None))
     return ChatService(llm=llm, memory=memory, knowledge=kb, tools=tools)
