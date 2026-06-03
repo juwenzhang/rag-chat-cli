@@ -88,54 +88,63 @@ function hydrateMessages(
   return out;
 }
 
-function applyStreamEvent(message: UIMessage, event: StreamEvent): UIMessage {
+const STREAM_STATE_FLUSH_MS = 50;
+
+function applyStreamEvents(message: UIMessage, events: StreamEvent[]): UIMessage {
   const next: UIMessage = { ...message };
-  switch (event.type) {
-    case "retrieval":
-      next.retrieval = event.data.hits;
-      break;
-    case "token":
-      next.content = (next.content || "") + (event.data.delta || "");
-      break;
-    case "thought":
-      if (event.data.text) {
-        next.thoughts = [...(next.thoughts || []), event.data.text];
-      }
-      break;
-    case "tool_call":
-      next.toolCalls = [
-        ...(next.toolCalls || []),
-        {
-          id: event.data.tool_call_id,
-          name: event.data.tool_name,
-          arguments: event.data.arguments,
-        },
-      ];
-      break;
-    case "tool_result":
-      next.toolResults = [
-        ...(next.toolResults || []),
-        {
-          id: event.data.tool_call_id,
-          name: event.data.tool_name,
-          output: event.data.content,
-          error: event.data.is_error ? event.data.content : undefined,
-        },
-      ];
-      break;
-    case "done":
-      next.streaming = false;
-      next.model = event.data.model ?? null;
-      next.provider = event.data.provider_name ?? null;
-      next.usage = event.data.usage;
-      next.durationMs = event.data.duration_ms;
-      next.sources = event.data.sources ?? next.sources;
-      break;
-    case "error":
-      next.streaming = false;
-      next.error = event.data.message || event.data.code;
-      break;
+  let contentDelta = "";
+  const thoughts: string[] = [];
+
+  for (const event of events) {
+    switch (event.type) {
+      case "retrieval":
+        next.retrieval = event.data.hits;
+        break;
+      case "token":
+        contentDelta += event.data.delta || "";
+        break;
+      case "thought":
+        if (event.data.text) thoughts.push(event.data.text);
+        break;
+      case "tool_call":
+        next.toolCalls = [
+          ...(next.toolCalls || []),
+          {
+            id: event.data.tool_call_id,
+            name: event.data.tool_name,
+            arguments: event.data.arguments,
+          },
+        ];
+        break;
+      case "tool_result":
+        next.toolResults = [
+          ...(next.toolResults || []),
+          {
+            id: event.data.tool_call_id,
+            name: event.data.tool_name,
+            output: event.data.content,
+            error: event.data.is_error ? event.data.content : undefined,
+          },
+        ];
+        break;
+      case "done":
+        next.streaming = false;
+        next.model = event.data.model ?? null;
+        next.provider = event.data.provider_name ?? null;
+        next.usage = event.data.usage;
+        next.durationMs = event.data.duration_ms;
+        next.sources = event.data.sources ?? next.sources;
+        break;
+      case "error":
+        next.streaming = false;
+        next.error = event.data.message || event.data.code;
+        break;
+    }
   }
+
+  if (contentDelta) next.content = (next.content || "") + contentDelta;
+  if (thoughts.length > 0) next.thoughts = [...(next.thoughts || []), ...thoughts];
+
   return next;
 }
 
@@ -150,6 +159,31 @@ export const useChatStore = create<ChatStore>((set, get) => {
     set({ streaming: true, abortController: controller });
     options?.onTurnStart?.();
 
+    const pendingEvents: StreamEvent[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearFlushTimer = () => {
+      if (flushTimer == null) return;
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    };
+
+    const flushPending = () => {
+      clearFlushTimer();
+      if (pendingEvents.length === 0 || get().sessionId !== sessionId) return;
+      const events = pendingEvents.splice(0, pendingEvents.length);
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === placeholderId ? applyStreamEvents(m, events) : m
+        ),
+      }));
+    };
+
+    const scheduleFlush = () => {
+      if (flushTimer != null) return;
+      flushTimer = setTimeout(flushPending, STREAM_STATE_FLUSH_MS);
+    };
+
     let completed = false;
     let sawError = false;
     try {
@@ -157,14 +191,14 @@ export const useChatStore = create<ChatStore>((set, get) => {
       for await (const event of readSse(res, controller.signal)) {
         if (get().sessionId !== sessionId) return;
         if (event.type === "error") sawError = true;
-        set((state) => ({
-          messages: state.messages.map((m) =>
-            m.id === placeholderId ? applyStreamEvent(m, event) : m
-          ),
-        }));
+        pendingEvents.push(event);
+        if (event.type === "done" || event.type === "error") flushPending();
+        else scheduleFlush();
       }
+      flushPending();
       completed = true;
     } catch (err) {
+      flushPending();
       if (get().sessionId !== sessionId) return;
       if ((err as Error).name === "AbortError") {
         set((state) => ({
@@ -182,6 +216,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
         toast.error(msg);
       }
     } finally {
+      clearFlushTimer();
       if (get().sessionId === sessionId) {
         set({ streaming: false, abortController: null });
       }

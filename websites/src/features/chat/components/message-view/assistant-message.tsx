@@ -49,7 +49,7 @@ export function AssistantMessage({
         )}
 
         {message.content ? (
-          <Markdown>{message.content}</Markdown>
+          <Markdown streaming={message.streaming}>{message.content}</Markdown>
         ) : message.streaming ? (
           <ThinkingIndicator />
         ) : message.error ? null : (

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
 from sqlalchemy import select
@@ -16,6 +16,7 @@ from api.deps import get_current_user, get_db_session, get_session_factory
 from api.schemas.asset import AssetOut
 from service.db.models import Asset, User
 from service.knowledge import KnowledgeService
+from service.llm.ollama import OllamaClient
 from service.providers.runtime import build_llm_for_user
 from service.storage import ObjectStorage, build_object_storage
 from service.storage.images import normalize_image_to_webp
@@ -25,6 +26,10 @@ __all__ = ["router"]
 
 router = APIRouter(tags=["assets"])
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from service.llm.client import LLMClient
+    from settings import Settings
 
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
 _IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
@@ -250,10 +255,10 @@ async def _try_index_image_asset(
     try:
         llm, _default_model = await build_llm_for_user(session_factory, user.id)
         try:
-            caption = await describe_image_asset(
+            caption = await _describe_image_with_vision_fallback(
                 asset=row,
                 storage=storage,
-                llm=llm,
+                user_llm=llm,
                 settings=settings,
             )
             if caption:
@@ -279,6 +284,38 @@ async def _try_index_image_asset(
         logger.warning(
             "image asset auto-index failed asset_id=%s user_id=%s: %s", row.id, user.id, exc
         )
+
+
+async def _describe_image_with_vision_fallback(
+    *,
+    asset: Asset,
+    storage: ObjectStorage,
+    user_llm: LLMClient,
+    settings: Settings,
+) -> str | None:
+    if not settings.retrieval.image_caption_enabled:
+        return None
+
+    if settings.retrieval.image_caption_model:
+        vision_llm = OllamaClient.from_settings(settings)
+        try:
+            caption = await describe_image_asset(
+                asset=asset,
+                storage=storage,
+                llm=vision_llm,
+                settings=settings,
+            )
+        finally:
+            await vision_llm.aclose()
+        if caption:
+            return caption
+
+    return await describe_image_asset(
+        asset=asset,
+        storage=storage,
+        llm=user_llm,
+        settings=settings,
+    )
 
 
 def _image_asset_index_body(row: Asset) -> str:
