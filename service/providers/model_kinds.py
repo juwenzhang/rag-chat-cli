@@ -47,6 +47,7 @@ def is_vision_model_tag(tag: str) -> bool:
             "moondream",
             "minicpmv",
             "qwenvl",
+            "qwen3vl",
             "qwen25vl",
             "qwen2vl",
             "geminivision",

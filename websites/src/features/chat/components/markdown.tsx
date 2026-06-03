@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 interface Props {
   children: string;
   className?: string;
+  streaming?: boolean;
 }
 
 /**
@@ -37,13 +38,21 @@ interface Props {
  * <script>, <iframe>, etc. Custom renderers add a language badge and
  * a Copy button to code blocks, and wrap tables for horizontal scroll.
  */
-function MarkdownImpl({ children, className }: Props) {
+function MarkdownImpl({ children, className, streaming = false }: Props) {
+  if (streaming) {
+    return (
+      <div className={cn("markdown-body", className)}>
+        <p className="whitespace-pre-wrap wrap-break-word">{children}</p>
+      </div>
+    );
+  }
+
   return (
     <div className={cn("markdown-body", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[
-          [rehypeHighlight, { detect: true, ignoreMissing: true, languages: all }],
+          [rehypeHighlight, { detect: false, ignoreMissing: true, languages: all }],
         ]}
         components={{
           a: ({ href, children, ...rest }) => {

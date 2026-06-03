@@ -25,6 +25,10 @@ services:
         value: "0.25"
       - key: RAG_EMBED_DIM
         sync: false
+      - key: RAG_IMAGE_CAPTION_ENABLED
+        value: "true"
+      - key: RAG_IMAGE_CAPTION_MODEL
+        sync: false
       - key: JWT_SECRET
         sync: false
       - key: PROVIDER_ENCRYPTION_KEY
