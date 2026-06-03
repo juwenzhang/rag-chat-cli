@@ -31,6 +31,14 @@ export const messages = {
     "common.light": "light",
     "common.dark": "dark",
 
+    "externalLink.title": "Leaving lhx-rag",
+    "externalLink.description":
+      "You are about to visit an external website. Make sure the link is trustworthy before continuing.",
+    "externalLink.target": "Target URL",
+    "externalLink.invalid": "The link is invalid or uses an unsupported protocol.",
+    "externalLink.back": "Back",
+    "externalLink.continue": "Continue",
+
     "nav.chat": "Chat",
     "nav.wiki": "Wiki",
     "nav.bookmarks": "Bookmarks",
@@ -103,6 +111,10 @@ export const messages = {
     "chat.composer.ragEnabledTip":
       "Retrieval-augmented context is being added to each turn",
     "chat.composer.ragDisabledTip": "Click to enable retrieval-augmented context",
+    "chat.composer.thinkOn": "on",
+    "chat.composer.thinkOff": "off",
+    "chat.composer.thinkEnabledTip": "Native Ollama thinking is enabled for this turn",
+    "chat.composer.thinkDisabledTip": "Click to enable native Ollama thinking",
     "chat.composer.send": "Send",
     "chat.composer.stop": "Stop",
     "chat.toolbar.thinking": "Thinking",
@@ -225,6 +237,13 @@ export const messages = {
     "common.light": "浅色",
     "common.dark": "深色",
 
+    "externalLink.title": "即将离开 lhx-rag",
+    "externalLink.description": "你正在访问外部网站。请确认链接地址可信，再继续打开。",
+    "externalLink.target": "目标地址",
+    "externalLink.invalid": "链接无效或协议不受支持。",
+    "externalLink.back": "返回",
+    "externalLink.continue": "继续访问",
+
     "nav.chat": "聊天",
     "nav.wiki": "知识库",
     "nav.bookmarks": "收藏夹",
@@ -290,6 +309,10 @@ export const messages = {
     "chat.composer.ragOff": "关",
     "chat.composer.ragEnabledTip": "每轮对话都会加入检索增强上下文",
     "chat.composer.ragDisabledTip": "点击启用检索增强上下文",
+    "chat.composer.thinkOn": "开",
+    "chat.composer.thinkOff": "关",
+    "chat.composer.thinkEnabledTip": "本轮会启用 Ollama 原生深度思考",
+    "chat.composer.thinkDisabledTip": "点击启用 Ollama 原生深度思考",
     "chat.composer.send": "发送",
     "chat.composer.stop": "停止",
     "chat.toolbar.thinking": "思考中",

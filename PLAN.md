@@ -200,7 +200,7 @@ def build_llm_client(provider, model) -> LLMClient:
 - Popover 内容：
   ```
   Provider: [Ollama (local) ▾]
-  Model:    [qwen2.5:1.5b ▾]
+  Model:    [qwen3-coder-next:cloud ▾]
   ──────────────────────────
   Manage providers →   /settings/providers
   ```

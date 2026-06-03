@@ -83,12 +83,14 @@ Postgres-backed queue、HTTP MCP transport —— 都是单文件改动，
 # 1. 安装 Python 依赖
 uv sync --all-extras
 
-# 2. 确认 Ollama 在跑，拉 CLI 用到的两个模型：
-#    - 聊天模型（默认 qwen2.5:1.5b，可以改）
+# 2. 确认 Ollama 在跑，拉应用用到的模型：
+#    - 聊天模型（默认 qwen3-coder-next:cloud，可以改）
 #    - 嵌入模型（/save / /reflect / /kb search / RAG 检索都需要）
+#    - 视觉模型（图片上传后的 caption/理解需要）
 ollama serve &                       # 没跑的话开个新终端起来
-ollama pull qwen2.5:1.5b
+ollama pull qwen3-coder-next:cloud
 ollama pull nomic-embed-text         # ⚠️ 必须拉，否则 /save 会报 404
+ollama pull qwen3-vl:235b-cloud      # 图片 caption 需要
 
 # 3. 配环境变量
 cp .env.example .env

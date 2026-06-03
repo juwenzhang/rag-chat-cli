@@ -1,6 +1,6 @@
 "use client";
 
-import { CloudDownload, Pencil, Trash2 } from "lucide-react";
+import { CloudDownload, Eye, Pencil, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { VirtualTable, type VirtualTableColumn } from "@/components/ui/virtual-table";
@@ -36,7 +36,16 @@ export function ModelTable({
               embed
             </Badge>
           )}
-          {m.id.toLowerCase().endsWith("-cloud") && (
+          {m.kind === "vision" && (
+            <Badge
+              variant="secondary"
+              className="shrink-0 gap-1 px-1 py-0 text-[9px] uppercase tracking-wide"
+            >
+              <Eye className="size-2.5" />
+              vision
+            </Badge>
+          )}
+          {isCloudModel(m.id) && (
             <Badge
               variant="outline"
               className="shrink-0 gap-1 px-1 py-0 text-[9px] uppercase tracking-wide text-primary"
@@ -130,6 +139,11 @@ export function ModelTable({
       density="comfortable"
     />
   );
+}
+
+function isCloudModel(id: string): boolean {
+  const normalized = id.trim().toLowerCase();
+  return normalized.endsWith(":cloud") || normalized.endsWith("-cloud");
 }
 
 function formatSize(bytes: number): string {

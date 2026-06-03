@@ -122,7 +122,7 @@ export function PreferencesCard({
             <Label htmlFor="default_model">Default chat model</Label>
             <Input
               id="default_model"
-              placeholder="qwen2.5:1.5b"
+              placeholder="qwen3-coder-next:cloud"
               value={modelName}
               onChange={(e) => setModelName(e.target.value)}
               maxLength={128}

@@ -25,13 +25,18 @@ class S3ObjectStorage:
 
         self._bucket = bucket
         self._public_endpoint_url = public_endpoint_url.rstrip("/")
-        self._client = boto3.client(
+        config = Config(signature_version="s3v4", s3={"addressing_style": "path"})
+        client_kwargs = {
+            "aws_access_key_id": access_key,
+            "aws_secret_access_key": secret_key,
+            "region_name": region,
+            "config": config,
+        }
+        self._client = boto3.client("s3", endpoint_url=endpoint_url, **client_kwargs)
+        self._presign_client = boto3.client(
             "s3",
-            endpoint_url=endpoint_url,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            region_name=region,
-            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+            endpoint_url=self._public_endpoint_url or endpoint_url,
+            **client_kwargs,
         )
 
     async def put_bytes(self, *, key: str, data: bytes, content_type: str) -> StoredObject:
@@ -55,17 +60,11 @@ class S3ObjectStorage:
 
     async def presigned_get_url(self, key: str, *, expires_in: int = 3600) -> str:
         url = await asyncio.to_thread(
-            self._client.generate_presigned_url,
+            self._presign_client.generate_presigned_url,
             "get_object",
             Params={"Bucket": self._bucket, "Key": key},
             ExpiresIn=expires_in,
         )
-        if self._public_endpoint_url:
-            from urllib.parse import urlparse
-
-            parsed = urlparse(url)
-            internal = f"{parsed.scheme}://{parsed.netloc}"
-            url = url.replace(internal, self._public_endpoint_url, 1)
         return str(url)
 
     async def delete(self, key: str) -> None:

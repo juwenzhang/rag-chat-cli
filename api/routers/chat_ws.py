@@ -197,6 +197,7 @@ async def _stream_reply(
             use_rag=use_rag,
             abort=abort_ctx,
             model=model,
+            think=True,
         ):
             # Stamp provider_name onto the done event (mirror of chat_stream).
             if raw.get("type") == "done" and provider_name:

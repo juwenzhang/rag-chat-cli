@@ -27,6 +27,7 @@ from api.schemas.chat import (
     ChatSessionOut,
     ChatSessionUpdateIn,
     CreateSessionIn,
+    MessageEvaluationOut,
     MessageIn,
     MessageOut,
     MessageUpdateIn,
@@ -35,7 +36,15 @@ from api.schemas.common import Page
 from api.schemas.share import ForkFromShareIn
 from service.chat.service import ChatService
 from service.chat.titles import synthesize_preview_title
-from service.db.models import ChatSession, Message, MessageShare, User, Wiki, WikiPage
+from service.db.models import (
+    ChatSession,
+    Message,
+    MessageEvaluation,
+    MessageShare,
+    User,
+    Wiki,
+    WikiPage,
+)
 from service.errors import ForbiddenError, NotFoundError
 from service.llm.client import ChatMessage
 from service.providers import ProviderNotFoundError, get_provider
@@ -340,6 +349,111 @@ async def list_messages(
     )
 
 
+@router.get(
+    "/messages/{message_id}/evaluation",
+    response_model=MessageEvaluationOut,
+    summary="Get the stored AI evaluation for an assistant message",
+)
+async def get_message_evaluation(
+    message_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> MessageEvaluationOut:
+    msg = await _own_message_row(session, user.id, message_id)
+    if msg.role != "assistant":
+        raise HTTPException(status_code=400, detail="only assistant messages can be evaluated")
+    row = await session.scalar(
+        select(MessageEvaluation).where(MessageEvaluation.message_id == message_id)
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="evaluation not found")
+    return MessageEvaluationOut.model_validate(row)
+
+
+@router.post(
+    "/messages/{message_id}/evaluation",
+    response_model=MessageEvaluationOut,
+    summary="Evaluate an assistant message using the resident judge model",
+)
+async def evaluate_message(
+    message_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> MessageEvaluationOut:
+    from service.evaluation import evaluate_answer
+    from service.llm.ollama import OllamaClient
+    from settings import settings
+
+    if not settings.evaluation.enabled:
+        raise HTTPException(status_code=400, detail="evaluation is disabled")
+
+    msg = await _own_message_row(session, user.id, message_id)
+    if msg.role != "assistant":
+        raise HTTPException(status_code=400, detail="only assistant messages can be evaluated")
+
+    existing = await session.scalar(
+        select(MessageEvaluation).where(MessageEvaluation.message_id == message_id)
+    )
+    if existing is not None:
+        return MessageEvaluationOut.model_validate(existing)
+
+    question = await _previous_user_content(session, msg)
+    llm = OllamaClient(
+        base_url=settings.ollama.base_url,
+        chat_model=settings.evaluation.model,
+        embed_model=settings.ollama.embed_model,
+        timeout=float(settings.evaluation.timeout),
+        api_key=settings.ollama.api_key,
+    )
+    try:
+        evaluation = await evaluate_answer(
+            llm=llm,
+            model=settings.evaluation.model,
+            question=question or "",
+            answer=msg.content,
+            sources=msg.sources,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"evaluation failed: {exc}") from exc
+    finally:
+        await llm.aclose()
+
+    row = MessageEvaluation(
+        message_id=msg.id,
+        session_id=msg.session_id,
+        user_id=user.id,
+        model=settings.evaluation.model,
+        overall=evaluation.overall,
+        helpfulness=evaluation.helpfulness,
+        groundedness=evaluation.groundedness,
+        citation_quality=evaluation.citation_quality,
+        completeness=evaluation.completeness,
+        risk=evaluation.risk,
+        comment=evaluation.comment,
+        raw=evaluation.raw,
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return MessageEvaluationOut.model_validate(row)
+
+
+async def _previous_user_content(session: AsyncSession, msg: Message) -> str | None:
+    return cast(
+        str | None,
+        await session.scalar(
+            select(Message.content)
+            .where(
+                Message.session_id == msg.session_id,
+                Message.role == "user",
+                Message.created_at <= msg.created_at,
+            )
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Message edit / delete — used by the chat UI's "edit & re-run" affordance
 # and trim-history operations. These don't touch the LLM; re-running is a
@@ -456,6 +570,7 @@ async def _generate_reply(
             body.content,
             use_rag=body.use_rag,
             model=model,
+            think=body.think,
         )
     finally:
         await service.aclose()

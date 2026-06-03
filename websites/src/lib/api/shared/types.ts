@@ -80,6 +80,23 @@ export interface MessageOut {
   created_at: string;
 }
 
+export type ThinkMode = boolean | "low" | "medium" | "high";
+
+export interface MessageEvaluationOut {
+  id: string;
+  message_id: string;
+  model: string;
+  overall: number;
+  helpfulness: number;
+  groundedness: number;
+  citation_quality: number;
+  completeness: number;
+  risk: "low" | "medium" | "high";
+  comment: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ToolCallOut {
   id: string;
   name: string;

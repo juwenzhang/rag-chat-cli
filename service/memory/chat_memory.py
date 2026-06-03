@@ -55,12 +55,16 @@ def _message_to_dict(msg: ChatMessage) -> dict[str, Any]:
     ``{"role": ..., "content": ...}`` exactly like before.
     """
     out: dict[str, Any] = {"role": msg.role, "content": msg.content}
+    if msg.thinking:
+        out["thinking"] = msg.thinking
     if msg.tool_calls:
         out["tool_calls"] = [
             {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in msg.tool_calls
         ]
     if msg.tool_call_id is not None:
         out["tool_call_id"] = msg.tool_call_id
+    if msg.tool_name is not None:
+        out["tool_name"] = msg.tool_name
     if msg.sources:
         out["sources"] = list(msg.sources)
     return out
@@ -92,12 +96,16 @@ def _parse_tool_calls(raw: Any) -> tuple[ToolCall, ...]:
 def _dict_to_message(item: dict[str, Any]) -> ChatMessage:
     """Inverse of :func:`_message_to_dict`. Tolerates missing tool fields."""
     tool_call_id = item.get("tool_call_id")
+    tool_name = item.get("tool_name")
+    thinking = item.get("thinking")
     sources = item.get("sources")
     return ChatMessage(
         role=cast("Role", item["role"]),
         content=item.get("content") or "",
+        thinking=thinking if isinstance(thinking, str) else "",
         tool_calls=_parse_tool_calls(item.get("tool_calls")),
         tool_call_id=tool_call_id if isinstance(tool_call_id, str) else None,
+        tool_name=tool_name if isinstance(tool_name, str) else None,
         sources=tuple(s for s in sources if isinstance(s, dict))
         if isinstance(sources, list)
         else (),
@@ -118,6 +126,7 @@ def _db_row_to_message(row: Any) -> ChatMessage:
         content=row.content,
         tool_calls=_parse_tool_calls(getattr(row, "tool_calls", None)),
         tool_call_id=tool_call_id if isinstance(tool_call_id, str) else None,
+        tool_name="tool" if getattr(row, "role", None) == "tool" else None,
         sources=(
             tuple(s for s in raw_sources if isinstance(s, dict))
             if isinstance(raw_sources, list)

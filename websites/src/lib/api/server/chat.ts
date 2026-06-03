@@ -1,7 +1,13 @@
 import "server-only";
 
 import { apiFetch, apiStream } from "@/lib/api/server/client";
-import type { MessageOut, SessionMeta, StreamEvent } from "@/lib/api/shared/types";
+import type {
+  MessageEvaluationOut,
+  MessageOut,
+  SessionMeta,
+  StreamEvent,
+  ThinkMode,
+} from "@/lib/api/shared/types";
 
 export interface ListSessionsResult {
   items: SessionMeta[];
@@ -84,10 +90,30 @@ export async function getMessages(
   return Array.isArray(data) ? data : data.items;
 }
 
+export async function getMessageEvaluation(
+  token: string,
+  messageId: string
+): Promise<MessageEvaluationOut> {
+  return apiFetch<MessageEvaluationOut>(`/chat/messages/${messageId}/evaluation`, {
+    token,
+  });
+}
+
+export async function evaluateMessage(
+  token: string,
+  messageId: string
+): Promise<MessageEvaluationOut> {
+  return apiFetch<MessageEvaluationOut>(`/chat/messages/${messageId}/evaluation`, {
+    method: "POST",
+    token,
+  });
+}
+
 export interface ChatStreamParams {
   session_id: string;
   content: string;
   use_rag?: boolean;
+  think?: ThinkMode | null;
 }
 
 /**
@@ -108,6 +134,7 @@ export async function openChatStream(
 export interface RegenerateStreamParams {
   session_id: string;
   use_rag?: boolean;
+  think?: ThinkMode | null;
 }
 
 /**

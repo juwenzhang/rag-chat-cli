@@ -1,10 +1,17 @@
-import type { AnswerSource, KnowledgeHit, ToolCallOut } from "@/lib/api/shared/types";
+import type {
+  AnswerSource,
+  KnowledgeHit,
+  MessageEvaluationOut,
+  ToolCallOut,
+} from "@/lib/api/shared/types";
 
 export interface UIMessage {
   /** Local id (uuid-ish) — distinct from backend id during streaming. */
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** Product-level thinking / action trace surfaced by the backend. */
+  thoughts?: string[];
   /** Tool invocations the assistant requested during this turn. */
   toolCalls?: ToolCallOut[];
   /** Tool results spliced back into this turn. */
@@ -13,6 +20,8 @@ export interface UIMessage {
   retrieval?: KnowledgeHit[];
   /** Normalized answer sources persisted by the backend. */
   sources?: AnswerSource[];
+  /** Optional AI quality evaluation for this answer. */
+  evaluation?: MessageEvaluationOut;
   /** True while the SSE stream is still appending. */
   streaming?: boolean;
   /** Failure message if the stream errored out. */

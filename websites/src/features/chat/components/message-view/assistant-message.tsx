@@ -6,9 +6,12 @@ import { Markdown } from "../markdown";
 import type { UIMessage } from "../types";
 
 import { ActionRow } from "./action-row";
+import { EvaluationBlock } from "./evaluation-block";
 import { MessageErrorBlock } from "./message-error-block";
 import { MessageFooter } from "./message-footer";
 import { RetrievalBlock } from "./retrieval-block";
+import { SourcesBlock } from "./sources-block";
+import { ThoughtTraceBlock } from "./thought-trace-block";
 import { ToolCallsBlock } from "./tool-calls-block";
 
 /** Assistant message — small logo + full-width markdown + action row. */
@@ -24,13 +27,21 @@ export function AssistantMessage({
   // Share / Bookmark need both server IDs. Optimistic rows during the
   // active stream lack them (and the preceding user row is also still local).
   const canPersistAction = !!message.persisted && !!prevUserMessageId && !!message.id;
+  const canEvaluate = !!message.persisted && !!message.id;
 
   return (
     <div className="group flex w-full gap-3">
       <AssistantLogo />
       <div className="flex min-w-0 flex-1 flex-col gap-3">
-        {message.retrieval && message.retrieval.length > 0 && (
-          <RetrievalBlock hits={message.retrieval} />
+        {message.thoughts && message.thoughts.length > 0 && (
+          <ThoughtTraceBlock thoughts={message.thoughts} />
+        )}
+
+        {message.sources && message.sources.length > 0 ? (
+          <SourcesBlock sources={message.sources} />
+        ) : (
+          message.retrieval &&
+          message.retrieval.length > 0 && <RetrievalBlock hits={message.retrieval} />
         )}
 
         {message.toolCalls && message.toolCalls.length > 0 && (
@@ -52,6 +63,13 @@ export function AssistantMessage({
         )}
 
         {message.error && <MessageErrorBlock error={message.error} />}
+
+        {!message.streaming && message.content && (
+          <EvaluationBlock
+            messageId={canEvaluate ? message.id : undefined}
+            initial={message.evaluation}
+          />
+        )}
 
         {!message.streaming && message.content && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 opacity-0 transition-opacity group-hover:opacity-100">

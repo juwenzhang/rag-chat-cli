@@ -63,9 +63,13 @@ class KnowledgeService:
 
     async def list_documents(self, *, page: int, size: int) -> tuple[list[Document], int]:
         offset = (page - 1) * size
+        visible_filter = (
+            Document.user_id == self._user_id,
+            Document.source.not_like("asset://%"),
+        )
         q = (
             select(Document)
-            .where(Document.user_id == self._user_id)
+            .where(*visible_filter)
             .order_by(Document.created_at.desc())
             .offset(offset)
             .limit(size)
@@ -74,9 +78,7 @@ class KnowledgeService:
         total = (
             cast(
                 "int",
-                await self._session.scalar(
-                    select(func.count(Document.id)).where(Document.user_id == self._user_id)
-                ),
+                await self._session.scalar(select(func.count(Document.id)).where(*visible_filter)),
             )
             or 0
         )

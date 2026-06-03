@@ -47,7 +47,7 @@ export function PullModelIdleForm({
           id="pull_tag"
           value={tag}
           onChange={(event) => onTagChange(event.target.value)}
-          placeholder="qwen2.5:7b   or   gpt-oss:120b-cloud"
+          placeholder="qwen3-coder-next:cloud   or   qwen3-vl:235b-cloud"
           autoComplete="off"
           autoFocus
         />

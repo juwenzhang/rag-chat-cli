@@ -17,6 +17,7 @@ from service.db.models.chunk import Chunk
 from service.db.models.document import Document
 from service.db.models.message import Message
 from service.db.models.message_bookmark import MessageBookmark
+from service.db.models.message_evaluation import MessageEvaluation
 from service.db.models.message_share import MessageShare
 from service.db.models.model_metadata import ModelMetadata
 from service.db.models.org import Org
@@ -39,6 +40,7 @@ __all__ = [
     "Document",
     "Message",
     "MessageBookmark",
+    "MessageEvaluation",
     "MessageShare",
     "ModelMetadata",
     "Org",

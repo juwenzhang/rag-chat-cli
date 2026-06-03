@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import AsyncIterator
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -104,6 +105,7 @@ async def chat_stream(
                 body.content,
                 use_rag=body.use_rag,
                 model=session_model,
+                think=body.think,
             ):
                 # Inject provider_name on the done frame so the UI footer can
                 # render "qwen2.5:7b · local-ollama". ChatService is provider-
@@ -141,6 +143,7 @@ class RegenerateIn(BaseModel):
 
     session_id: uuid.UUID
     use_rag: bool = False
+    think: bool | Literal["low", "medium", "high"] | None = None
 
 
 @router.post(
@@ -226,6 +229,7 @@ async def chat_stream_regenerate(
                 user_text,
                 use_rag=body.use_rag,
                 model=session_model,
+                think=body.think,
                 # The user message already lives in history — don't
                 # double-write it.
                 persist_user=False,

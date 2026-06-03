@@ -52,6 +52,7 @@ import type {
   DocumentDetailOut,
   DocumentOut,
   MemberOut,
+  MessageEvaluationOut,
   MessageOut,
   ModelListItem,
   OrgOut,
@@ -91,6 +92,14 @@ const chat = {
 
   getMessages: (sessionId: string) =>
     bff<MessageOut[]>(`/api/chat/sessions/${sessionId}/messages`),
+
+  getMessageEvaluation: (messageId: string) =>
+    bff<MessageEvaluationOut>(`/api/chat/messages/${messageId}/evaluation`),
+
+  evaluateMessage: (messageId: string) =>
+    bff<MessageEvaluationOut>(`/api/chat/messages/${messageId}/evaluation`, {
+      method: "POST",
+    }),
 
   sessionFromShare: (token: string) =>
     bff<SessionMeta>("/api/chat/sessions/from-share", {

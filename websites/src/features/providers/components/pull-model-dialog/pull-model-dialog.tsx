@@ -39,7 +39,8 @@ type Stage =
 
 /** Cloud-flagged tags pull near-instantly because no GB-sized layers download. */
 function isCloudTag(tag: string): boolean {
-  return tag.trim().toLowerCase().endsWith("-cloud");
+  const normalized = tag.trim().toLowerCase();
+  return normalized.endsWith(":cloud") || normalized.endsWith("-cloud");
 }
 
 export function PullModelDialog({
@@ -148,8 +149,9 @@ export function PullModelDialog({
           <DialogTitle>Pull an Ollama model</DialogTitle>
           <DialogDescription>
             Downloads to <span className="font-mono text-foreground">{providerName}</span>
-            . Tags ending in <span className="font-mono">-cloud</span> are registered
-            against Ollama Cloud and complete near-instantly.
+            . Tags ending in <span className="font-mono">:cloud</span> or{" "}
+            <span className="font-mono">-cloud</span> are registered against Ollama Cloud
+            and complete near-instantly.
           </DialogDescription>
         </DialogHeader>
 

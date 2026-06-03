@@ -1,5 +1,7 @@
 "use client";
 
+import { normalizeAssetUrl } from "@/lib/assets";
+
 import type { UIMessage } from "../types";
 
 interface AttachedImage {
@@ -54,7 +56,7 @@ function splitAttachedImages(content: string): { text: string; images: AttachedI
     .replace(
       ATTACHED_IMAGE_RE,
       (_match, filename: string, url: string, description?: string) => {
-        images.push({ filename, url, description });
+        images.push({ filename, url: normalizeAssetUrl(url), description });
         return "\n";
       }
     )

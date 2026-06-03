@@ -5,7 +5,7 @@ import { create } from "zustand";
 
 import type { UIMessage } from "@/features/chat/components/types";
 import { api } from "@/lib/api/browser";
-import type { MessageOut, StreamEvent } from "@/lib/api/shared/types";
+import type { MessageOut, StreamEvent, ThinkMode } from "@/lib/api/shared/types";
 import { ApiError } from "@/lib/api/shared/types";
 import { readSse } from "@/lib/sse/client";
 
@@ -29,10 +29,12 @@ interface ChatStore {
   streaming: boolean;
   abortController: AbortController | null;
   useRag: boolean;
+  think: ThinkMode;
   providerId: string | null;
   model: string | null;
   initSession: (input: InitSessionInput) => void;
   setUseRag: (enabled: boolean) => void;
+  setThink: (next: ThinkMode) => void;
   setModelSelection: (next: { provider_id: string | null; model: string | null }) => void;
   send: (content: string, options?: TurnOptions) => Promise<void>;
   regenerate: (options?: TurnOptions) => Promise<void>;
@@ -95,6 +97,11 @@ function applyStreamEvent(message: UIMessage, event: StreamEvent): UIMessage {
     case "token":
       next.content = (next.content || "") + (event.data.delta || "");
       break;
+    case "thought":
+      if (event.data.text) {
+        next.thoughts = [...(next.thoughts || []), event.data.text];
+      }
+      break;
     case "tool_call":
       next.toolCalls = [
         ...(next.toolCalls || []),
@@ -122,6 +129,7 @@ function applyStreamEvent(message: UIMessage, event: StreamEvent): UIMessage {
       next.provider = event.data.provider_name ?? null;
       next.usage = event.data.usage;
       next.durationMs = event.data.duration_ms;
+      next.sources = event.data.sources ?? next.sources;
       break;
     case "error":
       next.streaming = false;
@@ -231,6 +239,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
     streaming: false,
     abortController: null,
     useRag: true,
+    think: true,
     providerId: null,
     model: null,
 
@@ -266,6 +275,8 @@ export const useChatStore = create<ChatStore>((set, get) => {
 
     setUseRag: (enabled) => set({ useRag: enabled }),
 
+    setThink: (next) => set({ think: next }),
+
     setModelSelection: (next) => set({ providerId: next.provider_id, model: next.model }),
 
     send: async (content, options) => {
@@ -292,7 +303,12 @@ export const useChatStore = create<ChatStore>((set, get) => {
         sessionId,
         (signal) =>
           api.chat.stream(
-            { session_id: sessionId, content: trimmed, use_rag: get().useRag },
+            {
+              session_id: sessionId,
+              content: trimmed,
+              use_rag: get().useRag,
+              think: get().think,
+            },
             signal
           ),
         assistantId,
@@ -323,7 +339,10 @@ export const useChatStore = create<ChatStore>((set, get) => {
       await runStream(
         sessionId,
         (signal) =>
-          api.chat.regenerate({ session_id: sessionId, use_rag: get().useRag }, signal),
+          api.chat.regenerate(
+            { session_id: sessionId, use_rag: get().useRag, think: get().think },
+            signal
+          ),
         placeholderId,
         options
       );
