@@ -4,13 +4,13 @@ The two top-level READMEs (`README.md`, `README.zh-CN.md`) reference
 the following five images. Drop them in this directory with the exact
 filenames below and both READMEs render correctly on GitHub.
 
-> **Storage:** every image in this directory is tracked by **Git
-> LFS** — see the root `.gitattributes`. New PNG / JPG / WEBP / GIF
-> files added here are automatically routed to LFS, so the repo
-> stays slim even as the screenshot collection grows. If you don't
-> have `git-lfs` installed, clones will land tiny pointer files in
-> place of real images; run `brew install git-lfs && git lfs pull`
-> (or your platform's equivalent) once and they'll materialise.
+> **Storage:** images live as ordinary git blobs (no LFS). This is
+> intentional — GitHub's markdown renderer fetches embedded images
+> through `raw.githubusercontent.com`, which does **not** dereference
+> LFS pointers, so storing screenshots in LFS would show up as broken
+> images on the rendered README. Plain blobs render everywhere with
+> zero setup. Keep individual files under ~500 kB to stay friendly to
+> shallow clones.
 
 | Filename | What it should show |
 | --- | --- |
