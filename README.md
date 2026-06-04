@@ -73,27 +73,27 @@ treats the chat layer as production software:
 
 ### Web — landing (signed-in, Chinese UI)
 
-![Web home — Chinese](docs/images/web-home-zh.png)
+![Web home — Chinese](https://github.com/juwenzhang/rag-chat-cli/raw/master/docs/images/web-home-zh.png)
 
 ### Web — sign-in card
 
-![Web login — Chinese](docs/images/web-login-zh.png)
+![Web login — Chinese](https://github.com/juwenzhang/rag-chat-cli/raw/master/docs/images/web-login-zh.png)
 
 ### Web — landing (English UI)
 
-![Web home — English](docs/images/web-home-en.png)
+![Web home — English](https://github.com/juwenzhang/rag-chat-cli/raw/master/docs/images/web-home-en.png)
 
 ### Web — sign-in (English UI)
 
-![Web login — English](docs/images/web-login-en.png)
+![Web login — English](https://github.com/juwenzhang/rag-chat-cli/raw/master/docs/images/web-login-en.png)
 
 ### Terminal — sign-in
 
-![TUI login](docs/images/tui-login.png)
+![TUI login](https://github.com/juwenzhang/rag-chat-cli/raw/master/docs/images/tui-login.png)
 
 ### Terminal — three-pane chat
 
-![TUI shell](docs/images/tui-shell.png)
+![TUI shell](https://github.com/juwenzhang/rag-chat-cli/raw/master/docs/images/tui-shell.png)
 
 > The terminal client (`lhx-rag`) is a fullscreen Ink app: sessions on
 > the left, transcript in the middle, composer at the bottom, and a
