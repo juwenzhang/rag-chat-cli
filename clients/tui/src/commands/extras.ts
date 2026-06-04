@@ -368,6 +368,74 @@ registerCommand({
   }
 });
 
+/* ── /model — change the active session's model pin ──────────────── */
+
+registerCommand({
+  name: 'model',
+  usage: '/model [show|set <provider> <model>|clear]',
+  description:
+    "Inspect or change the active session's model pin (overrides /pref default_model)",
+  category: 'config',
+  async run(ctx: CommandCtx) {
+    const sid = useSessionStore.getState().activeId;
+    if (!sid) {
+      ctx.notify('warn', 'no active session');
+      return;
+    }
+    const sub = ctx.args[0]?.toLowerCase() ?? 'show';
+    try {
+      if (sub === 'show' || sub === 'get') {
+        const session = useSessionStore
+          .getState()
+          .sessions.find((s) => s.id === sid);
+        ctx.notify(
+          'info',
+          `provider=${session?.provider_id?.slice(0, 8) ?? '∅'} ` +
+            `model=${session?.model ?? '∅'} ` +
+            '(∅ → falls back to /pref defaults)'
+        );
+        return;
+      }
+      if (sub === 'clear') {
+        const updated = await ctx.api.updateSession(sid, {
+          clear_model: true,
+          clear_provider_id: true
+        });
+        useSessionStore.getState().upsertLocal(updated);
+        ctx.notify('ok', 'session pin cleared — using /pref defaults');
+        return;
+      }
+      if (sub === 'set') {
+        const providers = await ctx.api.listProviders();
+        const providerToken = ctx.args[1];
+        const model = ctx.args[2];
+        if (!providerToken || !model) {
+          ctx.notify(
+            'warn',
+            'usage: /model set <provider-id-prefix|name|index> <model>'
+          );
+          return;
+        }
+        const provider = pickProvider([providerToken], providers);
+        if (!provider) {
+          ctx.notify('error', `no provider matches ${providerToken}`);
+          return;
+        }
+        const updated = await ctx.api.updateSession(sid, {
+          provider_id: provider.id,
+          model
+        });
+        useSessionStore.getState().upsertLocal(updated);
+        ctx.notify('ok', `pinned ${provider.name} · ${model}`);
+        return;
+      }
+      ctx.notify('warn', 'usage: /model [show|set|clear]');
+    } catch (err) {
+      ctx.notify('error', fmtError(err));
+    }
+  }
+});
+
 /* ── /register (fallback for already-logged-in flow) ──────────────── */
 
 registerCommand({
