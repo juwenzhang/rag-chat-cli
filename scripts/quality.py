@@ -9,7 +9,7 @@ from collections.abc import Sequence
 BACKEND_CHECKS: tuple[tuple[str, ...], ...] = (
     ("uv", "run", "ruff", "check", "."),
     ("uv", "run", "ruff", "format", "--check", "."),
-    ("uv", "run", "mypy", "api", "service", "tui", "main.py", "settings.py", "scripts"),
+    ("uv", "run", "mypy", "api", "service", "settings.py", "scripts"),
     (
         "python3",
         "-m",
@@ -17,8 +17,6 @@ BACKEND_CHECKS: tuple[tuple[str, ...], ...] = (
         "-q",
         "api",
         "service",
-        "tui",
-        "main.py",
         "settings.py",
         "scripts",
         "alembic",

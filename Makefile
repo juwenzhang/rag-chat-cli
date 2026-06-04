@@ -19,7 +19,8 @@ SERVICE ?=
 COMPOSE ?= docker compose
 PY      ?= uv run
 PY_DEV  ?= uv run --extra dev
-PNPM    ?= pnpm --dir websites
+PNPM     ?= pnpm --dir websites
+TUI_PNPM ?= pnpm --dir clients/tui
 
 OLLAMA_CHAT_MODEL  ?= qwen3-coder-next:cloud
 OLLAMA_EMBED_MODEL ?= nomic-embed-text
@@ -34,14 +35,17 @@ help: ## 显示所有可用目标
 	@echo ""
 
 # ─── Setup ───────────────────────────────────────────────────────────────────
-.PHONY: install install.py install.web install.hooks env
-install: install.py install.web install.hooks ## 一次性安装 Python + Web + git hooks
+.PHONY: install install.py install.web install.tui install.hooks env
+install: install.py install.web install.tui install.hooks ## 一次性安装 Python + Web + Ink TUI + git hooks
 
 install.py: ## uv sync 安装 Python 依赖
 	uv sync
 
 install.web: ## pnpm install 安装前端依赖
 	$(PNPM) install
+
+install.tui: ## pnpm install 安装 Ink TUI 依赖
+	$(TUI_PNPM) install
 
 install.hooks: ## 安装 Git hooks（pre-commit / commit-msg / pre-push）
 	@if [ -f .pre-commit-config.yaml ]; then \
@@ -58,7 +62,7 @@ env: ## 复制 .env.example → .env（不覆盖已存在）
 	fi
 
 # ─── Dev (本地直跑，不走 docker) ──────────────────────────────────────────────
-.PHONY: dev dev.all dev.api dev.worker dev.cli dev.web
+.PHONY: dev dev.all dev.api dev.cli dev.web
 
 # 可覆盖的端口/主机：make dev.api PORT=8001 HOST=127.0.0.1
 HOST ?= 0.0.0.0
@@ -68,14 +72,14 @@ dev: ## 推荐入口：跑迁移 + 起 FastAPI（一键调通后端）
 	@$(MAKE) --no-print-directory db.init
 	@$(MAKE) --no-print-directory dev.api
 
-dev.all: ## 同时起 api + worker + web（需要 tmux，否则请分别开三个终端）
+dev.all: ## 同时起 api + web + Ink TUI（需要 tmux，否则请分别开三个终端）
 	@if command -v tmux >/dev/null 2>&1; then \
 		tmux new-session -d -s ragchat 'make dev.api'; \
-		tmux split-window -h -t ragchat 'make dev.worker'; \
-		tmux split-window -v -t ragchat 'make dev.web'; \
+		tmux split-window -h -t ragchat 'make dev.web'; \
+		tmux split-window -v -t ragchat 'make dev.cli'; \
 		tmux attach -t ragchat; \
 	else \
-		echo "tmux not found. 请分别运行: make dev.api | make dev.worker | make dev.web"; \
+		echo "tmux not found. 请分别运行: make dev.api | make dev.web | make dev.cli"; \
 		exit 1; \
 	fi
 
@@ -88,11 +92,8 @@ dev.api: ## 启动 FastAPI dev server (auto-reload)。端口被占时打印占�
 	fi
 	$(PY) uvicorn api.app:create_app --factory --reload --host $(HOST) --port $(PORT)
 
-dev.worker: ## 启动后台 worker
-	$(PY) python main.py worker
-
-dev.cli: ## 启动交互式 CLI
-	$(PY) python main.py chat
+dev.cli: ## 启动纯 Ink TUI（默认连 http://127.0.0.1:8000）
+	$(TUI_PNPM) start
 
 dev.web: ## 启动 Next.js 前端 dev server
 	$(PNPM) dev
@@ -176,9 +177,10 @@ ollama.ps: ## 列出 ollama 已拉取模型
 # 单一真相来源：与 CI workflow .github/workflows/ci.yml 和 Git hooks 对齐。
 .PHONY: backend.lint backend.lint-fix backend.fmt backend.fmt-check backend.typecheck backend.compile backend.verify
 .PHONY: web.lint web.lint-fix web.fmt web.fmt-check web.typecheck web.verify web.build
+.PHONY: tui.typecheck tui.start
 .PHONY: lint lint-fix fmt fmt-check typecheck compile verify ci
 MYPY ?= uv run mypy
-PY_MODULES := api service tui main.py settings.py scripts
+PY_MODULES := api service settings.py scripts
 
 backend.lint: ## 后端 ruff check
 	$(PY) ruff check .
@@ -216,6 +218,12 @@ web.fmt-check: ## 前端 Prettier check
 web.typecheck: ## 前端 TypeScript noEmit
 	$(PNPM) typecheck
 
+tui.typecheck: ## Ink TUI TypeScript noEmit
+	$(TUI_PNPM) typecheck
+
+tui.start: ## 直接启动 Ink TUI
+	$(TUI_PNPM) start
+
 web.verify: ## 前端完整质量检查
 	$(PY) python scripts/quality.py frontend
 
@@ -230,7 +238,7 @@ fmt: backend.fmt web.fmt ## 前后端格式化
 
 fmt-check: backend.fmt-check web.fmt-check ## 前后端格式检查
 
-typecheck: backend.typecheck web.typecheck ## 前后端类型检查
+typecheck: backend.typecheck web.typecheck tui.typecheck ## 前后端 + Ink TUI 类型检查
 
 compile: backend.compile ## 后端 compileall
 
@@ -252,8 +260,9 @@ openapi.check: ## 验证 docs/openapi.json 与当前代码一致（CI 用）
 
 # ─── Seed / Ingest ───────────────────────────────────────────────────────────
 .PHONY: ingest
-ingest: ## 全量把 knowledge/ 入库 + 向量化
-	$(PY) python -m tui.cli ingest ./knowledge
+ingest: ## 全量把 knowledge/ 入库 + 向量化（请改用 Web/API 流程）
+	@echo "Python CLI ingest has been removed; use the Web/API knowledge endpoints."
+	@exit 2
 
 # ─── Release / Clean ─────────────────────────────────────────────────────────
 .PHONY: build.api build.web clean nuke

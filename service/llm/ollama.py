@@ -5,7 +5,7 @@ retrieve embeddings from ``POST /api/embeddings``. See the Ollama REST docs:
 https://github.com/ollama/ollama/blob/main/docs/api.md
 
 The client owns an :class:`httpx.AsyncClient` lazily; remember to ``await
-client.aclose()`` at shutdown (done by ``tui/chat_app.py``).
+client.aclose()`` at shutdown.
 """
 
 from __future__ import annotations

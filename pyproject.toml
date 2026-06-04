@@ -8,9 +8,7 @@ dependencies = [
     "pandas",
     "httpx",
     "boto3>=1.34",
-    "rich",
     "pydantic-settings>=2.2",
-    "prompt_toolkit>=3.0.43",
     # Database layer (P4): SQLAlchemy 2.x async + asyncpg + pgvector + Alembic.
     "sqlalchemy[asyncio]>=2.0.29",
     "asyncpg>=0.29",
@@ -53,9 +51,6 @@ dev = [
     # SQLite async driver — supports sqlite+aiosqlite development URLs.
     "aiosqlite>=0.20",
 ]
-
-[project.scripts]
-rag-chat-cli = "main:main"
 
 # ---------------------------------------------------------------------------
 # ruff — single source of truth for style + lint
@@ -101,8 +96,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/**" = ["T20", "S"]
-"main.py" = ["T20"]
-"tui/cli.py" = ["T20", "ASYNC240"]  # CLI stub messages and local path reads are intentional
 "service/knowledge/ingest.py" = ["ASYNC240"]  # ingestion reads local files synchronously by design
 # S105/S106 mis-fire on the string literals "access"/"refresh"/"bearer" which
 # name *token kinds*, not secrets. Scope the exception to the two auth DTOs.
@@ -132,18 +125,10 @@ strict = true
 module = "settings"
 ignore_errors = true
 
-# ``tui/ui`` 中对 prompt_toolkit 的异步包装返回 Any 来自第三方 stub 缺失，
-# 故允许该模块返回 Any。
-[[tool.mypy.overrides]]
-module = "tui.ui.prompt"
-warn_return_any = false
-
 # 第三方无 stub 的库，mypy strict 下会报 import-not-found；降级。
 [[tool.mypy.overrides]]
 module = [
     "httpx",
-    "rich.*",
-    "prompt_toolkit.*",
     # P4 DB layer
     "pgvector.*",
     "asyncpg",
@@ -165,7 +150,7 @@ module = [
 ]
 ignore_missing_imports = true
 
-# 根级 main.py / scripts 不属于 core API，允许 Any-call 简化。
+# scripts 不属于 core API，允许 Any-call 简化。
 [[tool.mypy.overrides]]
-module = ["main", "scripts.*"]
+module = ["scripts.*"]
 disallow_untyped_decorators = false

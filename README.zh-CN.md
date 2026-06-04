@@ -45,10 +45,9 @@ FastAPI 接口层 —— 想接前端／IDE 插件／别的客户端，直接吃
 ## 架构
 
 ```
-main.py
-├─ api/                    FastAPI HTTP / SSE / WS 入口
-├─ tui/                    CLI/TUI 入口和终端展示层
-└─ service/                后端服务层
+api/                         FastAPI HTTP / SSE / WS 入口
+clients/tui/                 Ink API-only 终端客户端
+service/                     后端服务层
    ├─ chat/                ChatService + prompts/titles/history/tokens/limits
    ├─ llm/                 {OllamaClient, OpenAIClient} : LLMClient
    ├─ providers/           provider registry + runtime resolution
@@ -70,6 +69,7 @@ Postgres-backed queue、HTTP MCP transport —— 都是单文件改动，
 
 - Python ≥ 3.10
 - [uv](https://github.com/astral-sh/uv) 管理依赖
+- [pnpm](https://pnpm.io/) 运行 Web 和 Ink TUI 客户端
 - 本地跑着的 Ollama（或一份 `OPENAI_API_KEY`，对接 OpenAI 兼容
   endpoint）
 - Docker（启动 Postgres + pgvector + Redis，靠 `docker-compose.yml`）
@@ -80,8 +80,8 @@ Postgres-backed queue、HTTP MCP transport —— 都是单文件改动，
 能直接复制粘贴。
 
 ```bash
-# 1. 安装 Python 依赖
-uv sync --all-extras
+# 1. 安装 Python + Web + Ink TUI 依赖
+make install
 
 # 2. 确认 Ollama 在跑，拉应用用到的模型：
 #    - 聊天模型（默认 qwen3-coder-next:cloud，可以改）
@@ -103,12 +103,12 @@ openssl rand -hex 32                 # 拷到 .env 的 JWT_SECRET=...
 make db.up                           # docker compose up postgres + pgvector
 make db.init                         # 连通性 probe + alembic upgrade head + pgvector 校验
 
-# 5. 启动 REPL
-make dev.cli                         # = uv run python -m main chat
+# 5. 启动 Ink TUI API 客户端
+make dev.api                         # 一个终端里跑 API
+make dev.cli                         # 另一个终端里跑 clients/tui
 ```
 
-正常的话你会看到 model banner 和提示符。输入 `/` 会立刻弹出斜杠
-命令自动补全菜单；输入问题开始聊。
+正常的话你会看到 Ink 终端客户端。登录后输入 `/help` 或直接输入问题开始聊。
 
 > 跳了第 2 步，`/save` 报 "model 'nomic-embed-text' not found"？
 > 直接 `ollama pull nomic-embed-text` 然后重试 —— 不用重启 REPL。
@@ -247,15 +247,8 @@ curl -X POST http://localhost:8000/auth/register \
 ## 入库 + 后台 Worker
 
 ```bash
-# 同步入库（CLI 阻塞到完成）
-uv run python -m main ingest path/to/dir --recursive --title "我的文档"
-
-# 入队，立即返回
-uv run python -m main ingest path/to/dir --recursive --async
-
-# 跑 Worker（另一个终端）
-uv run python -m main worker
-# → [worker] ingested /x/a.md → doc=… chunks=12
+# 请使用 Web/API knowledge endpoints 做文档入库和重建索引。
+# 旧 Python CLI 入口已经移除。
 ```
 
 Job 协议 / 队列语义 / 重试预期都在
@@ -323,7 +316,6 @@ Git hooks：执行一次 `uv run pre-commit install --hook-type pre-commit --hoo
 │   └── openapi.json           # 生成产物；CI 会做 drift 检查
 ├── settings.py                # pydantic-settings 单入口
 ├── .env.example               # env 模板
-├── main.py                    # CLI 薄壳 → tui.cli.main
 ├── api/                       # FastAPI app（routers / deps / middleware）
 ├── service/                   # 后端服务、领域逻辑和基础设施
 │   ├── chat/                  #   ChatService + prompts/titles/history/tokens/limits
@@ -338,11 +330,9 @@ Git hooks：执行一次 `uv run pre-commit install --hook-type pre-commit --hoo
 │   ├── streaming/             #   Event TypedDict + AbortContext
 │   ├── common/                #   跨 service 域的通用基础设施
 │   └── auth/                  #   bcrypt + JWT + refresh rotation
-├── tui/                       # CLI/TUI 入口和终端展示层
-│   ├── cli.py                 #   argparse: chat / serve / ingest / worker / train
-│   ├── chat_app.py            #   REPL + ChatService factory
-│   ├── auth_local.py          #   ~/.config/rag-chat/token.json
-│   └── ui/                    #   rich + prompt_toolkit 展示层
+├── clients/tui/               # Ink API-only 终端客户端
+│   ├── src/api/               #   FastAPI client + 本地 token store
+│   └── src/app.tsx            #   终端 UI
 ├── alembic/versions/          # 数据库迁移
 ├── scripts/                   # 一次性运维（db_init, dump_openapi 等）
 ├── openspec/                  # spec 提案 + 归档
@@ -350,7 +340,7 @@ Git hooks：执行一次 `uv run pre-commit install --hook-type pre-commit --hoo
 └── README.md / README.zh-CN.md
 ```
 
-分层规则：`api/` 和 `tui/` 是入口适配层，可以依赖 `service/`；`service/` 不能反向依赖 `api/` 或 `tui/`。
+分层规则：`api/` 是后端入口适配层；`clients/tui/` 是 API-only 客户端，不能 import Python 后端内部模块。
 
 ## 贡献
 
@@ -360,8 +350,4 @@ Git hooks：执行一次 `uv run pre-commit install --hook-type pre-commit --hoo
   `openspec/changes/archive/YYYY-MM-DD-<name>/`。
 - 稳定能力规范 → `openspec/specs/<capability>/spec.md`。
 
-提 PR 前请本地跑一次 `make ci`，Ruff、format check、mypy 和 compileall 必须全绿。
-
-## 许可证
-
-MIT
+提 PR 前请本地跑一次 `make ci`，Ruff、format che
