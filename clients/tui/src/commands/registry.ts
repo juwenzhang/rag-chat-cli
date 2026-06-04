@@ -1,6 +1,7 @@
 import {distance} from 'fastest-levenshtein';
 
 import {useChatStore} from '../store/chat-store';
+import {useProviderStore} from '../store/provider-store';
 import {useSessionStore} from '../store/session-store';
 import {useUiStore} from '../store/ui-store';
 import {useAuthStore} from '../store/auth-store';
@@ -268,9 +269,26 @@ registerCommand({
   description: 'Forget local credentials and return to the login screen',
   category: 'auth',
   async run({api, notify}) {
+    // Tear down store state in dependency order — chat depends on session,
+    // session depends on auth, ui carries pane/overlay flags that should
+    // not survive the trip to the login screen.
     await useAuthStore.getState().logout(api);
     useSessionStore.getState().reset();
     useChatStore.getState().reset();
+    // The ui store has no formal reset() yet; nudge the bits that would
+    // otherwise leak into the next session (an open overlay, a non-
+    // composer pane focus, a stale "follow bottom" offset).
+    const ui = useUiStore.getState();
+    ui.setOverlay(null);
+    ui.setPane('composer');
+    ui.setFollowBottom(true);
+    ui.setCommandPaletteOpen(false);
+    ui.setStatus('logged out');
+    // Provider cache is per-user; the next login should re-fetch from
+    // scratch so we don't show another account's provider names in the
+    // sidebar footer.
+    useProviderStore.getState().invalidate();
+    useProviderStore.setState({providers: []});
     notify('ok', 'logged out');
   }
 });

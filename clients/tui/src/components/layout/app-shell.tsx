@@ -225,6 +225,7 @@ export function AppShell({api}: Props): React.ReactElement {
       <Header width={columns} />
       <Box flexDirection="row" width={columns} height={bodyHeight}>
         <SessionList
+          api={api}
           sessions={sessions}
           activeId={activeId}
           width={sidebarWidth}

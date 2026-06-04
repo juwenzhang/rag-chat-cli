@@ -9,10 +9,16 @@
  */
 import {ApiError} from '../api/types';
 import {useChatStore} from '../store/chat-store';
+import {useProviderStore} from '../store/provider-store';
 import {useSessionStore} from '../store/session-store';
 import {useUiStore} from '../store/ui-store';
 import {registerCommand} from './registry';
 import type {CommandCtx} from './types';
+
+/** Invalidate the provider cache; used after every mutating providers call. */
+function invalidateProviders(): void {
+  useProviderStore.getState().invalidate();
+}
 
 /* ── helpers ───────────────────────────────────────────────────────── */
 
@@ -246,6 +252,7 @@ registerCommand({
           api_key: apiKey ?? null,
           test_connectivity: true
         });
+        invalidateProviders();
         ctx.notify('ok', `provider ${created.name} created (${created.id.slice(0, 8)})`);
         return;
       }
@@ -257,6 +264,7 @@ registerCommand({
           return;
         }
         await ctx.api.deleteProvider(match.id);
+        invalidateProviders();
         ctx.notify('ok', `deleted ${match.name}`);
         return;
       }
@@ -268,6 +276,7 @@ registerCommand({
           return;
         }
         await ctx.api.updateProvider(match.id, {is_default: true});
+        invalidateProviders();
         ctx.notify('ok', `default → ${match.name}`);
         return;
       }
