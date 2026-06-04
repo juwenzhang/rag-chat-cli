@@ -9,10 +9,16 @@
  */
 import {ApiError} from '../api/types';
 import {useChatStore} from '../store/chat-store';
+import {useProviderStore} from '../store/provider-store';
 import {useSessionStore} from '../store/session-store';
 import {useUiStore} from '../store/ui-store';
 import {registerCommand} from './registry';
 import type {CommandCtx} from './types';
+
+/** Invalidate the provider cache; used after every mutating providers call. */
+function invalidateProviders(): void {
+  useProviderStore.getState().invalidate();
+}
 
 /* ── helpers ───────────────────────────────────────────────────────── */
 
@@ -246,6 +252,7 @@ registerCommand({
           api_key: apiKey ?? null,
           test_connectivity: true
         });
+        invalidateProviders();
         ctx.notify('ok', `provider ${created.name} created (${created.id.slice(0, 8)})`);
         return;
       }
@@ -257,6 +264,7 @@ registerCommand({
           return;
         }
         await ctx.api.deleteProvider(match.id);
+        invalidateProviders();
         ctx.notify('ok', `deleted ${match.name}`);
         return;
       }
@@ -268,6 +276,7 @@ registerCommand({
           return;
         }
         await ctx.api.updateProvider(match.id, {is_default: true});
+        invalidateProviders();
         ctx.notify('ok', `default → ${match.name}`);
         return;
       }
@@ -362,6 +371,137 @@ registerCommand({
         return;
       }
       ctx.notify('warn', 'usage: /models [list|pull|rm]');
+    } catch (err) {
+      ctx.notify('error', fmtError(err));
+    }
+  }
+});
+
+/* ── /model — change the active session's model pin ──────────────── */
+
+/**
+ * Pick the "best" provider for a model switch when the user didn't say
+ * which one. Order:
+ *
+ * 1. The provider currently pinned on the active session (preserve the
+ *    user's existing routing).
+ * 2. The user's default provider (the ★ row in ``/providers list``).
+ * 3. Whatever ``/providers`` returned first.
+ */
+function pickActiveProvider(
+  providers: {id: string; name: string; is_default: boolean}[],
+  sessionProviderId: string | null | undefined
+): {id: string; name: string} | null {
+  if (sessionProviderId) {
+    const pinned = providers.find((p) => p.id === sessionProviderId);
+    if (pinned) return pinned;
+  }
+  return providers.find((p) => p.is_default) ?? providers[0] ?? null;
+}
+
+registerCommand({
+  name: 'model',
+  aliases: ['m'],
+  usage: '/model [show|<model>|set [provider] <model>|clear]',
+  description:
+    "Inspect or change the active session's model. Shorthand: /model qwen3-coder-next:cloud",
+  category: 'config',
+  async run(ctx: CommandCtx) {
+    const sid = useSessionStore.getState().activeId;
+    if (!sid) {
+      ctx.notify('warn', 'no active session');
+      return;
+    }
+    const sub = ctx.args[0]?.toLowerCase();
+    try {
+      // /model            → show
+      // /model show       → show
+      if (sub === undefined || sub === 'show' || sub === 'get') {
+        const session = useSessionStore
+          .getState()
+          .sessions.find((s) => s.id === sid);
+        const providers = await ctx.api.listProviders();
+        const provider = providers.find((p) => p.id === session?.provider_id);
+        ctx.notify(
+          'info',
+          `provider=${provider?.name ?? '∅ (use /pref default)'} · ` +
+            `model=${session?.model ?? '∅ (fallback to env / /pref)'}`
+        );
+        // Show top 5 available model ids on the resolved provider so the
+        // user knows what to type next, without leaving the chat view.
+        const target = pickActiveProvider(providers, session?.provider_id);
+        if (target) {
+          try {
+            const models = await ctx.api.listProviderModels(target.id);
+            const preview = models
+              .filter((m) => (m.kind ?? 'chat') === 'chat')
+              .slice(0, 5)
+              .map((m) => m.id)
+              .join(', ');
+            if (preview) {
+              ctx.notify('info', `available on ${target.name}: ${preview}`);
+            }
+          } catch {
+            /* upstream offline — ignore */
+          }
+        }
+        return;
+      }
+      // /model clear      → drop the pin entirely
+      if (sub === 'clear' || sub === 'reset') {
+        const updated = await ctx.api.updateSession(sid, {
+          clear_model: true,
+          clear_provider_id: true
+        });
+        useSessionStore.getState().upsertLocal(updated);
+        ctx.notify('ok', 'session pin cleared — using /pref defaults');
+        return;
+      }
+      // /model set [provider] <model>
+      // /model <model>      → shorthand; reuse current/default provider
+      const providers = await ctx.api.listProviders();
+      let providerToken: string | undefined;
+      let modelTag: string | undefined;
+      if (sub === 'set') {
+        // Two-arg form: provider + model. One-arg form: model only.
+        if (ctx.args.length >= 3) {
+          providerToken = ctx.args[1];
+          modelTag = ctx.args.slice(2).join(' ');
+        } else {
+          modelTag = ctx.args[1];
+        }
+      } else {
+        // Whole input is the model tag, e.g. "/model qwen3-coder-next:cloud".
+        // Joining preserves any spaces (rare, but harmless).
+        modelTag = ctx.args.join(' ');
+      }
+      modelTag = modelTag?.trim();
+      if (!modelTag) {
+        ctx.notify(
+          'warn',
+          'usage: /model <model> · /model set <provider> <model> · /model clear · /model show'
+        );
+        return;
+      }
+      const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
+      const provider = providerToken
+        ? pickProvider([providerToken], providers)
+        : pickActiveProvider(providers, session?.provider_id);
+      if (!provider) {
+        ctx.notify(
+          'error',
+          providerToken
+            ? `no provider matches ${providerToken}`
+            : 'no provider configured — /providers add ... first'
+        );
+        return;
+      }
+      const updated = await ctx.api.updateSession(sid, {
+        provider_id: provider.id,
+        model: modelTag
+      });
+      useSessionStore.getState().upsertLocal(updated);
+      ctx.notify('ok', `pinned ${provider.name} · ${modelTag}`);
     } catch (err) {
       ctx.notify('error', fmtError(err));
     }

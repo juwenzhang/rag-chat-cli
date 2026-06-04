@@ -1,353 +1,367 @@
 # rag-chat-cli
 
 [![ci](https://github.com/juwenzhang/rag-chat-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/juwenzhang/rag-chat-cli/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](pyproject.toml)
+[![Node](https://img.shields.io/badge/node-20+-green.svg)](clients/tui/package.json)
 
-> 📖 **Language / 语言**：**简体中文** · [English](README.md)
+> 📖 **Language / 语言**：[English](README.md) · **简体中文**
 
-一款跑在终端里的 ReAct Agent —— 后端可选本地 Ollama 或任意
-OpenAI 兼容 endpoint（vLLM / Together / Groq / LM Studio …），自带
-基于 Postgres + pgvector 的混合检索 RAG、MCP 工具集成、用户级长期
-记忆，以及一个把同一份事件流通过 SSE / WebSocket 暴露出去的
-FastAPI 接口层 —— 想接前端／IDE 插件／别的客户端，直接吃这个流。
+一套可自托管的"和自己的 LLM 聊"全栈方案——本地 Ollama 优先、兼容
+OpenAI 协议端点；自带 RAG 检索记忆、ReAct 工具调用，配齐了一套精致的
+Web 应用和一套全屏 Ink 终端。
 
-整体架构蓝图见 [AGENTS.md](AGENTS.md)；流式事件协议见
-[docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md)。
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                                                                  │
+│   Next.js Web  ──┐                            ┌─►  Ollama        │
+│                  │                            │                  │
+│   Ink TUI    ────┼──►  FastAPI  ──►  Service ─┤                  │
+│                  │  (REST + SSE)              │    pgvector RAG  │
+│   你的客户端  ───┘                            └─►  MCP 工具       │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 目录
+
+- [为什么做这个](#为什么做这个)
+- [截图](#截图)
+- [关键能力](#关键能力)
+- [架构](#架构)
+- [快速开始 —— 本地起栈](#快速开始--本地起栈)
+- [Ink 终端客户端（`lhx-rag`）](#ink-终端客户端lhx-rag)
+- [Web 客户端](#web-客户端)
+- [REST / SSE 速查](#rest--sse-速查)
+- [配置](#配置)
+- [项目结构](#项目结构)
+- [文档索引](#文档索引)
+- [License](#license)
+
+---
+
+## 为什么做这个
+
+大多数"和你的数据聊天"的 demo，要么是个 notebook、要么是托管 SaaS，
+搬到真实工作流就崩。**rag-chat-cli** 把"聊天层"当生产软件来做：
+
+| 关注点 | 我们怎么做 |
+| --- | --- |
+| **本地优先** | Ollama 是头等公民；OpenAI 协议提供商（vLLM / Groq / OpenRouter…）也支持，但在启动序列里晚一截。 |
+| **真持久化** | 会话、消息、记忆、知识库都落 Postgres；向量走 pgvector；后台队列用 Redis。没有任何"内存里的伪存储"。 |
+| **两套真客户端** | Next.js Web（RSC + 流式）和 Ink 终端共享同一份 OpenAPI；一个能做的事，另一个也都能做。 |
+| **多客户端鉴权** | 单独挂载 `/v1/*` 子 app，靠 `X-Client-Id` 白名单隔离非浏览器流量，反代（HF Spaces、CDN）不会再把 CLI 干掉。详见 [docs/MULTI_CLIENT_AUTH_DESIGN.md](docs/MULTI_CLIENT_AUTH_DESIGN.md)。 |
+| **稳定流式协议** | 一套 `Event` 词表（`token`、`thought`、`tool_call`、`tool_result`、`retrieval`、`done`、`error`）跑在 SSE 上，所有客户端按同一规则渲染。详见 [docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md)。 |
+
+---
+
+## 截图
+
+### Web —— 首页（已登录，中文）
+
+![Web 首页 · 中文](docs/images/web-home-zh.png)
+
+### Web —— 登录卡片
+
+![Web 登录 · 中文](docs/images/web-login-zh.png)
+
+### Web —— 首页（英文）
+
+![Web 首页 · 英文](docs/images/web-home-en.png)
+
+### 终端 —— 登录
+
+![TUI 登录](docs/images/tui-login.png)
+
+### 终端 —— 三栏对话
+
+![TUI 主界面](docs/images/tui-shell.png)
+
+> 终端客户端 `lhx-rag` 是个全屏 Ink 应用：左边 sessions、中间
+> transcript、底部 composer，sidebar 底部常驻 model / provider 信息。
+
+---
 
 ## 关键能力
 
-- **ReAct 循环** —— 多步工具调用，事件流里同时有 `thought` /
-  `tool_call` / `tool_result`，受 `ResourceLimits` 约束（`max_steps` /
-  单步工具数上限 / 单次调用超时）。
-- **双后端，单协议** —— `OllamaClient`（本地）和 `OpenAIClient`
-  （OpenAI / vLLM / Together / Groq / 任何兼容服务）实现同一个
-  `LLMClient` Protocol，切换 provider 不动 Agent 代码。
-- **MCP 集成** —— stdio JSON-RPC client + `McpTool` 适配器，任意
-  [Model Context Protocol](https://modelcontextprotocol.io) server
-  对 Agent 来说就是普通工具。
-- **混合检索 RAG** —— `PgvectorKnowledgeBase` 把向量检索（pgvector）
-  和 `pg_trgm` 词法分用 RRF 融合，留出 `Reranker` hook；引用以
-  `[N]` 标注回填到回答里，CLI / API 都能看到。
-- **双模式知识库管理** —— `/save` 和 `/reflect`（critic 判分的自动
-  入库）同时支持磁盘版 `FileKnowledgeBase`（未登录，存在
-  `~/.config/rag-chat/kb/`）和 Postgres 的 `PgvectorKnowledgeBase`
-  （登录态）。`/kb sync` 一键把本地积累迁移到 pgvector。
-- **持久化记忆** —— 单会话历史（文件或 Postgres）、用户级长期记忆
-  + `FactExtractor` 抽取钩子、context-window-aware 的历史摘要压缩。
-- **统一流式协议** —— 同一份 `Event` 在 CLI 里渲染，从
-  `POST /chat/stream`（SSE）和 `/ws/chat`（WebSocket，支持 abort）
-  原样发出。
-- **后台 Worker** —— Redis 后端的 FIFO 队列 + Worker pump，把
-  ingestion / reindex 等重活从请求链路上挪走。
-- **可观测性** —— 可选 OpenTelemetry tracer（没装 OTel 自动降级为
-  no-op）+ `UsageAccumulator` 把不同 provider 的 token / 成本数据
-  normalize 到同一份口径。
+- **ReAct 代理循环**：多步工具调用以 `thought` / `tool_call` /
+  `tool_result` 事件回吐，全程被 `ResourceLimits`（`max_steps`、
+  单步工具上限、单次调用超时）兜底。
+- **两种 LLM 后端，一套协议**：`OllamaClient`（本地）和
+  `OpenAIClient`（OpenAI / vLLM / Together / Groq / 任何兼容端点）
+  都实现同一个 `LLMClient`，换 provider 不动 `ChatService`。
+- **完整的 Provider 管理**：`Provider` 行存每个用户的路由（base
+  URL、加密 API key、is_default 等）；两端客户端都能通过同一份
+  REST 接口做列表 / 添加 / 测试 / 拉模型 / 删除。
+- **混合检索 RAG**：`PgvectorKnowledgeBase` 把向量检索（pgvector）
+  和 `pg_trgm` 词法分数做 Reciprocal Rank Fusion，再过一道可插拔
+  `Reranker`。引用以 `[N]` 标注，前端/CLI 都能反向定位。
+- **MCP 集成**：stdio JSON-RPC 客户端 + `McpTool` 适配器，任何
+  [Model Context Protocol](https://modelcontextprotocol.io) 服务
+  对代理来说和普通工具没区别。
+- **持久化记忆**：会话级 chat history、用户级长期记忆（带
+  `FactExtractor` 钩子），自动按上下文窗做历史摘要。
+- **全链路流式**：`POST /chat/stream` 的 SSE 事件在两端客户端走同
+  一形态；另有支持 abort 的 WebSocket 变体。
+- **后台 Worker**：基于 Redis 的 FIFO 队列 + `Worker` 泵，重活
+  （ingestion / reindex）出请求链路。
+- **客户端鉴权分流**：根路径保持严格（浏览器 CORS 白名单）；
+  `/v1/*` 子 app 改用 `X-Client-Id` 白名单。CLI、MCP 服务、你自己
+  写的脚本，不再借 Web 的 CORS 政策。
+- **可观测**：可选 OpenTelemetry tracer（没装 OTel 时是 no-op），
+  以及一个 `UsageAccumulator` 跨 provider 归一化 token / cost。
+
+---
 
 ## 架构
 
 ```
-api/                         FastAPI HTTP / SSE / WS 入口
-clients/tui/                 Ink API-only 终端客户端
-service/                     后端服务层
-   ├─ chat/                ChatService + prompts/titles/history/tokens/limits
-   ├─ llm/                 {OllamaClient, OpenAIClient} : LLMClient
-   ├─ providers/           provider registry + runtime resolution
-   ├─ knowledge/           PgvectorKnowledgeBase + Reranker + Ingestor
-   ├─ memory/              {File,Db}ChatMemory + UserMemoryStore
-   ├─ db/                  SQLAlchemy async models/session
-   ├─ tools/               ToolRegistry + FunctionTool + (MCP) McpTool
-   ├─ mcp/                 stdio JSON-RPC client + adapter
-   ├─ workers/             Redis queue + worker
-   ├─ streaming/           Event vocabulary + AbortContext
-   └─ common/              跨 service 域的通用基础设施
+api/                            FastAPI 应用
+   ├─ app.py                    根 app + /v1 子 app + 中间件顺序
+   ├─ middleware/               ClientId 白名单、按路径分流的 CORS
+   └─ routers/                  REST 端点（auth、chat、knowledge、
+                                providers、sessions、shares…）
+
+clients/
+   └─ tui/                      Ink（终端版 React） —— `lhx-rag`
+
+websites/                       Next.js 15（RSC）+ Tailwind + Server Actions
+
+service/                        后端领域层
+   ├─ chat/                  ChatService + prompts/titles/history/
+   │                         tokens/limits
+   ├─ llm/                   {Ollama,OpenAI}Client : LLMClient
+   ├─ providers/             provider 注册 + 运行时解析
+   ├─ knowledge/             PgvectorKnowledgeBase + Reranker + Ingestor
+   ├─ memory/                {File,Db}ChatMemory + UserMemoryStore
+   ├─ db/                    SQLAlchemy 异步模型 / session 工厂
+   ├─ tools/                 ToolRegistry + FunctionTool + McpTool
+   ├─ mcp/                   stdio JSON-RPC 客户端 + 适配
+   ├─ workers/               Redis 队列 + worker
+   ├─ streaming/             Event 词表 + AbortContext
+   └─ common/                共享基础设施
 ```
 
-每个模块都有 Protocol。后面想加 Anthropic LLMClient、Cohere reranker、
-Postgres-backed queue、HTTP MCP transport —— 都是单文件改动，
-`ChatService` 一行不用动。
+每个模块都靠 Protocol 解耦。要加一个 Anthropic LLM、一个 Cohere
+reranker、一个 Postgres 后端的队列、一个 HTTP MCP transport——都是
+单文件改动，碰不到 `ChatService`。
 
-## 环境要求
+---
 
-- Python ≥ 3.10
-- [uv](https://github.com/astral-sh/uv) 管理依赖
-- [pnpm](https://pnpm.io/) 运行 Web 和 Ink TUI 客户端
-- 本地跑着的 Ollama（或一份 `OPENAI_API_KEY`，对接 OpenAI 兼容
-  endpoint）
-- Docker（启动 Postgres + pgvector + Redis，靠 `docker-compose.yml`）
+## 快速开始 —— 本地起栈
 
-## Day 0 —— 从 clone 到第一条回复
-
-这是「我刚 clone 完仓库，5 分钟跑起来」的标准流程。所有命令都
-能直接复制粘贴。
+> 前置：**Python ≥ 3.10**、[uv](https://github.com/astral-sh/uv)、
+> Docker（拉 Postgres + pgvector + Redis）、跑着的 Ollama *或者*
+> 一个 `OPENAI_API_KEY`。可选：**Node ≥ 20**（如果要跑 Web /
+> Ink 客户端）。
 
 ```bash
-# 1. 安装 Python + Web + Ink TUI 依赖
-make install
+# 1. 克隆 + 装后端依赖
+git clone https://github.com/juwenzhang/rag-chat-cli
+cd rag-chat-cli
+uv sync
 
-# 2. 确认 Ollama 在跑，拉应用用到的模型：
-#    - 聊天模型（默认 qwen3-coder-next:cloud，可以改）
-#    - 嵌入模型（/save / /reflect / /kb search / RAG 检索都需要）
-#    - 视觉模型（图片上传后的 caption/理解需要）
-ollama serve &                       # 没跑的话开个新终端起来
-ollama pull qwen3-coder-next:cloud
-ollama pull nomic-embed-text         # ⚠️ 必须拉，否则 /save 会报 404
-ollama pull qwen3-vl:235b-cloud      # 图片 caption 需要
+# 2. 拉你要用的聊天 / 嵌入 / 视觉模型
+ollama pull qwen3-coder-next:cloud   # 聊天默认；随便挑
+ollama pull nomic-embed-text         # /save、/reflect、RAG 都要它
+ollama pull qwen3-vl:235b-cloud      # 图片识别要它
 
-# 3. 配环境变量
+# 3. 配置环境变量
 cp .env.example .env
-# 编辑 .env：把 DATABASE_URL 的 @postgres 改成 @localhost
-#   DATABASE_URL=postgresql+asyncpg://rag:rag@localhost:5432/ragdb
-# 生成强 JWT 密钥（替换 placeholder）：
-openssl rand -hex 32                 # 拷到 .env 的 JWT_SECRET=...
+# 编辑 .env：
+#   - DATABASE_URL=postgresql+asyncpg://rag:rag@localhost:5432/ragdb
+#   - JWT_SECRET=<openssl rand -hex 32>
+#   - OLLAMA_BASE_URL=http://localhost:11434
+#   - APP_ALLOWED_CLIENT_IDS=lhx-rag-cli  （默认已经写好，详见"配置"）
 
-# 4. 起 Postgres + 跑迁移（幂等，重复跑无副作用）
-make db.up                           # docker compose up postgres + pgvector
-make db.init                         # 连通性 probe + alembic upgrade head + pgvector 校验
+# 4. 起 Postgres + Redis，跑迁移（幂等）
+make db.up
+make db.migrate
 
-# 5. 启动 Ink TUI API 客户端
-make dev.api                         # 一个终端里跑 API
-make dev.cli                         # 另一个终端里跑 clients/tui
+# 5. 起 FastAPI（自动 reload）
+make dev.api
+# → http://localhost:8000  （根路径走严格 CORS 给 Web 用，
+#                          /v1/* 走 X-Client-Id 白名单给非浏览器用）
 ```
 
-正常的话你会看到 Ink 终端客户端。登录后输入 `/help` 或直接输入问题开始聊。
-
-> 跳了第 2 步，`/save` 报 "model 'nomic-embed-text' not found"？
-> 直接 `ollama pull nomic-embed-text` 然后重试 —— 不用重启 REPL。
-
-> 跳了第 4 步、只想用纯本地文件 KB？也可以 —— CLI 不依赖数据库就
-> 能跑，本地知识库存在 `~/.config/rag-chat/kb/`。只是 `/login` 和
-> 基于 Postgres 的 RAG 检索用不上。
-
-## REPL 常用快捷
-
-REPL 内：
-
-- 输入 `/`，**命令自动补全菜单**立刻弹出 —— 方向键或 `Tab` 选中
-  命令，右侧带描述。
-- 输入 `/help` 渲染完整的命令面板（分组 + 框）。
-- `Enter` 发送；`Ctrl+J` 换行；`↑`/`↓` 调历史（持久化在
-  `~/.config/rag-chat/history`）；`Ctrl+L` 清屏。
-
-### 斜杠命令
-
-| 分组 | 命令 | 作用 |
-|---|---|---|
-| **session** | `/sessions [id\|idx]` | 列出已保存会话（带参就当 `/switch` 用） |
-| | `/switch [id\|idx]` | 选会话（不带参 = 列表 + 提示） |
-| | `/new [title]` | 开新会话 |
-| | `/title <text>` | 改当前会话标题 |
-| | `/delete` | 删当前会话 |
-| **model** | `/model` | 列出已拉取的 Ollama 模型 |
-| | `/model <name>` | 运行时切换模型（不用重启） |
-| | `/model pull <name>` | 从 registry 拉新模型 |
-| **runtime** | `/rag [on\|off]` | 开关检索增强 |
-| | `/think [on\|off]` | 开关「深度思考」提示（仅 UI 标记） |
-| **knowledge** | `/kb` | 知识库摘要（数量 + 最近 doc + 当前后端） |
-| | `/kb list` | 列出当前 KB 里的文档 |
-| | `/kb show <idx\|id>` | 看某文档的元数据 + 前几个 chunk |
-| | `/kb search <query>` | 预览检索（不走 LLM，纯打分） |
-| | `/kb delete <idx\|id>` | 删文档及其 chunks（带二次确认） |
-| | `/kb sync` | 本地 KB → pgvector（仅登录态） |
-| | `/save [title]` | 把最近一轮 Q+A 存进当前 KB |
-| | `/reflect [on\|off\|<0..1>]` | 自动保存高质量回答（带阈值） |
-| **auth** | `/register` | 注册账号 |
-| | `/login` | 登录（token 存到 `~/.config/rag-chat/token.json`，权限 0600） |
-| | `/logout` | 吊销 refresh token + 清除本地 token |
-| | `/whoami` | 打印当前 user id |
-| | `/ollama-auth [key\|clear\|show]` | 设置 / 清除托管 Ollama 的 Bearer key |
-| **misc** | `/clear` | 清屏 |
-| | `/help` | 打开命令面板 |
-| | `/quit`（`/exit`） | 退出 REPL |
-
-### 知识库管理
-
-`/kb` 系列命令操作的是**当前活跃**的 KB —— 哪个生效取决于登录态：
-
-- **未登录** → `FileKnowledgeBase`，路径 `~/.config/rag-chat/kb/`（JSONL
-  on disk + stdlib 余弦检索）。除了 embed model 不依赖外部组件，全部操作
-  留在本机。
-- **已登录**（`/login`）→ `PgvectorKnowledgeBase`，落 Postgres。同一套
-  admin API（`list` / `show` / `search` / `delete` + `/save` 走的
-  `add_document`），底层是 `vector(768)` 列 + ivfflat 索引。文档按
-  `user_id` 隔离。
-
-典型使用流程：
-
-```
-# 手动保存 —— 显式一对 Q+A
-> 问一个有用的问题
-> /save
-saved → local · 1a2b3c4d · ... · /kb show 1a2b3c4d
-
-# 自动保存 —— critic LLM 判每轮回答，达到置信度阈值才存
-> /reflect on
-> /reflect 0.7                # 阈值（0-1），越高越严
-> 后面问问题就行，符合条件的会在背景里自动入库
-
-# 迁移：未登录积累的本地 KB → 登录后回流到 pgvector
-> /login
-> /kb sync                    # 把本地文档重新 embed 写进 PG
-```
-
-`/reflect` 写入的是 critic 蒸馏出的 "fact card"（带原始 Q+A 一起），
-打 `auto-saved` 标签，便于 `/kb list` 一眼区分。默认 **off**，需要显
-式开启。
-
-## 快速开始 —— API
-
-假设你已经走完了 [Day 0](#day-0--从-clone-到第一条回复) —— Postgres
-起着、迁移到 head、`.env` 里有真实的 `JWT_SECRET`。然后：
+两套客户端任选：
 
 ```bash
-make dev.api              # = uvicorn api.app:create_app，reload 模式
-# 或者：
-make dev.api PORT=8001    # 8000 被占用时
+# Ink 终端 —— 全屏三栏
+make dev.cli            # 或 cd clients/tui && pnpm dev
+
+# Next.js 网站
+make dev.web            # 或 cd websites && pnpm dev
+
+# 也可以一次性起三个（需要 tmux）
+make dev.all
 ```
 
-> SQLite（`DATABASE_URL=sqlite+aiosqlite:///./.dev.db`）仍然给测试
-> 套件和零安装的路由 smoke test 用，但**不推荐**作为开发默认值：
-> Pgvector retriever 用了 `Vector` 列和 `pg_trgm` operator，SQLite
-> 上没有实现，`/chat/stream` 走 RAG 会在查询时挂掉。
+---
 
-冒烟：
+## Ink 终端客户端（`lhx-rag`）
 
-```bash
-curl http://localhost:8000/health
-# {"status":"ok"}
+一个全屏 Ink 应用，只走 FastAPI 的 `/v1` 表面，用 `ink` + `zustand`
++ `marked`（终端 markdown 渲染）搭起来。
 
-curl -X POST http://localhost:8000/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"me@example.com","password":"password1demo"}'
-# 201 + {"id":"…","email":"me@example.com",…}
+### 提供的能力
+
+- **三栏可聚焦**：sessions / transcript / composer，`Tab` 和
+  `Shift+Tab` 循环切焦点。
+- **斜杠命令** 带模糊补全 + 可滚动候选面板（`/help` 看全部）。
+- **侧栏底部** 钉了身份、API 地址、当前 model、当前 provider、
+  rag / think 状态——shell prompt 不再骗你"是哪个模型刚回的"。
+- **alt-screen 缓冲** —— 退出时恢复 shell 原 scrollback（不想要
+  的话设 `LHX_RAG_NO_FULLSCREEN=1`）。
+- **跨账号状态隔离** —— `/logout` 会清屏、清 provider 缓存再渲染
+  登录卡。
+
+### 斜杠命令（节选）
+
+| 命令 | 说明 |
+| --- | --- |
+| `/help` | 打开按类分组的命令面板。 |
+| `/new [title]`、`/sessions`、`/switch <id\|序号>`、`/title <文本>` | 会话管理。 |
+| `/rag on\|off`、`/think on\|off\|low\|medium\|high` | 单轮开关。 |
+| `/regenerate`（`/r`）、`/stop`、`/edit <text>`、`/rmsg`、`/eval` | 对话操作。 |
+| `/model [<tag>\|set <provider> <tag>\|clear\|show]` | 查看 / 切换当前 session 的模型。直接 `/model` 会同时打印当前 pin **和** provider 上的前 5 个可用 chat 模型 tag。 |
+| `/pref [show\|set <key> <值>\|clear <key>]` | 用户级默认：provider、model、embed、rag。 |
+| `/kb [list\|add\|rm\|reindex\|search <q>]` | 知识库管理。 |
+| `/providers [list\|add\|rm\|default\|test]` | LLM provider 路由。 |
+| `/models [list\|pull\|rm]` | 在 provider 上拉 / 删模型。 |
+| `/register <email> <password> [name]`、`/whoami`、`/logout` | 账号流。 |
+| `/quit`（`/q`） | 退出。 |
+
+详细设计见 [clients/tui/README.md](clients/tui/README.md)
+（在该目录跑 `pnpm dev` 即可调试）。
+
+---
+
+## Web 客户端
+
+`websites/` 是 Next.js 15（App Router + RSC）工作区，含三个项目：
+
+```
+websites/
+   ├─ apps/web/                 面向用户的聊天应用
+   ├─ apps/admin/               管理后台
+   └─ packages/                 共享 UI / 工具 / 文案
 ```
 
-### REST / SSE / WebSocket 速查
+亮点：
 
-| Method | Path | Auth | 备注 |
-|---|---|---|---|
-| `GET` | `/health` | public | liveness |
-| `POST` | `/auth/register` | public | |
-| `POST` | `/auth/login` | public | 返回 access + refresh |
-| `POST` | `/auth/refresh` | refresh token | 开启 rotation |
-| `POST` | `/auth/logout` | refresh token | |
-| `GET` `PATCH` | `/me` | bearer | |
-| `POST` `GET` | `/chat/sessions` | bearer | |
-| `GET` | `/chat/sessions/{id}/messages` | bearer | |
-| `POST` | `/chat/messages` | bearer | 非流式（内部聚合 SSE） |
-| `POST` | `/chat/stream` | bearer | **SSE** —— 事件：`retrieval` / `token` / `thought` / `tool_call` / `tool_result` / `done` / `error` |
-| `WS` | `/ws/chat` | bearer（`bearer,<jwt>` subprotocol 或 `?token=<jwt>`） | 支持 `{"type":"abort"}` |
-| `POST` `GET` | `/knowledge/documents` | bearer | |
-| `POST` | `/knowledge/documents:reindex` | bearer | 入队到 worker（返回 202） |
-| `GET` | `/knowledge/search` | bearer | |
+- **多语言**：中英共用同一份 schema，首页右上角语言切换。
+- **流式**：Server Actions 直推 SSE，事件形态和 TUI 一样。
+- **知识库 / provider / model 管理**：CLI 那套 REST 的 UI 完整版。
+- **组织 / wiki 工作区**：团队共享知识库——TUI 这块还没追上。
 
-完整事件词表 + 顺序约定见
+部署：
+[docs/DEPLOY_WEBSITES.md](docs/DEPLOY_WEBSITES.md)、
+[docs/DEPLOY_BACKEND_DOCKER.md](docs/DEPLOY_BACKEND_DOCKER.md)、
+[docs/DEPLOY_FREE_STACK.md](docs/DEPLOY_FREE_STACK.md)。
+
+---
+
+## REST / SSE 速查
+
+OpenAPI 自动发布在 `GET /openapi.json`，Swagger UI 在 `GET /docs`。
+分组概览：
+
+| 分组 | 端点 |
+| --- | --- |
+| `auth` | `POST /v1/auth/{register,login,logout,refresh}` |
+| `me` | `GET /v1/me`、`PATCH /v1/me`、`GET\|PUT /v1/me/preferences` |
+| `chat` | `POST /v1/chat/sessions`、`GET /v1/chat/sessions`、`PATCH\|DELETE /v1/chat/sessions/{id}`、`GET /v1/chat/sessions/{id}/messages`、`POST /v1/chat/messages`、**`POST /v1/chat/stream`**、`POST /v1/chat/stream/regenerate`、`PATCH\|DELETE /v1/chat/messages/{id}`、`GET\|POST /v1/chat/messages/{id}/evaluation` |
+| `knowledge` | `POST /v1/knowledge/documents`、`GET /v1/knowledge/documents`、`GET\|PATCH\|DELETE /v1/knowledge/documents/{id}`、`POST /v1/knowledge/documents:reindex`、`GET /v1/knowledge/search` |
+| `providers` | `GET\|POST /v1/providers`、`PATCH\|DELETE /v1/providers/{id}`、`GET /v1/providers/{id}/models`、`POST /v1/providers/{id}/models/{meta,pull,delete,show}`、`POST /v1/providers/test` |
+| `assets` | `POST /v1/assets/images`、`GET /v1/assets/{id}` |
+| `shares / bookmarks / orgs / wikis` | 完整 CRUD —— 见 OpenAPI |
+
+> **浏览器调用方**直接打根路径（不带 `/v1`），走 root CORS 白名单；
+> **非浏览器调用方**（Ink TUI、MCP 服务、你自己的脚本）打 `/v1/*`
+> 并带上 `X-Client-Id`。Handlers 是同一套，分流只发生在中间件层。
+
+流式事件词表（`token`、`thought`、`tool_call`、`tool_result`、
+`retrieval`、`done`、`error`）见
 [docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md)。
 
-`make openapi` 重新生成 [docs/openapi.json](docs/openapi.json)；`make openapi.check` 校验生成结果已提交。
-
-## 入库 + 后台 Worker
-
-```bash
-# 请使用 Web/API knowledge endpoints 做文档入库和重建索引。
-# 旧 Python CLI 入口已经移除。
-```
-
-Job 协议 / 队列语义 / 重试预期都在
-[`service/workers/queue.py`](service/workers/queue.py)。
+---
 
 ## 配置
 
-所有可调项都在 [settings.py](settings.py)（pydantic-settings）声明，
-`.env` 覆盖。变量按用途分组，**同时支持扁平名**（`JWT_SECRET`）
-和**嵌套名**（`AUTH__JWT_SECRET`），冲突时嵌套优先。
+`.env.example` 是单一事实源——复制成 `.env` 改即可，大部分项有合
+理默认。
 
-| 分组 | 扁平 env 名 | 作用 |
-|---|---|---|
-| `app` | `APP_ENV`, `APP_HOST`, `APP_PORT`, `LOG_LEVEL` | 运行时 |
-| `auth` | `JWT_SECRET`, `JWT_ALG`, `ACCESS_TTL_MIN`, `REFRESH_TTL_DAYS` | 鉴权 |
-| `db` | `DATABASE_URL`, `DB_POOL_SIZE`, `ECHO_SQL` | 持久化 |
-| `redis` | `REDIS_URL` | worker 队列 + 缓存 |
-| `ollama` | `OLLAMA_BASE_URL`, `OLLAMA_CHAT_MODEL`, `OLLAMA_EMBED_MODEL`, `OLLAMA_API_KEY` | 本地 / 托管 Ollama |
-| `openai` | `OPENAI_BASE_URL`, `OPENAI_CHAT_MODEL`, `OPENAI_EMBED_MODEL`, `OPENAI_API_KEY`, `OPENAI_ORGANIZATION` | OpenAI 兼容 endpoint |
-| `retrieval` | `RETRIEVAL_ENABLED`, `RETRIEVAL_TOP_K`, `RETRIEVAL_MIN_SCORE`, `RETRIEVAL_EMBED_DIM` | RAG 默认值 |
-| `rate_limit` | `RATE_LIMIT_PER_MIN` | API 限流 |
+| 分组 | 变量 | 说明 |
+| --- | --- | --- |
+| `app` | `APP_ALLOWED_CLIENT_IDS` | 逗号分隔的 `/v1/*` 流量白名单。默认 `lhx-rag-cli`。 |
+| `auth` | `JWT_SECRET`、`JWT_*_EXPIRES_MIN` | HS256 access + refresh。 |
+| `db` | `DATABASE_URL`、`DB_POOL_SIZE`、`ECHO_SQL` | 异步 asyncpg URL。 |
+| `redis` | `REDIS_URL` | Worker 队列 + 缓存。 |
+| `ollama` | `OLLAMA_BASE_URL`、`OLLAMA_CHAT_MODEL`、`OLLAMA_EMBED_MODEL`、`OLLAMA_API_KEY`、`OLLAMA_THINK` | 本地 / 托管 Ollama。 |
+| `openai` | `OPENAI_BASE_URL`、`OPENAI_CHAT_MODEL`、`OPENAI_EMBED_MODEL`、`OPENAI_API_KEY`、`OPENAI_ORGANIZATION` | OpenAI 协议端点。 |
+| `retrieval` | `RAG_ENABLED`、`RAG_TOP_K`、`RAG_MIN_SCORE`、`RAG_EMBED_DIM`、`RAG_IMAGE_CAPTION_MODEL` | RAG 默认值。 |
+| `evaluation` | `EVAL_ENABLED`、`EVAL_MODEL` | `/eval` 用的常驻评审。 |
+| `rate_limit` | `RATE_LIMIT_PER_MIN` | 单 IP 全局限速。 |
 
-`APP_ENV=prod` 模式下，若 `JWT_SECRET` 还是 placeholder 启动会失败。
-`openssl rand -hex 32` 出来的就能直接用。
+### TUI 专用
 
-## 数据库与迁移
+`clients/tui/.env` 在构建时打包、在 dev 模式下重读：
 
-数据库对 **CLI 不是必需**的 —— Postgres 不通时聊天会自动落到文件
-记忆。想跑完整 schema：
+| 变量 | 默认 | 作用 |
+| --- | --- | --- |
+| `DEFAULT_BASE_URL` | `http://127.0.0.1:8000` | 打到发布产物里的默认 base URL。 |
+| `RAG_API_BASE_URL` | _(未设)_ | 单次启动的临时覆盖，优先级比 `DEFAULT_BASE_URL` 高。 |
+| `LHX_RAG_NO_FULLSCREEN` | _(未设)_ | 设为 `1` 跳过 alt-screen（管道输出 / CI 友好）。 |
 
-```bash
-make db.up          # 通过 docker compose 起 postgres + pgvector
-make db.init        # probe + alembic upgrade head + pgvector 校验
-make db.shell       # psql 交互
-```
+解析顺序：`options.baseUrl` → `RAG_API_BASE_URL` →
+`DEFAULT_BASE_URL` → loopback 兜底。
 
-迁移历史：
-
-- `0001_init` —— users / chat_sessions / messages / documents / chunks / refresh_tokens
-- `0002_add_tool_message_fields` —— `messages.tool_call_id` + `messages.tool_calls`（Postgres 上是 JSONB），支撑 tool-role 消息
-- `0003_add_user_memories` —— `user_memories` 表，存用户级长期事实
-
-SQLite（`DATABASE_URL=sqlite+aiosqlite:///./.dev.db`）可用于轻量本地烟测；完整 RAG 开发仍建议使用 Postgres + pgvector。
-
-## 开发
-
-```bash
-make ci             # 后端 + 前端质量检查
-make lint           # Ruff + ESLint
-make fmt            # Ruff format + Prettier（写盘）
-make typecheck      # mypy + TypeScript noEmit
-make compile        # 后端 compileall 语法/导入路径烟测
-make openapi        # 重新生成 docs/openapi.json
-make openapi.check  # 对比当前代码与 docs/openapi.json（CI 用）
-```
-
-Git hooks：执行一次 `uv run pre-commit install --hook-type pre-commit --hook-type pre-push`。commit 阶段跑 Ruff，push 阶段跑 mypy + compileall。
+---
 
 ## 项目结构
 
 ```
-├── AGENTS.md                  # 架构蓝图（single source of truth）
-├── docs/
-│   ├── STREAM_PROTOCOL.md     # 流式事件词表
-│   └── openapi.json           # 生成产物；CI 会做 drift 检查
-├── settings.py                # pydantic-settings 单入口
-├── .env.example               # env 模板
-├── api/                       # FastAPI app（routers / deps / middleware）
-├── service/                   # 后端服务、领域逻辑和基础设施
-│   ├── chat/                  #   ChatService + prompts/titles/history/tokens/limits
-│   ├── llm/                   #   LLMClient protocol + Ollama + OpenAI 实装
-│   ├── providers/             #   provider registry + runtime resolution
-│   ├── knowledge/             #   PgvectorKnowledgeBase + Ingestor + Reranker hook
-│   ├── memory/                #   ChatMemory（File/DB）+ UserMemoryStore + FactExtractor
-│   ├── db/                    #   SQLAlchemy 2.x async + models
-│   ├── tools/                 #   Tool protocol + ToolRegistry + FunctionTool
-│   ├── mcp/                   #   MCP stdio client + Tool 适配器
-│   ├── workers/               #   RedisJobQueue + Worker pump
-│   ├── streaming/             #   Event TypedDict + AbortContext
-│   ├── common/                #   跨 service 域的通用基础设施
-│   └── auth/                  #   bcrypt + JWT + refresh rotation
-├── clients/tui/               # Ink API-only 终端客户端
-│   ├── src/api/               #   FastAPI client + 本地 token store
-│   └── src/app.tsx            #   终端 UI
-├── alembic/versions/          # 数据库迁移
-├── scripts/                   # 一次性运维（db_init, dump_openapi 等）
-├── openspec/                  # spec 提案 + 归档
-├── Makefile · docker-compose.yml · pyproject.toml
-└── README.md / README.zh-CN.md
+.
+├── alembic/                 数据库迁移
+├── api/                     FastAPI HTTP / SSE 入口
+├── clients/tui/             Ink 终端客户端（`lhx-rag`）
+├── deploy/                  Render + HF Space 配方
+├── docs/                    架构 / 部署 / 设计文档
+│   └── images/              README 截图
+├── openspec/                living spec + change proposals
+├── service/                 后端领域层
+├── websites/                Next.js 工作区（web + admin）
+├── settings.py              pydantic-settings + 扁平 → 嵌套映射
+├── pyproject.toml
+├── docker-compose.yml
+├── Dockerfile               后端镜像（HF Space 也用它）
+├── README.md                English README
+└── README.zh-CN.md          ← 你正在看
 ```
 
-分层规则：`api/` 是后端入口适配层；`clients/tui/` 是 API-only 客户端，不能 import Python 后端内部模块。
+---
 
-## 贡献
+## 文档索引
 
-- 新提案 → `openspec/changes/<kebab-name>/`（`proposal.md` +
-  `design.md` + `tasks.md`）。
-- 已完成的 change → 归档到
-  `openspec/changes/archive/YYYY-MM-DD-<name>/`。
-- 稳定能力规范 → `openspec/specs/<capability>/spec.md`。
+- [docs/MULTI_CLIENT_AUTH_DESIGN.md](docs/MULTI_CLIENT_AUTH_DESIGN.md) —— `/v1` 为何存在、device-flow 路线图。
+- [docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md) —— SSE 事件线协议。
+- [docs/AUTH_DESIGN.md](docs/AUTH_DESIGN.md) —— JWT access / refresh、密码策略。
+- [docs/CHAT_OBSERVABILITY_EVALUATION_VISION.md](docs/CHAT_OBSERVABILITY_EVALUATION_VISION.md) —— 评估 / 视觉链路。
+- [docs/OLLAMA_CAPABILITIES_ADAPTATION.md](docs/OLLAMA_CAPABILITIES_ADAPTATION.md) —— 能力探测 + 回退。
+- [docs/WEB_SEARCH_CONTEXT_OPTIMIZATION.md](docs/WEB_SEARCH_CONTEXT_OPTIMIZATION.md) —— 工具结果裁剪。
+- [docs/FRONTEND_NEXT_OPTIMIZATION.md](docs/FRONTEND_NEXT_OPTIMIZATION.md) —— RSC / 流式经验。
+- [docs/FRONTEND_SSR_MVC.md](docs/FRONTEND_SSR_MVC.md) —— Web 端 server-action 布局。
+- [docs/DEPLOY_BACKEND_DOCKER.md](docs/DEPLOY_BACKEND_DOCKER.md)、[DEPLOY_WEBSITES.md](docs/DEPLOY_WEBSITES.md)、[DEPLOY_FREE_STACK.md](docs/DEPLOY_FREE_STACK.md) —— 运维指引。
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) —— 本地工具链（uv / alembic / pre-commit）。
+- [openspec/](openspec/) —— living spec；当前 `refactor/tui-refactor`
+  分支承载 TUI 重写 + 多客户端鉴权 Phase 1。
 
-提 PR 前请本地跑一次 `make ci`，Ruff、format che
+---
+
+## License
+
+采用 **MIT 协议** 发布。在保留版权与许可声明的前提下，可以自由使
+用、修改、再分发。

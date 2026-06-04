@@ -150,7 +150,14 @@ export class ApiClient {
 
   async updateSession(
     sessionId: string,
-    body: {title?: string; pinned?: boolean; provider_id?: string; model?: string}
+    body: {
+      title?: string;
+      pinned?: boolean;
+      provider_id?: string;
+      model?: string;
+      clear_provider_id?: boolean;
+      clear_model?: boolean;
+    }
   ): Promise<SessionMeta> {
     return this.request<SessionMeta>(`/chat/sessions/${sessionId}`, {
       method: 'PATCH',
