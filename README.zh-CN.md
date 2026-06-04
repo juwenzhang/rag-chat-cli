@@ -61,23 +61,23 @@ Web 应用和一套全屏 Ink 终端。
 
 ### Web —— 首页（已登录，中文）
 
-![Web 首页 · 中文](docs/images/web-home-zh.png)
+![Web 首页 · 中文](https://github.com/juwenzhang/rag-chat-cli/raw/master/docs/images/web-home-zh.png)
 
 ### Web —— 登录卡片
 
-![Web 登录 · 中文](docs/images/web-login-zh.png)
+![Web 登录 · 中文](https://github.com/juwenzhang/rag-chat-cli/raw/master/docs/images/web-login-zh.png)
 
 ### Web —— 首页（英文）
 
-![Web 首页 · 英文](docs/images/web-home-en.png)
+![Web 首页 · 英文](https://github.com/juwenzhang/rag-chat-cli/raw/master/docs/images/web-home-en.png)
 
 ### 终端 —— 登录
 
-![TUI 登录](docs/images/tui-login.png)
+![TUI 登录](https://github.com/juwenzhang/rag-chat-cli/raw/master/docs/images/tui-login.png)
 
 ### 终端 —— 三栏对话
 
-![TUI 主界面](docs/images/tui-shell.png)
+![TUI 主界面](https://github.com/juwenzhang/rag-chat-cli/raw/master/docs/images/tui-shell.png)
 
 > 终端客户端 `lhx-rag` 是个全屏 Ink 应用：左边 sessions、中间
 > transcript、底部 composer，sidebar 底部常驻 model / provider 信息。
