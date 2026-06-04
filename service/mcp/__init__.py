@@ -12,7 +12,7 @@ Public surface:
 * :func:`wrap_as_tools` — bulk adapter.
 * :class:`MCPError` — raised on transport / protocol failures.
 
-Typical wiring (e.g. inside ``tui/chat_app.py``)::
+Typical wiring::
 
     from service.mcp import MCPStdioClient, wrap_as_tools
     from service.tools import ToolRegistry

@@ -60,10 +60,9 @@ event vocabulary is documented in [docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL
 ## Architecture
 
 ```
-main.py
-├─ api/                    FastAPI HTTP / SSE / WS entrypoints
-├─ tui/                    CLI/TUI entrypoints and terminal presentation
-└─ service/                backend service layer
+api/                         FastAPI HTTP / SSE / WS entrypoints
+clients/tui/                 Ink API-only terminal client
+service/                     backend service layer
    ├─ chat/                ChatService + prompts/titles/history/tokens/limits
    ├─ llm/                 {OllamaClient, OpenAIClient} : LLMClient
    ├─ providers/           provider registry + runtime resolution
@@ -118,13 +117,12 @@ openssl rand -hex 32                 # paste into JWT_SECRET=... in .env
 make db.up                           # docker compose up postgres + pgvector
 make db.init                         # connect probe + alembic upgrade head + pgvector check
 
-# 5. Launch the REPL
-make dev.cli                         # = uv run python -m main chat
+# 5. Launch the Ink TUI API client
+make dev.api                         # in one terminal
+make dev.cli                         # in another terminal; default API: http://127.0.0.1:8000
 ```
 
-You should see the model banner and a prompt. Type `/` to see the
-slash-command autocomplete menu pop up, type a question to start
-chatting.
+You should see the Ink terminal client. Log in, then type `/help` or a question to start chatting.
 
 > Skipped step 2 and `/save` fails with "model 'nomic-embed-text' not
 > found"? Run `ollama pull nomic-embed-text` and retry — no restart
@@ -265,15 +263,8 @@ Full event vocabulary + ordering rules: [docs/STREAM_PROTOCOL.md](docs/STREAM_PR
 ## Ingestion + background workers
 
 ```bash
-# Inline ingestion (CLI blocks until done)
-uv run python -m main ingest path/to/dir --recursive --title "My docs"
-
-# Enqueue to the worker queue and return immediately
-uv run python -m main ingest path/to/dir --recursive --async
-
-# Run the worker (terminal B)
-uv run python -m main worker
-# → [worker] ingested /x/a.md → doc=… chunks=12
+# Use the Web/API knowledge endpoints for document ingestion and re-indexing.
+# The old Python CLI entrypoints have been removed.
 ```
 
 Job spec, queue protocol and retry expectations live in
@@ -325,7 +316,7 @@ Local quality gates now focus on static checks and smoke imports.
 make ci             # ruff check + format check + mypy + compileall
 make lint           # ruff check
 make fmt            # ruff format (write)
-make typecheck      # mypy over api/ service/ tui/ scripts
+make typecheck      # mypy over backend + TypeScript checks
 make compile        # compileall syntax/import-path smoke check
 make openapi        # regenerate docs/openapi.json
 make openapi.check  # diff schema against docs/openapi.json (CI)
@@ -342,7 +333,6 @@ Git hooks: run `uv run pre-commit install --hook-type pre-commit --hook-type com
 │   └── openapi.json           # generated; CI checks for drift
 ├── settings.py                # pydantic-settings entry
 ├── .env.example               # env template
-├── main.py                    # CLI shim → tui.cli.main
 ├── api/                       # FastAPI app (routers / deps / middleware)
 ├── service/                   # backend services, domain logic and infra
 │   ├── chat/                  #   ChatService + prompts/titles/history/tokens/limits
@@ -357,11 +347,9 @@ Git hooks: run `uv run pre-commit install --hook-type pre-commit --hook-type com
 │   ├── streaming/             #   Event TypedDict + AbortContext
 │   ├── common/                #   shared service infrastructure
 │   └── auth/                  #   bcrypt + JWT + refresh rotation
-├── tui/                       # CLI/TUI entry and terminal presentation
-│   ├── cli.py                 #   argparse: chat / serve / ingest / worker / train
-│   ├── chat_app.py            #   REPL + ChatService factory
-│   ├── auth_local.py          #   ~/.config/rag-chat/token.json
-│   └── ui/                    #   rich + prompt_toolkit presentation
+├── clients/tui/               # Ink API-only terminal client
+│   ├── src/api/               #   FastAPI client + local token store
+│   └── src/app.tsx            #   terminal UI
 ├── alembic/versions/          # database migrations
 ├── scripts/                   # one-shot ops (db_init, dump_openapi, …)
 ├── openspec/                  # spec proposals + archives
@@ -369,7 +357,7 @@ Git hooks: run `uv run pre-commit install --hook-type pre-commit --hook-type com
 └── README.md / README.zh-CN.md
 ```
 
-Layering rules: `api/` and `tui/` are entry adapters and may depend on `service/`; `service/` must not depend on `api/` or `tui/`.
+Layering rules: `api/` is the backend entry adapter; `clients/tui/` is an API-only client and must not import Python backend internals.
 
 ## Contributing
 

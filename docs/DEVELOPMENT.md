@@ -53,12 +53,12 @@ Short version:
 
 | Task                      | Command              | Notes                                         |
 |---------------------------|----------------------|-----------------------------------------------|
-| Run interactive CLI       | `make dev.cli`       | Boots `python main.py chat`                   |
+| Run interactive CLI       | `make dev.cli`       | Boots the Ink API-only TUI in `clients/tui`   |
 | Lint                      | `make lint`          | Ruff, read-only                               |
 | Auto-fix lint             | `make lint-fix`      | Ruff + auto-fix                               |
 | Format (write)            | `make fmt`           | Ruff format                                   |
 | Format check              | `make fmt-check`     | Used by CI                                    |
-| Type-check                | `make typecheck`     | Mypy over `api service tui main.py settings.py scripts` |
+| Type-check                | `make typecheck`     | Mypy over backend + TypeScript checks         |
 | Compile check             | `make compile`       | `compileall` syntax/import-path smoke check   |
 | **Full CI simulation**    | `make ci`            | `lint + fmt-check + typecheck + compile`      |
 

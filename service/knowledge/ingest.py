@@ -3,8 +3,7 @@
 Splits text → embeds chunks → writes :class:`db.models.Document` +
 :class:`db.models.Chunk` rows. Used by:
 
-* the ``main.py ingest`` CLI (#11) — bulk file ingestion;
-* future ``POST /knowledge/documents`` API route — web upload.
+* ``POST /knowledge/documents`` API route — web upload / ingestion.
 
 Idempotent on ``(user_id, source)``: re-ingesting the same source updates
 the existing Document row and replaces its chunks (FK cascade does the
