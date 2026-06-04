@@ -5,11 +5,21 @@ import {listCommands} from '../../commands/registry';
 import type {CommandSpec} from '../../commands/types';
 import {palette} from '../../theme/palette';
 
-const ORDER: Array<CommandSpec['category']> = ['session', 'chat', 'rag', 'auth', 'misc'];
+const ORDER: Array<CommandSpec['category']> = [
+  'session',
+  'chat',
+  'rag',
+  'knowledge',
+  'config',
+  'auth',
+  'misc'
+];
 const LABEL: Record<CommandSpec['category'], string> = {
   session: 'session',
   chat: 'chat',
   rag: 'rag / think',
+  knowledge: 'knowledge base',
+  config: 'providers / preferences',
   auth: 'auth',
   misc: 'misc'
 };

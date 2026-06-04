@@ -13,6 +13,6 @@ export interface CommandSpec {
   aliases?: string[];
   description: string;
   usage?: string;
-  category: 'session' | 'chat' | 'rag' | 'auth' | 'misc';
+  category: 'session' | 'chat' | 'rag' | 'auth' | 'config' | 'knowledge' | 'misc';
   run: (ctx: CommandCtx) => Promise<void> | void;
 }
