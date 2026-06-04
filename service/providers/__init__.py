@@ -523,19 +523,33 @@ async def seed_default_ollama_for_user(
     # default. If a row already exists (e.g., GET /me/preferences ran
     # earlier and lazy-created it), just point its ``default_provider_id``
     # at the seeded entry — don't fail with PK conflict.
+    #
+    # Why we deliberately leave ``default_model`` NULL here:
+    #
+    # Pinning ``settings.ollama.chat_model`` into the row at seed time
+    # used to feel friendly ("the user's preference matches the operator's
+    # env"), but it caused a subtle config-drift bug — operators who later
+    # rolled the env default forward (qwen2.5:1.5b → qwen3-coder-next:cloud)
+    # found the old tag still sticky in the DB, surfacing as
+    # ``chat model 'qwen2.5:1.5b' is not pulled``. Leaving the column NULL
+    # makes ``resolve_session_model`` fall through to
+    # ``settings.ollama.chat_model`` at request time, so env changes take
+    # effect immediately. Users who *want* to pin a specific model still
+    # do so via PUT /me/preferences (TUI: ``/pref set model``).
     pref_row = await session.get(UserPreference, user_id)
     if pref_row is None:
         pref_row = UserPreference(
             user_id=user_id,
             default_provider_id=row.id,
-            default_model=settings.ollama.chat_model or None,
+            default_model=None,
             default_use_rag=False,
         )
         session.add(pref_row)
     else:
         pref_row.default_provider_id = row.id
-        if pref_row.default_model is None:
-            pref_row.default_model = settings.ollama.chat_model or None
+        # Intentionally do NOT touch pref_row.default_model — if the user
+        # already has one (whether explicit or seeded by an older release),
+        # respect it. Only the lazy-created NULL stays NULL.
 
     await session.commit()
     await session.refresh(row)
