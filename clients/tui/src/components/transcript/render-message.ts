@@ -69,18 +69,32 @@ export function renderMessageLines(message: UIMessage, width: number): string[] 
     }
   }
 
-  // body — markdown for assistant, plain for everyone else
-  const body =
-    message.role === 'assistant'
-      ? renderMarkdown(message.content || (message.streaming ? ' ' : ' '), width)
-      : message.content;
-  for (const raw of body.split('\n')) {
-    if (stringWidth(stripAnsi(raw)) <= width) {
-      lines.push(raw);
-    } else {
-      // markdown render already wrapped at `width`; this is just a guard for
-      // pathological inputs (URLs, base64) that don't have soft breaks.
-      for (const piece of hardWrap(raw, width)) lines.push(piece);
+  // body — markdown for assistant, plain for everyone else.
+  //
+  // Defensive collapse: production sometimes stores the raw upstream error
+  // body (Cloudflare 429 HTML, gateway pages, HTML-wrapped JSON) directly
+  // inside ``messages.content`` because the LLM client surfaces upstream
+  // failures verbatim. Rendering 200 lines of HTML through marked makes the
+  // transcript unusable. We detect the pattern early and substitute a one-
+  // line red badge instead.
+  const collapsed = collapseUpstreamError(message.content);
+  if (collapsed) {
+    for (const piece of wrap(collapsed, width - 2)) {
+      lines.push(`${COLOR.error}${piece}${COLOR.reset}`);
+    }
+  } else {
+    const body =
+      message.role === 'assistant'
+        ? renderMarkdown(message.content || (message.streaming ? ' ' : ' '), width)
+        : message.content;
+    for (const raw of body.split('\n')) {
+      if (stringWidth(stripAnsi(raw)) <= width) {
+        lines.push(raw);
+      } else {
+        // markdown render already wrapped at `width`; this is just a guard for
+        // pathological inputs (URLs, base64) that don't have soft breaks.
+        for (const piece of hardWrap(raw, width)) lines.push(piece);
+      }
     }
   }
 
@@ -138,6 +152,46 @@ function oneLine(value: string, max: number): string {
   const flat = value.replace(/\s+/g, ' ').trim();
   if (stringWidth(flat) <= max) return flat;
   return `${flat.slice(0, Math.max(0, max - 1))}…`;
+}
+
+/**
+ * Detect upstream-error payloads that leaked into ``messages.content`` and
+ * return a one-line summary (without the HTML body). Returns ``null`` when
+ * the content looks like a normal answer.
+ *
+ * Patterns we collapse:
+ *   - ``<provider> /<endpoint> failed: <code> '<html-or-json>'`` (our own
+ *     wrapper around upstream errors — the leading text is already a clean
+ *     summary, we just drop the embedded body).
+ *   - Bare HTML responses (``<!doctype`` / ``<html``) — these come from
+ *     CDN / WAF intercepts and never carry useful prose.
+ */
+function collapseUpstreamError(raw: string): string | null {
+  const trimmed = raw.trimStart();
+  if (!trimmed) return null;
+
+  // Pattern 1: "ollama /api/chat failed: 429 '<!doctype html>...'"
+  const wrapped = trimmed.match(
+    /^([^\n']{1,200}?failed:\s*\d{3})\s*'<\s*(?:!doctype|html|\?xml)/i
+  );
+  if (wrapped) {
+    return `${wrapped[1]} (upstream returned an HTML error page; full body hidden)`;
+  }
+
+  // Pattern 2: bare HTML page — keep it short, drop the markup.
+  if (/^<\s*(?:!doctype|html|\?xml)/i.test(trimmed)) {
+    return 'upstream returned an HTML error page (full body hidden)';
+  }
+
+  // Pattern 3: ``Error: ...`` + an embedded JSON / HTML blob longer than
+  // ~400 chars on a single line — collapse to the prefix.
+  if (/^(?:Error|RequestError|HTTPError):/i.test(trimmed)) {
+    const firstLine = trimmed.split('\n', 1)[0] ?? trimmed;
+    if (firstLine.length > 200) {
+      return `${firstLine.slice(0, 180)}… (truncated)`;
+    }
+  }
+  return null;
 }
 
 function safeJson(value: unknown, max: number): string {
