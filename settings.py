@@ -47,6 +47,7 @@ _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
     "APP_HOST": ("app", "host"),
     "APP_PORT": ("app", "port"),
     "APP_CORS_ORIGINS": ("app", "cors_origins"),
+    "APP_ALLOWED_CLIENT_IDS": ("app", "allowed_client_ids"),
     # auth
     "JWT_SECRET": ("auth", "jwt_secret"),
     "JWT_ALG": ("auth", "jwt_alg"),
@@ -123,8 +124,12 @@ class AppSettings(_GroupBase):
     port: int = 8000
     # CSV env var `APP_CORS_ORIGINS=http://a,http://b` becomes `["http://a", "http://b"]`.
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+    # Allowed `X-Client-Id` values for the `/v1/*` (non-browser) surface.
+    # See docs/MULTI_CLIENT_AUTH_DESIGN.md Phase 1. Web clients hitting the
+    # legacy root paths skip this check entirely.
+    allowed_client_ids: list[str] = Field(default_factory=lambda: ["lhx-rag-cli", "lhx-rag-web"])
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins", "allowed_client_ids", mode="before")
     @classmethod
     def _split_csv(cls, v: Any) -> Any:
         if isinstance(v, str):

@@ -9,9 +9,12 @@ import {AppShell} from './components/layout/app-shell';
 import {useAuthStore} from './store/auth-store';
 import {palette} from './theme/palette';
 
-// Side-effect import to populate the command registry. The composer queries it
-// every keystroke, so registration must happen before any UI mounts.
+// Side-effect imports to populate the command registry. The composer queries
+// it on every keystroke, so registration must happen before any UI mounts.
+// The order matters only insofar as it dictates `/help` listing order — both
+// modules just call ``registerCommand``.
 import './commands/registry';
+import './commands/extras';
 
 export function App(): React.ReactElement {
   const api = useMemo(() => new ApiClient(), []);

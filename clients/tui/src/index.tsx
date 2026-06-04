@@ -1,3 +1,7 @@
+// Side-effect import: populate process.env from `.env` before any module
+// that reads it is evaluated. Must be the very first import.
+import './config/env-bootstrap';
+
 import {render} from 'ink';
 
 import {App} from './app';

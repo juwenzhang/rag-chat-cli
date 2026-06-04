@@ -1,11 +1,23 @@
 import {clearTokens, loadTokens, saveTokens, type StoredTokens} from './token-store';
 import {ApiError} from './types';
 import type {
+  ConnectivityTestOut,
+  DocumentDetailOut,
+  DocumentOut,
+  MessageEvaluationOut,
   MessageOut,
+  ModelListItem,
+  Page,
+  ProviderCreateIn,
+  ProviderOut,
+  ProviderUpdateIn,
+  SearchHitOut,
   SessionMeta,
   ThinkMode,
   TokenPair,
-  UserOut
+  UserOut,
+  UserPreferenceIn,
+  UserPreferenceOut
 } from './types';
 
 /**
@@ -26,15 +38,49 @@ interface RequestInitX {
   authed?: boolean;
 }
 
-const DEFAULT_BASE_URL = 'http://127.0.0.1:8000';
+const FALLBACK_BASE_URL = 'http://127.0.0.1:8000';
+
+/**
+ * Path prefix and client identification shared by every request.
+ *
+ * `/v1/*` is the FastAPI sub-app dedicated to non-browser clients
+ * (see ``docs/MULTI_CLIENT_AUTH_DESIGN.md``). It enforces an
+ * ``X-Client-Id`` allowlist instead of an ``Origin`` allowlist so reverse
+ * proxies that strip / refuse browser-flavoured headers (Hugging Face
+ * Spaces, some CDNs) keep the CLI working.
+ */
+const API_PREFIX = '/v1';
+const CLIENT_ID = 'lhx-rag-cli';
+const USER_AGENT = `lhx-rag/${process.env['npm_package_version'] ?? '0.1.0'} (ink-tui)`;
+
+/**
+ * Resolve the FastAPI base URL with a single, well-known precedence chain:
+ *
+ *   1. explicit `options.baseUrl` (programmatic override, used in tests)
+ *   2. `RAG_API_BASE_URL`         (per-invocation shell override)
+ *   3. `DEFAULT_BASE_URL`         (set in `clients/tui/.env`, baked in at
+ *                                  build time and re-loaded at dev runtime)
+ *   4. `FALLBACK_BASE_URL`        (loopback, sensible default for local dev)
+ */
+function resolveBaseUrl(explicit?: string): string {
+  const candidates = [
+    explicit,
+    process.env['RAG_API_BASE_URL'],
+    process.env['DEFAULT_BASE_URL']
+  ];
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim();
+    if (trimmed) return trimmed.replace(/\/+$/, '');
+  }
+  return FALLBACK_BASE_URL;
+}
 
 export class ApiClient {
   readonly baseUrl: string;
   private tokens: StoredTokens | null;
 
   constructor(options: ApiClientOptions = {}) {
-    const fromEnv = process.env['RAG_API_BASE_URL']?.trim();
-    this.baseUrl = (options.baseUrl || fromEnv || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    this.baseUrl = resolveBaseUrl(options.baseUrl);
     this.tokens = loadTokens();
   }
 
@@ -139,6 +185,154 @@ export class ApiClient {
     return this.requestRaw('/chat/stream/regenerate', {method: 'POST', body, signal});
   }
 
+  /* ── messages (edit / delete / evaluate) ───────────────────────── */
+
+  async editMessage(messageId: string, content: string): Promise<MessageOut> {
+    return this.request<MessageOut>(`/chat/messages/${messageId}`, {
+      method: 'PATCH',
+      body: {content}
+    });
+  }
+
+  async deleteMessage(messageId: string): Promise<void> {
+    await this.request<void>(`/chat/messages/${messageId}`, {method: 'DELETE'});
+  }
+
+  async getEvaluation(messageId: string): Promise<MessageEvaluationOut> {
+    return this.request<MessageEvaluationOut>(
+      `/chat/messages/${messageId}/evaluation`
+    );
+  }
+
+  async evaluateMessage(messageId: string): Promise<MessageEvaluationOut> {
+    return this.request<MessageEvaluationOut>(
+      `/chat/messages/${messageId}/evaluation`,
+      {method: 'POST'}
+    );
+  }
+
+  /* ── knowledge ─────────────────────────────────────────────────── */
+
+  async listDocuments(page = 1, size = 50): Promise<Page<DocumentOut>> {
+    return this.request<Page<DocumentOut>>(
+      `/knowledge/documents?page=${page}&size=${size}`
+    );
+  }
+
+  async getDocument(documentId: string): Promise<DocumentDetailOut> {
+    return this.request<DocumentDetailOut>(`/knowledge/documents/${documentId}`);
+  }
+
+  async createDocument(body: {
+    title?: string;
+    source?: string;
+    body: string;
+  }): Promise<DocumentDetailOut> {
+    return this.request<DocumentDetailOut>('/knowledge/documents', {
+      method: 'POST',
+      body: {
+        title: body.title ?? 'Untitled',
+        source: body.source ?? 'cli-upload',
+        body: body.body
+      }
+    });
+  }
+
+  async updateDocument(
+    documentId: string,
+    body: {title?: string; body?: string}
+  ): Promise<DocumentDetailOut> {
+    return this.request<DocumentDetailOut>(`/knowledge/documents/${documentId}`, {
+      method: 'PATCH',
+      body
+    });
+  }
+
+  async deleteDocument(documentId: string): Promise<void> {
+    await this.request<void>(`/knowledge/documents/${documentId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async reindexDocuments(): Promise<void> {
+    await this.request<void>('/knowledge/documents:reindex', {method: 'POST'});
+  }
+
+  async searchKnowledge(q: string, topK = 4): Promise<SearchHitOut[]> {
+    const qs = `q=${encodeURIComponent(q)}&top_k=${topK}`;
+    return this.request<SearchHitOut[]>(`/knowledge/search?${qs}`);
+  }
+
+  /* ── providers / models / preferences ──────────────────────────── */
+
+  async listProviders(): Promise<ProviderOut[]> {
+    return this.request<ProviderOut[]>('/providers');
+  }
+
+  async createProvider(body: ProviderCreateIn): Promise<ProviderOut> {
+    return this.request<ProviderOut>('/providers', {method: 'POST', body});
+  }
+
+  async updateProvider(providerId: string, body: ProviderUpdateIn): Promise<ProviderOut> {
+    return this.request<ProviderOut>(`/providers/${providerId}`, {
+      method: 'PATCH',
+      body
+    });
+  }
+
+  async deleteProvider(providerId: string): Promise<void> {
+    await this.request<void>(`/providers/${providerId}`, {method: 'DELETE'});
+  }
+
+  async listProviderModels(providerId: string): Promise<ModelListItem[]> {
+    return this.request<ModelListItem[]>(`/providers/${providerId}/models`);
+  }
+
+  async deleteProviderModel(providerId: string, model: string): Promise<void> {
+    await this.request<void>(`/providers/${providerId}/models/delete`, {
+      method: 'POST',
+      body: {model}
+    });
+  }
+
+  async testProvider(body: {
+    type: 'ollama' | 'openai';
+    base_url: string;
+    api_key?: string | null;
+  }): Promise<ConnectivityTestOut> {
+    return this.request<ConnectivityTestOut>('/providers/test', {
+      method: 'POST',
+      body
+    });
+  }
+
+  /**
+   * Pull an Ollama model. Backend streams SSE — we expose the raw Response so
+   * the caller can read progress frames.
+   */
+  async openModelPullStream(
+    providerId: string,
+    model: string,
+    signal?: AbortSignal
+  ): Promise<Response> {
+    return this.requestRaw(`/providers/${providerId}/models/pull`, {
+      method: 'POST',
+      body: {model},
+      signal
+    });
+  }
+
+  async getPreferences(): Promise<UserPreferenceOut> {
+    return this.request<UserPreferenceOut>('/me/preferences');
+  }
+
+  async putPreferences(body: UserPreferenceIn): Promise<UserPreferenceOut> {
+    return this.request<UserPreferenceOut>('/me/preferences', {
+      method: 'PUT',
+      body
+    });
+  }
+
   /* ── transport ─────────────────────────────────────────────────── */
 
   private async request<T>(path: string, init: RequestInitX = {}): Promise<T> {
@@ -154,7 +348,16 @@ export class ApiClient {
   }
 
   private async requestRaw(path: string, init: RequestInitX = {}, retried = false): Promise<Response> {
-    const headers: Record<string, string> = {Accept: 'application/json'};
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      // Required by the backend's ``/v1/*`` ClientIdMiddleware. Sending it
+      // unconditionally is safe — paths outside ``/v1`` simply ignore the
+      // header.
+      'X-Client-Id': CLIENT_ID,
+      // Reverse proxies often gate on UA. A stable, version-tagged UA both
+      // helps debugging and keeps us out of "unknown bot" buckets.
+      'User-Agent': USER_AGENT
+    };
     if (init.body !== undefined) headers['Content-Type'] = 'application/json';
 
     const authed = init.authed !== false;
@@ -162,7 +365,7 @@ export class ApiClient {
       headers['Authorization'] = `Bearer ${this.tokens.access_token}`;
     }
 
-    const response = await fetch(`${this.baseUrl}${path}`, {
+    const response = await fetch(`${this.baseUrl}${API_PREFIX}${path}`, {
       method: init.method ?? 'GET',
       headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
@@ -205,9 +408,14 @@ export class ApiClient {
   private async tryRefresh(): Promise<boolean> {
     if (!this.tokens) return false;
     try {
-      const response = await fetch(`${this.baseUrl}/auth/refresh`, {
+      const response = await fetch(`${this.baseUrl}${API_PREFIX}/auth/refresh`, {
         method: 'POST',
-        headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Client-Id': CLIENT_ID,
+          'User-Agent': USER_AGENT
+        },
         body: JSON.stringify({refresh_token: this.tokens.refresh_token})
       });
       if (!response.ok) {
