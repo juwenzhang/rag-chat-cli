@@ -87,7 +87,7 @@ service/
 | 批次 | 内容 | 风险 |
 | --- | --- | --- |
 | **B1** | `errors.py` + `common/observability.py` + `streaming/` → `core/` | 低，只动 import |
-| **B2** | 引入 `platform/redis.py`（`from_settings`、健康检查、单例），开始挂限流装饰器 | 中，新增设施 |
+| **B2** ✅ | `platform/redis.py`（单例 + cache + 限流），LLM 路由限流装饰器 | 已落地，详见 [`REDIS_INTEGRATION.md`](REDIS_INTEGRATION.md) |
 | **B3** | `storage/` → `platform/storage/` | 低 |
 | **B4** | `chat/`、`knowledge/`、`memory/`、`auth/`、`orgs/`、`wiki/` → `domain/<name>/` | 中，import 量大但机械 |
 | **B5** | `tools/`、`mcp/` → `domain/tools/`，重新整理工具注册表 | 中 |

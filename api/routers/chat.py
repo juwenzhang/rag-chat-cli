@@ -531,6 +531,12 @@ async def post_message(
     if owner is None or owner.user_id != user.id:
         raise HTTPException(status_code=404, detail="session not found")
 
+    # Per-user LLM quota — raises LLMRateLimitError on overflow, which the
+    # exception middleware turns into 429 + Retry-After.
+    from service.llm.rate_limit import enforce_user_llm_quota
+
+    await enforce_user_llm_quota(user_id=str(user.id))
+
     # ChatService owns persistence (user + assistant rows) since v1.2; we
     # only need the aggregated result to shape the HTTP response.
     result = await _generate_reply(service, body, model=owner.model)

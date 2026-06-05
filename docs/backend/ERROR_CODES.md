@@ -24,7 +24,7 @@
 
 | code | 触发条件 | 字段 | UI 建议 |
 |---|---|---|---|
-| `llm_rate_limited` | 上游 429 / quota 耗尽 / 网关限流（Cloudflare / ollama.com 前置 CDN HTML 429） | `upstream_status`、`retry_after` | 黄色 toast：「暂时被限流，X 秒后自动重试」 |
+| `llm_rate_limited` | 上游 429 / quota 耗尽 / 网关限流（Cloudflare / ollama.com 前置 CDN HTML 429） **或** 本地 Redis 限流（每用户每窗口超额，见 [`REDIS_INTEGRATION.md`](REDIS_INTEGRATION.md)） | `upstream_status`、`retry_after` | 黄色 toast：「暂时被限流，X 秒后自动重试」 |
 | `llm_subscription_required` | Ollama Cloud 返回 "requires a subscription, upgrade for access: <URL>" | `upstream_url` | 升级 CTA 按钮链到 `upstream_url` |
 | `llm_unauthorized` | 401/403：API key 缺失或无效 | `upstream_status` | 提示去 `/settings/providers` 重配 key |
 | `llm_model_not_found` | 404：模型未拉取 / 名字写错 | — | 引导 `ollama pull <model>` 或换模型 |

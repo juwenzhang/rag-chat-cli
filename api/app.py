@@ -66,6 +66,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     (e.g. under uvicorn's reload loop) simply returns the existing engine.
     """
     from service.db.session import dispose_engine, init_engine
+    from service.platform.redis import aclose_redis_client
 
     settings: Settings = app.state.settings
     init_engine(settings.db.database_url, echo=settings.db.echo_sql)
@@ -73,6 +74,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await dispose_engine()
+        await aclose_redis_client()
 
 
 _TAG_DESCRIPTIONS = [

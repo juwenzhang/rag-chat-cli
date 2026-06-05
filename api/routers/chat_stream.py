@@ -37,6 +37,8 @@ from api.streaming.protocol import ErrorEvent, coerce_event
 from api.streaming.sse import event_to_sse, merge_with_keepalive
 from service.chat.service import ChatService
 from service.db.models import ChatSession, Message, Provider, User
+from service.llm.client import LLMRateLimitError
+from service.llm.rate_limit import enforce_user_llm_quota
 from service.streaming import TransportErrorCode
 
 __all__ = ["router"]
@@ -101,6 +103,9 @@ async def chat_stream(
 
     async def _byte_stream() -> AsyncIterator[bytes]:
         try:
+            await enforce_user_llm_quota(
+                user_id=str(user.id), provider=provider_name or "default"
+            )
             async for raw_event in service.generate(
                 str(body.session_id),
                 body.content,
@@ -121,6 +126,14 @@ async def chat_stream(
                         code=TransportErrorCode.PROTOCOL.value, message="malformed event"
                     )
                 yield event_to_sse(event)
+        except LLMRateLimitError as exc:
+            yield event_to_sse(
+                ErrorEvent(
+                    code=type(exc).code,
+                    message=str(exc),
+                    retry_after=exc.retry_after,
+                )
+            )
         except Exception as exc:
             logger.exception("chat_stream blew up mid-flight")
             yield event_to_sse(
@@ -229,6 +242,9 @@ async def chat_stream_regenerate(
 
     async def _byte_stream() -> AsyncIterator[bytes]:
         try:
+            await enforce_user_llm_quota(
+                user_id=str(user.id), provider=provider_name or "default"
+            )
             async for raw_event in service.generate(
                 str(body.session_id),
                 user_text,
@@ -249,6 +265,14 @@ async def chat_stream_regenerate(
                         code=TransportErrorCode.PROTOCOL.value, message="malformed event"
                     )
                 yield event_to_sse(event)
+        except LLMRateLimitError as exc:
+            yield event_to_sse(
+                ErrorEvent(
+                    code=type(exc).code,
+                    message=str(exc),
+                    retry_after=exc.retry_after,
+                )
+            )
         except Exception as exc:
             logger.exception("chat_stream_regenerate blew up mid-flight")
             yield event_to_sse(

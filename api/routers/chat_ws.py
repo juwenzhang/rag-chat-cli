@@ -42,6 +42,8 @@ from api.streaming.protocol import ErrorEvent, coerce_event
 from service.chat.service import ChatService
 from service.db.models import ChatSession, Provider, UserPreference
 from service.db.session import current_session_factory
+from service.llm.client import LLMRateLimitError
+from service.llm.rate_limit import enforce_user_llm_quota
 from service.streaming import EventType, TransportErrorCode
 from service.streaming.abort import AbortContext
 
@@ -170,6 +172,7 @@ async def chat_ws(
             abort_ctx=abort_ctx,
             model=session_model,
             provider_name=provider_name,
+            user_id=str(user.id),
         )
 
     finally:
@@ -192,12 +195,14 @@ async def _stream_reply(
     content: str,
     use_rag: bool,
     abort_ctx: AbortContext,
+    user_id: str,
     model: str | None = None,
     provider_name: str | None = None,
 ) -> None:
     """Run :meth:`ChatService.generate` and push each event over the socket."""
 
     try:
+        await enforce_user_llm_quota(user_id=user_id, provider=provider_name or "default")
         async for raw in service.generate(
             str(session_uuid),
             content,
@@ -217,6 +222,15 @@ async def _stream_reply(
                     code=TransportErrorCode.PROTOCOL.value, message="malformed event"
                 )
             await _safe_send(ws, event.model_dump())
+    except LLMRateLimitError as exc:
+        await _safe_send(
+            ws,
+            ErrorEvent(
+                code=type(exc).code,
+                message=str(exc),
+                retry_after=exc.retry_after,
+            ).model_dump(),
+        )
     except Exception as exc:
         logger.exception("chat_ws blew up mid-flight")
         await _safe_send(
