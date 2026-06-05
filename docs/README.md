@@ -30,6 +30,11 @@
 
 待补。
 
+## engineering/ — 工程化原则与 CR 速查
+
+- [PRINCIPLES.md](engineering/PRINCIPLES.md) — DDD / SOLID / SSOT / MVC vs MVVM / 单向数据流 / code smell 总速查。
+- [CODE_REVIEW_CHECKLIST.md](engineering/CODE_REVIEW_CHECKLIST.md) — 本仓库专属 CR 清单（红线 + 后端 + 前端 + 协议 + 安全）。
+
 ## ops/ — 部署 / 运维
 
 - [DEPLOY_BACKEND_DOCKER.md](ops/DEPLOY_BACKEND_DOCKER.md)
