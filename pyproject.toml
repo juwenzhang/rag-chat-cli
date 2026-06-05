@@ -184,8 +184,3 @@ reportUnusedCallResult = "none"
 # 等返回 Any。这是 SQLAlchemy 的 bug 不是业务问题。
 reportAny = "none"
 reportExplicitAny = "none"
-
-# settings.py 是 Pydantic Settings 配置入口，与 mypy override 一致放宽。
-[[tool.basedpyright.executionEnvironments]]
-root = "settings.py"
-reportMissingTypeStubs = "none"
