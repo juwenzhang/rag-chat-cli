@@ -2,7 +2,7 @@ name: deploy hf minio
 
 on:
   push:
-    branches: [master, main, frontend-refactor]
+    branches: [master, main]
     paths:
       - .github/workflows/deploy-hf-minio.yml
       - scripts/deploy-hf-minio.sh
