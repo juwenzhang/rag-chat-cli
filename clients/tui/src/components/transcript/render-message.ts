@@ -1,6 +1,7 @@
 import stripAnsi from 'strip-ansi';
 import stringWidth from 'string-width';
 
+import {ErrorCode, MessageRole} from '../../api/enums';
 import type {UIMessage} from '../../store/chat-store';
 import {formatDuration, formatTokens} from '../../util/format';
 import {renderMarkdown} from '../../markdown/render';
@@ -37,7 +38,10 @@ export function renderMessageLines(message: UIMessage, width: number): string[] 
   const color = COLOR[message.role];
   let header = `${color}${COLOR.bold}${LABEL[message.role]}${COLOR.reset}`;
   if (message.streaming) header += `${COLOR.muted} · streaming…${COLOR.reset}`;
-  if (message.error) header += `${COLOR.error} · ${message.error}${COLOR.reset}`;
+  if (message.error) {
+    const summary = formatErrorSummary(message.error);
+    header += `${COLOR.error} · ${summary}${COLOR.reset}`;
+  }
   if (!message.streaming && (message.durationMs || message.usage || message.model)) {
     const meta: string[] = [];
     if (message.durationMs) meta.push(formatDuration(message.durationMs));
@@ -84,7 +88,7 @@ export function renderMessageLines(message: UIMessage, width: number): string[] 
     }
   } else {
     const body =
-      message.role === 'assistant'
+      message.role === MessageRole.Assistant
         ? renderMarkdown(message.content || (message.streaming ? ' ' : ' '), width)
         : message.content;
     for (const raw of body.split('\n')) {
@@ -192,6 +196,38 @@ function collapseUpstreamError(raw: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Build a short header summary for an :class:`ErrorPayload`. We branch on
+ * ``code`` instead of grepping ``message`` so the prompt stays stable
+ * across upstream wording changes. Code dictionary in
+ * ``docs/backend/ERROR_CODES.md``.
+ */
+function formatErrorSummary(error: {
+  code: string;
+  message: string;
+  retry_after?: number | null;
+  upstream_url?: string | null;
+}): string {
+  switch (error.code) {
+    case ErrorCode.LlmSubscriptionRequired:
+      return 'subscription required (open ollama.com/upgrade)';
+    case ErrorCode.LlmRateLimited:
+      return error.retry_after
+        ? `rate limited (retry in ~${error.retry_after}s)`
+        : 'rate limited';
+    case ErrorCode.LlmUnauthorized:
+      return 'provider rejected the API key';
+    case ErrorCode.LlmModelNotFound:
+      return 'model not available upstream';
+    case ErrorCode.LlmUpstreamUnavailable:
+      return 'upstream unavailable';
+    case ErrorCode.Aborted:
+      return 'aborted';
+    default:
+      return error.message || error.code;
+  }
 }
 
 function safeJson(value: unknown, max: number): string {

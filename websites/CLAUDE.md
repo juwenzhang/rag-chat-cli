@@ -11,4 +11,4 @@ Read `AGENTS.md` first. The short version:
 - Preserve request tracing (`x-request-id`, dev debug logs, sanitized debug payloads).
 - Validate frontend changes with `pnpm lint` and `pnpm build` when possible.
 
-Architecture reference: `../docs/FRONTEND_SSR_MVC.md`.
+Architecture reference: `../docs/fe/FRONTEND_SSR_MVC.md`.

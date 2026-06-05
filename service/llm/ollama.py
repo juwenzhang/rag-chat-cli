@@ -1,11 +1,8 @@
 """Ollama implementation of :class:`service.llm.client.LLMClient`.
 
-Uses ``httpx.AsyncClient`` to stream NDJSON from ``POST /api/chat`` and to
-retrieve embeddings from ``POST /api/embeddings``. See the Ollama REST docs:
+Streams NDJSON from ``POST /api/chat`` and reads embeddings from
+``POST /api/embed`` (with ``/api/embeddings`` fallback). REST docs:
 https://github.com/ollama/ollama/blob/main/docs/api.md
-
-The client owns an :class:`httpx.AsyncClient` lazily; remember to ``await
-client.aclose()`` at shutdown.
 """
 
 from __future__ import annotations
@@ -17,16 +14,23 @@ from typing import Any
 
 import httpx
 
-from service.llm.client import ChatChunk, ChatMessage, LLMError, ThinkingMode, ToolCall, ToolSpec
+from service.llm._http_errors import classify_http_error
+from service.llm.client import (
+    ChatChunk,
+    ChatMessage,
+    LLMError,
+    LLMUpstreamUnavailableError,
+    ThinkingMode,
+    ToolCall,
+    ToolSpec,
+)
 
 
 def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
-    """Serialize a :class:`ChatMessage` to the Ollama ``/api/chat`` shape.
+    """Serialize :class:`ChatMessage` to Ollama's ``/api/chat`` shape.
 
-    Hand-rolled (instead of ``dataclasses.asdict``) so we only emit fields
-    that carry information — empty ``tool_calls`` and ``None`` ``tool_call_id``
-    are dropped. This keeps the wire payload identical to the pre-P1.1 format
-    for plain user/assistant turns.
+    Hand-rolled (not ``asdict``) so empty tool fields are dropped — keeps
+    the wire payload identical to the pre-tools shape for plain turns.
     """
     out: dict[str, Any] = {"role": m.role, "content": m.content}
     if m.thinking:
@@ -35,10 +39,7 @@ def _message_to_wire(m: ChatMessage) -> dict[str, Any]:
         out["images"] = [_image_url_to_ollama_payload(image_url) for image_url in m.image_urls]
     if m.tool_calls:
         out["tool_calls"] = [
-            {
-                "id": c.id,
-                "function": {"name": c.name, "arguments": c.arguments},
-            }
+            {"id": c.id, "function": {"name": c.name, "arguments": c.arguments}}
             for c in m.tool_calls
         ]
     if m.tool_call_id is not None:
@@ -56,28 +57,17 @@ def _image_url_to_ollama_payload(image_url: str) -> str:
 
 
 def _tool_to_wire(t: ToolSpec) -> dict[str, Any]:
-    """Serialize a :class:`ToolSpec` to Ollama's ``tools[i]`` shape.
-
-    Ollama follows the OpenAI tool-calling JSON: every tool is wrapped in
-    ``{"type": "function", "function": {...}}``.
-    """
     return {
         "type": "function",
-        "function": {
-            "name": t.name,
-            "description": t.description,
-            "parameters": t.parameters,
-        },
+        "function": {"name": t.name, "description": t.description, "parameters": t.parameters},
     }
 
 
 def _parse_tool_calls(msg: dict[str, Any]) -> tuple[ToolCall, ...]:
-    """Parse Ollama's ``message.tool_calls`` array into :class:`ToolCall` objects.
+    """Parse Ollama's ``message.tool_calls`` array.
 
-    Ollama emits tool calls in the shape ``[{"function": {"name": ..., "arguments": {...}}}, ...]``
-    and historically does not include an ``id`` per call. We synthesize a
-    short uuid-based id so the ReAct orchestrator can correlate the matching
-    ``role="tool"`` reply via ``ChatMessage.tool_call_id``.
+    Ollama omits per-call ids; we synthesize one so the ReAct orchestrator
+    can correlate the matching ``role="tool"`` reply via ``tool_call_id``.
     """
     raw = msg.get("tool_calls")
     if not isinstance(raw, list) or not raw:
@@ -97,8 +87,6 @@ def _parse_tool_calls(msg: dict[str, Any]) -> tuple[ToolCall, ...]:
             try:
                 arguments = json.loads(args_raw) if args_raw else {}
             except json.JSONDecodeError:
-                # Surface raw string under a sentinel key so callers can
-                # still inspect what the model produced.
                 arguments = {"__raw__": args_raw}
         elif isinstance(args_raw, dict):
             arguments = args_raw
@@ -117,9 +105,8 @@ __all__ = ["OllamaClient"]
 class OllamaClient:
     """HTTP client for an Ollama server.
 
-    Constructed directly or via :meth:`from_settings`. The constructor does
-    **not** reach out to the network; the first call performs a lazy TCP
-    connect.
+    Construction is cheap; the underlying ``httpx.AsyncClient`` is created
+    lazily on first call. Remember ``await client.aclose()`` at shutdown.
     """
 
     def __init__(
@@ -140,12 +127,8 @@ class OllamaClient:
         self._think = think
         self._client: httpx.AsyncClient | None = None
 
-    # ------------------------------------------------------------------
-    # Factories
-    # ------------------------------------------------------------------
     @classmethod
     def from_settings(cls, s: Any | None = None) -> OllamaClient:
-        """Build from the global :mod:`settings` singleton (or an override)."""
         if s is None:
             from settings import settings as _s
 
@@ -159,9 +142,6 @@ class OllamaClient:
             think=s.ollama.think,
         )
 
-    # ------------------------------------------------------------------
-    # Properties / dunders
-    # ------------------------------------------------------------------
     @property
     def base_url(self) -> str:
         return self._base_url
@@ -178,12 +158,9 @@ class OllamaClient:
     def api_key(self) -> str | None:
         return self._api_key
 
-    def __repr__(self) -> str:  # pragma: no cover — debug aid
+    def __repr__(self) -> str:  # pragma: no cover
         return f"OllamaClient(base_url={self._base_url!r}, chat_model={self._chat_model!r})"
 
-    # ------------------------------------------------------------------
-    # Internal plumbing
-    # ------------------------------------------------------------------
     def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
             headers: dict[str, str] = {}
@@ -197,24 +174,18 @@ class OllamaClient:
         return self._client
 
     async def aclose(self) -> None:
-        """Close the underlying :class:`httpx.AsyncClient`. Idempotent."""
         if self._client is not None:
             await self._client.aclose()
             self._client = None
 
     async def set_api_key(self, api_key: str | None) -> None:
-        """Update the Bearer token and recycle the underlying httpx client.
+        """Update the Bearer token; recycles the underlying httpx client.
 
-        ``httpx.AsyncClient`` headers are baked at construction time, so we
-        close the existing client (if any) and let :meth:`_ensure_client`
-        rebuild it lazily with the new ``Authorization`` header.
+        ``httpx`` bakes headers at construction, so we must close + rebuild.
         """
         self._api_key = api_key
         await self.aclose()
 
-    # ------------------------------------------------------------------
-    # Public API — satisfies :class:`service.llm.client.LLMClient`
-    # ------------------------------------------------------------------
     async def chat_stream(
         self,
         messages: list[ChatMessage],
@@ -225,15 +196,12 @@ class OllamaClient:
     ) -> AsyncIterator[ChatChunk]:
         """Stream chat completions as :class:`ChatChunk` events.
 
-        When ``tools`` is supplied, Ollama emits at most one ``tool_calls``
-        array per turn (it does not partial-stream tool-call deltas the way
-        OpenAI does). We surface each call as a single non-empty
-        ``ChatChunk.tool_calls`` immediately, before the ``done`` terminator.
+        Tool calls arrive whole (Ollama doesn't partial-stream them), so each
+        is yielded immediately on a single non-empty ``tool_calls`` chunk
+        before the ``done`` terminator.
 
-        Raises
-        ------
-        LLMError
-            If the HTTP response is non-2xx or the body is not valid NDJSON.
+        Raises :class:`LLMError` (or a subclass) on non-2xx HTTP and on
+        invalid NDJSON.
         """
 
         payload: dict[str, Any] = {
@@ -251,17 +219,13 @@ class OllamaClient:
         try:
             async with client.stream("POST", "/api/chat", json=payload) as resp:
                 if resp.status_code >= 400:
-                    body_bytes = await resp.aread()
-                    body = body_bytes[:200].decode("utf-8", errors="replace")
-                    # Same actionable rewrite as embed(): a 404 on a missing
-                    # chat model is the single most common first-run error.
-                    if resp.status_code == 404 and "not found" in body:
-                        chat_model = payload.get("model") or self._chat_model
-                        raise LLMError(
-                            f"chat model {chat_model!r} is not pulled on this "
-                            f"Ollama instance. Run: ollama pull {chat_model}"
-                        )
-                    raise LLMError(f"ollama /api/chat failed: {resp.status_code} {body!r}")
+                    body = await resp.aread()
+                    raise classify_http_error(
+                        provider="ollama",
+                        status=resp.status_code,
+                        headers=resp.headers,
+                        body=body,
+                    )
                 async for line in resp.aiter_lines():
                     if not line:
                         continue
@@ -280,8 +244,6 @@ class OllamaClient:
                     done = bool(data.get("done"))
                     usage: dict[str, object] | None = None
                     if done:
-                        # Ollama returns various *_count / *_duration fields
-                        # when done=True; surface them as ``usage``.
                         usage = {
                             k: v
                             for k, v in data.items()
@@ -305,7 +267,7 @@ class OllamaClient:
                     if done:
                         return
         except httpx.HTTPError as exc:
-            raise LLMError(f"ollama transport error: {exc}") from exc
+            raise LLMUpstreamUnavailableError(f"ollama transport error: {exc}") from exc
 
     async def embed(
         self,
@@ -313,7 +275,12 @@ class OllamaClient:
         *,
         model: str | None = None,
     ) -> list[list[float]]:
-        """Return embedding vectors, one per input text."""
+        """Return embedding vectors, one per input text.
+
+        Tries ``POST /api/embed`` (batch) first, falls back to the older
+        ``POST /api/embeddings`` (single-prompt) on 404 for compatibility
+        with older Ollama builds.
+        """
 
         client = self._ensure_client()
         target_model = model or self._embed_model
@@ -330,8 +297,12 @@ class OllamaClient:
                         [float(x) for x in item] for item in embeddings if isinstance(item, list)
                     ]
             elif resp.status_code != 404:
-                body = resp.text[:200]
-                raise LLMError(f"ollama /api/embed failed: {resp.status_code} {body!r}")
+                raise classify_http_error(
+                    provider="ollama",
+                    status=resp.status_code,
+                    headers=resp.headers,
+                    body=resp.text,
+                )
 
             vectors: list[list[float]] = []
             for text in texts:
@@ -340,27 +311,23 @@ class OllamaClient:
                     json={"model": target_model, "prompt": text},
                 )
                 if resp.status_code >= 400:
-                    body = resp.text[:200]
-                    if resp.status_code == 404 and "not found" in body:
-                        raise LLMError(
-                            f"embed model {target_model!r} is not pulled on this "
-                            f"Ollama instance. Run: ollama pull {target_model}"
-                        )
-                    raise LLMError(f"ollama /api/embeddings failed: {resp.status_code} {body!r}")
+                    raise classify_http_error(
+                        provider="ollama",
+                        status=resp.status_code,
+                        headers=resp.headers,
+                        body=resp.text,
+                    )
                 data = resp.json()
                 embedding = data.get("embedding")
                 if not isinstance(embedding, list):
                     raise LLMError(f"ollama /api/embeddings returned no embedding: {data!r}")
                 vectors.append([float(x) for x in embedding])
         except httpx.HTTPError as exc:
-            raise LLMError(f"ollama transport error: {exc}") from exc
+            raise LLMUpstreamUnavailableError(f"ollama transport error: {exc}") from exc
         return vectors
 
-    # ------------------------------------------------------------------
-    # Connectivity probe — used by app/ to decide on Echo fallback
-    # ------------------------------------------------------------------
     async def ping(self) -> bool:
-        """Quick reachability check. Returns ``True`` if the server answers ``GET /``."""
+        """Quick reachability check against ``GET /``."""
         client = self._ensure_client()
         try:
             resp = await client.get("/", timeout=2.0)
@@ -369,11 +336,10 @@ class OllamaClient:
         return bool(resp.status_code < 500)
 
     async def list_models(self) -> list[str]:
-        """Return names of models pulled on the Ollama server.
+        """Return names of models available on the server (``GET /api/tags``).
 
-        Calls ``GET /api/tags``. On any transport error or non-2xx response
-        the call returns ``[]`` so UI code can treat "empty list" as "no
-        choices to offer" without special-casing exceptions.
+        Returns ``[]`` on any transport error or non-2xx response so UI code
+        can treat "empty list" uniformly without special-casing exceptions.
         """
         client = self._ensure_client()
         try:
@@ -405,36 +371,26 @@ class OllamaClient:
     ) -> AsyncIterator[dict[str, Any]]:
         """Stream pull progress for ``name`` (e.g. ``"qwen3-coder-next:cloud"``).
 
-        Yields the raw NDJSON frames from ``POST /api/pull``. Common shapes:
-
-          * ``{"status": "pulling manifest"}``
-          * ``{"status": "downloading", "digest": "...", "total": N, "completed": M}``
-          * ``{"status": "verifying sha256 digest"}``
-          * ``{"status": "success"}``  (terminal — iterator stops after this)
-          * ``{"error": "..."}``       (terminal)
-
-        Pulling can take minutes to hours depending on size + network, so
-        we override the per-request timeout (``read=None``) to disable the
-        client-wide default and let the server keep the stream open.
-
-        Raises
-        ------
-        LLMError
-            On transport errors or non-2xx HTTP responses.
+        Yields raw NDJSON frames from ``POST /api/pull`` (statuses like
+        ``pulling manifest`` / ``downloading`` / ``success`` / ``error``).
+        Read timeout is disabled because pulls can take minutes to hours.
         """
 
         client = self._ensure_client()
         payload: dict[str, Any] = {"model": name, "stream": True}
         if insecure:
             payload["insecure"] = True
-        # Disable read timeout for the long-lived download stream while
-        # keeping connect/write timeouts at the client default.
         timeout = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=5.0)
         try:
             async with client.stream("POST", "/api/pull", json=payload, timeout=timeout) as resp:
                 if resp.status_code >= 400:
                     body = await resp.aread()
-                    raise LLMError(f"ollama /api/pull failed: {resp.status_code} {body[:200]!r}")
+                    raise classify_http_error(
+                        provider="ollama",
+                        status=resp.status_code,
+                        headers=resp.headers,
+                        body=body,
+                    )
                 async for line in resp.aiter_lines():
                     if not line:
                         continue
@@ -448,4 +404,4 @@ class OllamaClient:
                     if data.get("error") or data.get("status") == "success":
                         return
         except httpx.HTTPError as exc:
-            raise LLMError(f"ollama transport error: {exc}") from exc
+            raise LLMUpstreamUnavailableError(f"ollama transport error: {exc}") from exc

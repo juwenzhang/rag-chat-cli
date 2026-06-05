@@ -2,6 +2,7 @@ import {Box, Text} from 'ink';
 import React from 'react';
 
 import type {ApiClient} from '../../api/client';
+import {MessageRole} from '../../api/enums';
 import {useChatStore} from '../../store/chat-store';
 import {useSessionStore} from '../../store/session-store';
 import {PANE_LABEL, useUiStore} from '../../store/ui-store';
@@ -38,7 +39,7 @@ export function StatusBar({api, width}: Props): React.ReactElement {
   // turn — the backend stamps `model` into the `done` event so this is
   // the authoritative source of "what just answered me". When no turn
   // has finished yet, fall back to the session's pinned model (if any).
-  const recentAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+  const recentAssistant = [...messages].reverse().find((m) => m.role === MessageRole.Assistant);
   const effectiveModel = recentAssistant?.model ?? session?.model ?? null;
 
   const left = `${streaming ? '⏵' : '·'} ${status}${

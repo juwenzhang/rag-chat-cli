@@ -52,8 +52,8 @@ Web 应用和一套全屏 Ink 终端。
 | **本地优先** | Ollama 是头等公民；OpenAI 协议提供商（vLLM / Groq / OpenRouter…）也支持，但在启动序列里晚一截。 |
 | **真持久化** | 会话、消息、记忆、知识库都落 Postgres；向量走 pgvector；后台队列用 Redis。没有任何"内存里的伪存储"。 |
 | **两套真客户端** | Next.js Web（RSC + 流式）和 Ink 终端共享同一份 OpenAPI；一个能做的事，另一个也都能做。 |
-| **多客户端鉴权** | 单独挂载 `/v1/*` 子 app，靠 `X-Client-Id` 白名单隔离非浏览器流量，反代（HF Spaces、CDN）不会再把 CLI 干掉。详见 [docs/MULTI_CLIENT_AUTH_DESIGN.md](docs/MULTI_CLIENT_AUTH_DESIGN.md)。 |
-| **稳定流式协议** | 一套 `Event` 词表（`token`、`thought`、`tool_call`、`tool_result`、`retrieval`、`done`、`error`）跑在 SSE 上，所有客户端按同一规则渲染。详见 [docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md)。 |
+| **多客户端鉴权** | 单独挂载 `/v1/*` 子 app，靠 `X-Client-Id` 白名单隔离非浏览器流量，反代（HF Spaces、CDN）不会再把 CLI 干掉。详见 [docs/backend/MULTI_CLIENT_AUTH_DESIGN.md](docs/backend/MULTI_CLIENT_AUTH_DESIGN.md)。 |
+| **稳定流式协议** | 一套 `Event` 词表（`token`、`thought`、`tool_call`、`tool_result`、`retrieval`、`done`、`error`）跑在 SSE 上，所有客户端按同一规则渲染。详见 [docs/backend/STREAM_PROTOCOL.md](docs/backend/STREAM_PROTOCOL.md)。 |
 
 ---
 
@@ -258,9 +258,9 @@ websites/
 - **组织 / wiki 工作区**：团队共享知识库——TUI 这块还没追上。
 
 部署：
-[docs/DEPLOY_WEBSITES.md](docs/DEPLOY_WEBSITES.md)、
-[docs/DEPLOY_BACKEND_DOCKER.md](docs/DEPLOY_BACKEND_DOCKER.md)、
-[docs/DEPLOY_FREE_STACK.md](docs/DEPLOY_FREE_STACK.md)。
+[docs/fe/DEPLOY_WEBSITES.md](docs/fe/DEPLOY_WEBSITES.md)、
+[docs/ops/DEPLOY_BACKEND_DOCKER.md](docs/ops/DEPLOY_BACKEND_DOCKER.md)、
+[docs/ops/DEPLOY_FREE_STACK.md](docs/ops/DEPLOY_FREE_STACK.md)。
 
 ---
 
@@ -285,7 +285,7 @@ OpenAPI 自动发布在 `GET /openapi.json`，Swagger UI 在 `GET /docs`。
 
 流式事件词表（`token`、`thought`、`tool_call`、`tool_result`、
 `retrieval`、`done`、`error`）见
-[docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md)。
+[docs/backend/STREAM_PROTOCOL.md](docs/backend/STREAM_PROTOCOL.md)。
 
 ---
 
@@ -346,16 +346,16 @@ OpenAPI 自动发布在 `GET /openapi.json`，Swagger UI 在 `GET /docs`。
 
 ## 文档索引
 
-- [docs/MULTI_CLIENT_AUTH_DESIGN.md](docs/MULTI_CLIENT_AUTH_DESIGN.md) —— `/v1` 为何存在、device-flow 路线图。
-- [docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md) —— SSE 事件线协议。
-- [docs/AUTH_DESIGN.md](docs/AUTH_DESIGN.md) —— JWT access / refresh、密码策略。
-- [docs/CHAT_OBSERVABILITY_EVALUATION_VISION.md](docs/CHAT_OBSERVABILITY_EVALUATION_VISION.md) —— 评估 / 视觉链路。
-- [docs/OLLAMA_CAPABILITIES_ADAPTATION.md](docs/OLLAMA_CAPABILITIES_ADAPTATION.md) —— 能力探测 + 回退。
-- [docs/WEB_SEARCH_CONTEXT_OPTIMIZATION.md](docs/WEB_SEARCH_CONTEXT_OPTIMIZATION.md) —— 工具结果裁剪。
-- [docs/FRONTEND_NEXT_OPTIMIZATION.md](docs/FRONTEND_NEXT_OPTIMIZATION.md) —— RSC / 流式经验。
-- [docs/FRONTEND_SSR_MVC.md](docs/FRONTEND_SSR_MVC.md) —— Web 端 server-action 布局。
-- [docs/DEPLOY_BACKEND_DOCKER.md](docs/DEPLOY_BACKEND_DOCKER.md)、[DEPLOY_WEBSITES.md](docs/DEPLOY_WEBSITES.md)、[DEPLOY_FREE_STACK.md](docs/DEPLOY_FREE_STACK.md) —— 运维指引。
-- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) —— 本地工具链（uv / alembic / pre-commit）。
+- [docs/backend/MULTI_CLIENT_AUTH_DESIGN.md](docs/backend/MULTI_CLIENT_AUTH_DESIGN.md) —— `/v1` 为何存在、device-flow 路线图。
+- [docs/backend/STREAM_PROTOCOL.md](docs/backend/STREAM_PROTOCOL.md) —— SSE 事件线协议。
+- [docs/backend/AUTH_DESIGN.md](docs/backend/AUTH_DESIGN.md) —— JWT access / refresh、密码策略。
+- [docs/ai/CHAT_OBSERVABILITY_EVALUATION_VISION.md](docs/ai/CHAT_OBSERVABILITY_EVALUATION_VISION.md) —— 评估 / 视觉链路。
+- [docs/ollama/OLLAMA_CAPABILITIES_ADAPTATION.md](docs/ollama/OLLAMA_CAPABILITIES_ADAPTATION.md) —— 能力探测 + 回退。
+- [docs/ai/WEB_SEARCH_CONTEXT_OPTIMIZATION.md](docs/ai/WEB_SEARCH_CONTEXT_OPTIMIZATION.md) —— 工具结果裁剪。
+- [docs/fe/FRONTEND_NEXT_OPTIMIZATION.md](docs/fe/FRONTEND_NEXT_OPTIMIZATION.md) —— RSC / 流式经验。
+- [docs/fe/FRONTEND_SSR_MVC.md](docs/fe/FRONTEND_SSR_MVC.md) —— Web 端 server-action 布局。
+- [docs/ops/DEPLOY_BACKEND_DOCKER.md](docs/ops/DEPLOY_BACKEND_DOCKER.md)、[DEPLOY_WEBSITES.md](docs/fe/DEPLOY_WEBSITES.md)、[DEPLOY_FREE_STACK.md](docs/ops/DEPLOY_FREE_STACK.md) —— 运维指引。
+- [docs/backend/DEVELOPMENT.md](docs/backend/DEVELOPMENT.md) —— 本地工具链（uv / alembic / pre-commit）。
 - [openspec/](openspec/) —— living spec；当前 `refactor/tui-refactor`
   分支承载 TUI 重写 + 多客户端鉴权 Phase 1。
 

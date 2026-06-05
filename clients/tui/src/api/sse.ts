@@ -1,3 +1,4 @@
+import {ErrorCode, StreamEventType} from './enums';
 import type {StreamEvent} from './types';
 
 /**
@@ -18,7 +19,7 @@ function parseFrame(frame: string): StreamEvent | null {
   try {
     return {type: event, data: JSON.parse(raw)} as StreamEvent;
   } catch {
-    return {type: 'error', data: {code: 'PARSE', message: raw}};
+    return {type: StreamEventType.Error, data: {code: ErrorCode.Parse, message: raw}};
   }
 }
 

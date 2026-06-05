@@ -5,6 +5,7 @@ import { create } from "zustand";
 
 import type { UIMessage } from "@/features/chat/components/types";
 import { api } from "@/lib/api/browser";
+import { ErrorCode, StreamEventType } from "@/lib/api/shared/enums";
 import type { MessageOut, StreamEvent, ThinkMode } from "@/lib/api/shared/types";
 import { ApiError } from "@/lib/api/shared/types";
 import { readSse } from "@/lib/sse/client";
@@ -97,16 +98,16 @@ function applyStreamEvents(message: UIMessage, events: StreamEvent[]): UIMessage
 
   for (const event of events) {
     switch (event.type) {
-      case "retrieval":
+      case StreamEventType.Retrieval:
         next.retrieval = event.data.hits;
         break;
-      case "token":
+      case StreamEventType.Token:
         contentDelta += event.data.delta || "";
         break;
-      case "thought":
+      case StreamEventType.Thought:
         if (event.data.text) thoughts.push(event.data.text);
         break;
-      case "tool_call":
+      case StreamEventType.ToolCall:
         next.toolCalls = [
           ...(next.toolCalls || []),
           {
@@ -116,7 +117,7 @@ function applyStreamEvents(message: UIMessage, events: StreamEvent[]): UIMessage
           },
         ];
         break;
-      case "tool_result":
+      case StreamEventType.ToolResult:
         next.toolResults = [
           ...(next.toolResults || []),
           {
@@ -127,7 +128,7 @@ function applyStreamEvents(message: UIMessage, events: StreamEvent[]): UIMessage
           },
         ];
         break;
-      case "done":
+      case StreamEventType.Done:
         next.streaming = false;
         next.model = event.data.model ?? null;
         next.provider = event.data.provider_name ?? null;
@@ -135,9 +136,9 @@ function applyStreamEvents(message: UIMessage, events: StreamEvent[]): UIMessage
         next.durationMs = event.data.duration_ms;
         next.sources = event.data.sources ?? next.sources;
         break;
-      case "error":
+      case StreamEventType.Error:
         next.streaming = false;
-        next.error = event.data.message || event.data.code;
+        next.error = event.data;
         break;
     }
   }
@@ -208,9 +209,12 @@ export const useChatStore = create<ChatStore>((set, get) => {
         }));
       } else {
         const msg = err instanceof ApiError ? err.message : (err as Error).message;
+        const code = err instanceof ApiError ? err.code : ErrorCode.TransportError;
         set((state) => ({
           messages: state.messages.map((m) =>
-            m.id === placeholderId ? { ...m, streaming: false, error: msg } : m
+            m.id === placeholderId
+              ? { ...m, streaming: false, error: { code, message: msg } }
+              : m
           ),
         }));
         toast.error(msg);

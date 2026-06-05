@@ -46,6 +46,7 @@ from service.llm.client import ChatMessage, LLMClient, LLMError, ThinkingMode, T
 from service.memory.chat_memory import ChatMemory
 from service.memory.user_memory import FactExtractor, UserMemoryEntry, UserMemoryStore
 from service.streaming.abort import AbortContext
+from service.streaming.error_codes import EventType, FlowErrorCode
 from service.streaming.events import Event
 from service.tools import ToolRegistry, ToolResult
 
@@ -240,8 +241,8 @@ class ChatService:
             return await self._memory.get(session_id), None
         except Exception as exc:
             return [], {
-                "type": "error",
-                "code": "memory_read_failed",
+                "type": EventType.ERROR.value,
+                "code": FlowErrorCode.MEMORY_READ_FAILED.value,
                 "message": str(exc),
             }
 
@@ -261,12 +262,12 @@ class ChatService:
             hits = await self._kb.search(user_text, top_k=top_k)
         except Exception as exc:
             return [], {
-                "type": "error",
-                "code": "retrieval_failed",
+                "type": EventType.ERROR.value,
+                "code": FlowErrorCode.RETRIEVAL_FAILED.value,
                 "message": str(exc),
             }
         return hits, {
-            "type": "retrieval",
+            "type": EventType.RETRIEVAL.value,
             "hits": [
                 {
                     "document_id": getattr(h, "document_id", None),
@@ -409,9 +410,9 @@ class ChatService:
         # the prompt prelude via :class:`PromptBuilder` below.
         history = _compact_history_tool_messages(history)
         if think is not False:
-            yield {"type": "thought", "text": "Thinking through the request"}
+            yield {"type": EventType.THOUGHT.value, "text": "Thinking through the request"}
         if use_rag and self._kb is not None:
-            yield {"type": "thought", "text": "Searching local knowledge base"}
+            yield {"type": EventType.THOUGHT.value, "text": "Searching local knowledge base"}
         hits, retrieval_event = await self._retrieve_for_turn(
             user_text,
             use_rag=use_rag,
@@ -421,7 +422,7 @@ class ChatService:
         turn_sources = _sources_from_hits(hits)
         if retrieval_event is not None:
             yield retrieval_event
-            if retrieval_event.get("type") == "error":
+            if retrieval_event.get("type") == EventType.ERROR.value:
                 return
 
         # 2. Pull long-term user memories (#16). Soft failure: a broken DB
@@ -439,8 +440,8 @@ class ChatService:
                 await self._memory.append(session_id, user_msg)
             except Exception as exc:
                 yield {
-                    "type": "error",
-                    "code": "memory_write_failed",
+                    "type": EventType.ERROR.value,
+                    "code": FlowErrorCode.MEMORY_WRITE_FAILED.value,
                     "message": str(exc),
                 }
                 return
@@ -484,9 +485,9 @@ class ChatService:
                 arguments={"query": _build_web_search_query(user_text), "limit": 5},
             )
             executed_tool_keys.add(_tool_call_key(tc))
-            yield {"type": "thought", "text": "Searching web"}
+            yield {"type": EventType.THOUGHT.value, "text": "Searching web"}
             yield {
-                "type": "tool_call",
+                "type": EventType.TOOL_CALL.value,
                 "tool_call_id": tc.id,
                 "tool_name": tc.name,
                 "arguments": tc.arguments,
@@ -497,7 +498,7 @@ class ChatService:
             if new_sources:
                 turn_sources.extend(new_sources)
             yield {
-                "type": "tool_result",
+                "type": EventType.TOOL_RESULT.value,
                 "tool_call_id": tc.id,
                 "tool_name": tc.name,
                 "content": result.content,
@@ -549,35 +550,31 @@ class ChatService:
                             return
                         if chunk.thinking:
                             collected_thinking.append(chunk.thinking)
-                            yield {"type": "thought", "text": chunk.thinking}
+                            yield {"type": EventType.THOUGHT.value, "text": chunk.thinking}
                         if chunk.delta:
                             for kind, text in think_filter.feed(chunk.delta):
                                 if kind == "thought":
-                                    yield {"type": "thought", "text": text}
+                                    yield {"type": EventType.THOUGHT.value, "text": text}
                                 elif text:
                                     collected_text.append(text)
-                                    yield {"type": "token", "delta": text}
+                                    yield {"type": EventType.TOKEN.value, "delta": text}
                         if chunk.tool_calls:
                             collected_tool_calls.extend(chunk.tool_calls)
                         if chunk.done and chunk.usage:
                             usage = dict(chunk.usage)
                     for kind, text in think_filter.flush():
                         if kind == "thought":
-                            yield {"type": "thought", "text": text}
+                            yield {"type": EventType.THOUGHT.value, "text": text}
                         elif text:
                             collected_text.append(text)
-                            yield {"type": "token", "delta": text}
+                            yield {"type": EventType.TOKEN.value, "delta": text}
             except LLMError as exc:
-                yield {
-                    "type": "error",
-                    "code": "llm_error",
-                    "message": str(exc),
-                }
+                yield _llm_error_event(exc)
                 return
             except Exception as exc:
                 yield {
-                    "type": "error",
-                    "code": "unexpected",
+                    "type": EventType.ERROR.value,
+                    "code": FlowErrorCode.UNEXPECTED.value,
                     "message": f"{type(exc).__name__}: {exc}",
                 }
                 return
@@ -585,7 +582,7 @@ class ChatService:
             assistant_text = "".join(collected_text)
             if not collected_tool_calls and not assistant_text.strip():
                 assistant_text = _empty_answer_fallback(turn_sources)
-                yield {"type": "token", "delta": assistant_text}
+                yield {"type": EventType.TOKEN.value, "delta": assistant_text}
             assistant_msg = ChatMessage(
                 role="assistant",
                 content=assistant_text,
@@ -597,8 +594,8 @@ class ChatService:
                 await self._memory.append(session_id, assistant_msg)
             except Exception as exc:
                 yield {
-                    "type": "error",
-                    "code": "memory_write_failed",
+                    "type": EventType.ERROR.value,
+                    "code": FlowErrorCode.MEMORY_WRITE_FAILED.value,
                     "message": str(exc),
                 }
                 return
@@ -627,11 +624,11 @@ class ChatService:
                     yield _aborted_event()
                     return
                 yield {
-                    "type": "thought",
+                    "type": EventType.THOUGHT.value,
                     "text": f"Running tool: {tc.name}",
                 }
                 yield {
-                    "type": "tool_call",
+                    "type": EventType.TOOL_CALL.value,
                     "tool_call_id": tc.id,
                     "tool_name": tc.name,
                     "arguments": tc.arguments,
@@ -674,7 +671,7 @@ class ChatService:
                 if new_sources:
                     turn_sources.extend(new_sources)
                 yield {
-                    "type": "tool_result",
+                    "type": EventType.TOOL_RESULT.value,
                     "tool_call_id": tc.id,
                     "tool_name": tc.name,
                     "content": result.content,
@@ -690,8 +687,8 @@ class ChatService:
                     await self._memory.append(session_id, tool_msg)
                 except Exception as exc:
                     yield {
-                        "type": "error",
-                        "code": "memory_write_failed",
+                        "type": EventType.ERROR.value,
+                        "code": FlowErrorCode.MEMORY_WRITE_FAILED.value,
                         "message": str(exc),
                     }
                     return
@@ -702,7 +699,7 @@ class ChatService:
             # final synthesis call with tools disabled so the user gets an answer
             # instead of a bare "agent exceeded N reasoning steps" failure.
             yield {
-                "type": "thought",
+                "type": EventType.THOUGHT.value,
                 "text": "Tool step limit reached; synthesizing from collected results",
             }
             messages.append(
@@ -730,33 +727,29 @@ class ChatService:
                         return
                     if chunk.thinking:
                         final_thinking.append(chunk.thinking)
-                        yield {"type": "thought", "text": chunk.thinking}
+                        yield {"type": EventType.THOUGHT.value, "text": chunk.thinking}
                     if chunk.delta:
                         for kind, text in think_filter.feed(chunk.delta):
                             if kind == "thought":
-                                yield {"type": "thought", "text": text}
+                                yield {"type": EventType.THOUGHT.value, "text": text}
                             elif text:
                                 final_text.append(text)
-                                yield {"type": "token", "delta": text}
+                                yield {"type": EventType.TOKEN.value, "delta": text}
                     if chunk.done and chunk.usage:
                         usage = dict(chunk.usage)
                 for kind, text in think_filter.flush():
                     if kind == "thought":
-                        yield {"type": "thought", "text": text}
+                        yield {"type": EventType.THOUGHT.value, "text": text}
                     elif text:
                         final_text.append(text)
-                        yield {"type": "token", "delta": text}
+                        yield {"type": EventType.TOKEN.value, "delta": text}
             except LLMError as exc:
-                yield {
-                    "type": "error",
-                    "code": "llm_error",
-                    "message": str(exc),
-                }
+                yield _llm_error_event(exc)
                 return
             except Exception as exc:
                 yield {
-                    "type": "error",
-                    "code": "unexpected",
+                    "type": EventType.ERROR.value,
+                    "code": FlowErrorCode.UNEXPECTED.value,
                     "message": f"{type(exc).__name__}: {exc}",
                 }
                 return
@@ -764,7 +757,7 @@ class ChatService:
             final_answer = "".join(final_text)
             if not final_answer.strip():
                 final_answer = _empty_answer_fallback(turn_sources)
-                yield {"type": "token", "delta": final_answer}
+                yield {"type": EventType.TOKEN.value, "delta": final_answer}
             assistant_msg = ChatMessage(
                 role="assistant",
                 content=final_answer,
@@ -775,8 +768,8 @@ class ChatService:
                 await self._memory.append(session_id, assistant_msg)
             except Exception as exc:
                 yield {
-                    "type": "error",
-                    "code": "memory_write_failed",
+                    "type": EventType.ERROR.value,
+                    "code": FlowErrorCode.MEMORY_WRITE_FAILED.value,
                     "message": str(exc),
                 }
                 return
@@ -825,7 +818,7 @@ class ChatService:
         # 7. Terminator.
         duration_ms = int((time.monotonic() - started) * 1000)
         effective_model = model or getattr(self._llm, "chat_model", None)
-        done: Event = {"type": "done", "duration_ms": duration_ms}
+        done: Event = {"type": EventType.DONE.value, "duration_ms": duration_ms}
         if usage is not None:
             done["usage"] = usage
         if effective_model:
@@ -891,15 +884,15 @@ class ChatService:
             auto_web_search=auto_web_search,
         ):
             etype = event.get("type")
-            if etype == "token":
+            if etype == EventType.TOKEN.value:
                 delta = event.get("delta")
                 if isinstance(delta, str):
                     content_parts.append(delta)
-            elif etype == "retrieval":
+            elif etype == EventType.RETRIEVAL.value:
                 raw_hits = event.get("hits")
                 if isinstance(raw_hits, list):
                     hits = list(raw_hits)
-            elif etype == "tool_call":
+            elif etype == EventType.TOOL_CALL.value:
                 tool_calls.append(
                     {
                         "tool_call_id": event.get("tool_call_id"),
@@ -907,7 +900,7 @@ class ChatService:
                         "arguments": event.get("arguments"),
                     }
                 )
-            elif etype == "tool_result":
+            elif etype == EventType.TOOL_RESULT.value:
                 tool_results.append(
                     {
                         "tool_call_id": event.get("tool_call_id"),
@@ -916,7 +909,7 @@ class ChatService:
                         "is_error": event.get("is_error"),
                     }
                 )
-            elif etype == "done":
+            elif etype == EventType.DONE.value:
                 raw_usage = event.get("usage")
                 if isinstance(raw_usage, dict):
                     usage = dict(raw_usage)
@@ -926,9 +919,9 @@ class ChatService:
                 raw_sources = event.get("sources")
                 if isinstance(raw_sources, list):
                     sources = [s for s in raw_sources if isinstance(s, dict)]
-            elif etype == "error":
+            elif etype == EventType.ERROR.value:
                 error = {
-                    "code": str(event.get("code", "UNKNOWN")),
+                    "code": str(event.get("code", FlowErrorCode.UNEXPECTED.value)),
                     "message": str(event.get("message", "")),
                 }
                 break
@@ -1004,10 +997,28 @@ class _ThinkTagStreamFilter:
 
 def _aborted_event() -> Event:
     return {
-        "type": "error",
-        "code": "ABORTED",
+        "type": EventType.ERROR.value,
+        "code": FlowErrorCode.ABORTED.value,
         "message": "client aborted the stream",
     }
+
+
+def _llm_error_event(exc: LLMError) -> Event:
+    """Surface an :class:`LLMError` as a structured ``error`` event.
+
+    Carries ``code`` (subclass-specific, e.g. ``llm_rate_limited``) plus
+    optional upstream context (`upstream_status`, `upstream_url`,
+    `retry_after`) so the UI can render quota / paywall / auth prompts
+    without text-matching the message. See ``docs/backend/ERROR_CODES.md``.
+    """
+    event: Event = {"type": EventType.ERROR.value, "code": exc.code, "message": str(exc)}
+    if exc.upstream_status is not None:
+        event["upstream_status"] = exc.upstream_status
+    if exc.upstream_url is not None:
+        event["upstream_url"] = exc.upstream_url
+    if exc.retry_after is not None:
+        event["retry_after"] = exc.retry_after
+    return event
 
 
 _WEB_EVIDENCE_INSTRUCTION = (

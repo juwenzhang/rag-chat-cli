@@ -6,6 +6,7 @@
  * Pure ESM, no dependencies — works in client components and edge runtimes.
  */
 
+import { ErrorCode, StreamEventType } from "@/lib/api/shared/enums";
 import type { StreamEvent } from "@/lib/api/shared/types";
 
 function parseFrame(frame: string): StreamEvent | null {
@@ -21,7 +22,7 @@ function parseFrame(frame: string): StreamEvent | null {
   try {
     return { type: event, data: JSON.parse(raw) } as StreamEvent;
   } catch {
-    return { type: "error", data: { code: "PARSE", message: raw } };
+    return { type: StreamEventType.Error, data: { code: ErrorCode.Parse, message: raw } };
   }
 }
 

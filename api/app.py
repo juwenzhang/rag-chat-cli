@@ -6,7 +6,7 @@ instance. It intentionally stays small — middleware wiring, exception
 handlers, router inclusion, and a lifespan that owns the DB engine.
 
 Two HTTP surfaces share the same routers (see
-``docs/MULTI_CLIENT_AUTH_DESIGN.md``):
+``docs/backend/MULTI_CLIENT_AUTH_DESIGN.md``):
 
 * ``/`` — the legacy browser surface. Strict ``APP_CORS_ORIGINS`` allowlist,
   no ``X-Client-Id`` requirement, used by ``websites/``.
@@ -196,7 +196,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # non-browser surface — Starlette's mount semantics put the sub-app
     # *inside* the root middleware stack, which would otherwise have the
     # root CORS reject cross-origin OPTIONS before they ever reach
-    # ``/v1``. See ``docs/MULTI_CLIENT_AUTH_DESIGN.md``.
+    # ``/v1``. See ``docs/backend/MULTI_CLIENT_AUTH_DESIGN.md``.
     app.add_middleware(
         PathFilteredCORSMiddleware,  # type: ignore[arg-type]
         excluded_prefixes=("/v1",),

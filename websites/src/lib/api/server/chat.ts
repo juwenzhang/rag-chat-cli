@@ -1,6 +1,7 @@
 import "server-only";
 
 import { apiFetch, apiStream } from "@/lib/api/server/client";
+import { ErrorCode, StreamEventType } from "@/lib/api/shared/enums";
 import type {
   MessageEvaluationOut,
   MessageOut,
@@ -208,6 +209,6 @@ function parseFrame(frame: string): StreamEvent | null {
     const data = JSON.parse(raw);
     return { type: event, data } as StreamEvent;
   } catch {
-    return { type: "error", data: { code: "PARSE", message: raw } };
+    return { type: StreamEventType.Error, data: { code: ErrorCode.Parse, message: raw } };
   }
 }

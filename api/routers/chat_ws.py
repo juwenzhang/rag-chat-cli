@@ -15,7 +15,7 @@ Wire protocol (JSON frames):
     ``{"type": "done",        "message_id": "...", "usage": {...}}``
     ``{"type": "error",       "code": "...", "message": "..."}``
 
-See ``docs/STREAM_PROTOCOL.md`` for the full vocabulary and field rules.
+See ``docs/backend/STREAM_PROTOCOL.md`` for the full vocabulary and field rules.
 
 One generation per connection for now — the client is expected to close
 after ``done`` / ``error``. Keeping it minimal makes reasoning about abort
@@ -42,6 +42,7 @@ from api.streaming.protocol import ErrorEvent, coerce_event
 from service.chat.service import ChatService
 from service.db.models import ChatSession, Provider, UserPreference
 from service.db.session import current_session_factory
+from service.streaming import EventType, TransportErrorCode
 from service.streaming.abort import AbortContext
 
 __all__ = ["router"]
@@ -99,10 +100,12 @@ async def chat_ws(
             first = await ws.receive_json()
         except WebSocketDisconnect:
             return
-        if not isinstance(first, dict) or first.get("type") != "user_message":
+        if not isinstance(first, dict) or first.get("type") != EventType.USER_MESSAGE.value:
             await _safe_send(
                 ws,
-                ErrorEvent(code="PROTOCOL", message="expected user_message").model_dump(),
+                ErrorEvent(
+                    code=TransportErrorCode.PROTOCOL.value, message="expected user_message"
+                ).model_dump(),
             )
             await ws.close(code=WS_CLOSE_PROTOCOL)
             return
@@ -112,7 +115,9 @@ async def chat_ws(
         except (ValueError, TypeError):
             await _safe_send(
                 ws,
-                ErrorEvent(code="PROTOCOL", message="invalid session_id").model_dump(),
+                ErrorEvent(
+                    code=TransportErrorCode.PROTOCOL.value, message="invalid session_id"
+                ).model_dump(),
             )
             await ws.close(code=WS_CLOSE_PROTOCOL)
             return
@@ -121,7 +126,9 @@ async def chat_ws(
         if not isinstance(content, str) or not content.strip():
             await _safe_send(
                 ws,
-                ErrorEvent(code="PROTOCOL", message="empty content").model_dump(),
+                ErrorEvent(
+                    code=TransportErrorCode.PROTOCOL.value, message="empty content"
+                ).model_dump(),
             )
             await ws.close(code=WS_CLOSE_PROTOCOL)
             return
@@ -200,17 +207,21 @@ async def _stream_reply(
             think=True,
         ):
             # Stamp provider_name onto the done event (mirror of chat_stream).
-            if raw.get("type") == "done" and provider_name:
+            if raw.get("type") == EventType.DONE.value and provider_name:
                 raw = {**raw, "provider_name": provider_name}
             try:
                 event = coerce_event(raw)
             except Exception:
                 logger.warning("dropping malformed event: %r", raw)
-                event = ErrorEvent(code="PROTOCOL", message="malformed event")
+                event = ErrorEvent(
+                    code=TransportErrorCode.PROTOCOL.value, message="malformed event"
+                )
             await _safe_send(ws, event.model_dump())
     except Exception as exc:
         logger.exception("chat_ws blew up mid-flight")
-        await _safe_send(ws, ErrorEvent(code="INTERNAL", message=str(exc)).model_dump())
+        await _safe_send(
+            ws, ErrorEvent(code=TransportErrorCode.INTERNAL.value, message=str(exc)).model_dump()
+        )
 
 
 async def _safe_send(ws: WebSocket, payload: dict[str, object]) -> None:

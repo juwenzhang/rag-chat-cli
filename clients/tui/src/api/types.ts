@@ -6,6 +6,8 @@
  * streaming are enough for Phase 1.
  */
 
+import {MessageRole, StreamEventType} from './enums';
+
 export interface UserOut {
   id: string;
   email: string;
@@ -63,7 +65,7 @@ export interface KnowledgeHit {
 export interface MessageOut {
   id: string;
   session_id: string;
-  role: 'user' | 'assistant' | 'system' | 'tool';
+  role: MessageRole;
   content: string;
   tool_call_id?: string | null;
   tool_calls?: ToolCallOut[] | null;
@@ -74,11 +76,11 @@ export interface MessageOut {
 export type ThinkMode = boolean | 'low' | 'medium' | 'high';
 
 export type StreamEvent =
-  | {type: 'retrieval'; data: {hits: KnowledgeHit[]}}
-  | {type: 'token'; data: {delta: string}}
-  | {type: 'thought'; data: {text: string}}
+  | {type: typeof StreamEventType.Retrieval; data: {hits: KnowledgeHit[]}}
+  | {type: typeof StreamEventType.Token; data: {delta: string}}
+  | {type: typeof StreamEventType.Thought; data: {text: string}}
   | {
-      type: 'tool_call';
+      type: typeof StreamEventType.ToolCall;
       data: {
         tool_call_id: string;
         tool_name: string;
@@ -86,7 +88,7 @@ export type StreamEvent =
       };
     }
   | {
-      type: 'tool_result';
+      type: typeof StreamEventType.ToolResult;
       data: {
         tool_call_id: string;
         tool_name: string;
@@ -95,7 +97,7 @@ export type StreamEvent =
       };
     }
   | {
-      type: 'done';
+      type: typeof StreamEventType.Done;
       data: {
         message_id?: string;
         usage?: Record<string, number>;
@@ -105,7 +107,20 @@ export type StreamEvent =
         provider_name?: string | null;
       };
     }
-  | {type: 'error'; data: {code: string; message: string}};
+  | {type: typeof StreamEventType.Error; data: ErrorPayload};
+
+/**
+ * Structured error event payload. ``code`` is the stable machine-readable
+ * id; clients branch on it. ``upstream_*`` and ``retry_after`` are
+ * populated for LLM-upstream errors. See ``docs/backend/ERROR_CODES.md``.
+ */
+export interface ErrorPayload {
+  code: string;
+  message: string;
+  upstream_status?: number | null;
+  upstream_url?: string | null;
+  retry_after?: number | null;
+}
 
 /* ── knowledge / providers / preferences (Tier-A surface) ────────── */
 

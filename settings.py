@@ -125,7 +125,7 @@ class AppSettings(_GroupBase):
     # CSV env var `APP_CORS_ORIGINS=http://a,http://b` becomes `["http://a", "http://b"]`.
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     # Allowed `X-Client-Id` values for the `/v1/*` (non-browser) surface.
-    # See docs/MULTI_CLIENT_AUTH_DESIGN.md Phase 1. Web clients hitting the
+    # See docs/backend/MULTI_CLIENT_AUTH_DESIGN.md Phase 1. Web clients hitting the
     # legacy root paths skip this check entirely.
     allowed_client_ids: list[str] = Field(default_factory=lambda: ["lhx-rag-cli", "lhx-rag-web"])
 
@@ -152,7 +152,7 @@ class AuthSettings(_GroupBase):
 
 class DBSettings(_GroupBase):
     database_url: str = "postgresql+asyncpg://rag:rag@postgres:5432/ragdb"
-    # Async engine pool knobs (see AGENTS.md §4 / docs/DEVELOPMENT.md).
+    # Async engine pool knobs (see AGENTS.md §4 / docs/backend/DEVELOPMENT.md).
     pool_size: int = 10
     pool_recycle: int = 1800  # seconds; recycle connections older than this.
     echo_sql: bool = False

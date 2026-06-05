@@ -11,8 +11,8 @@ This project uses Next.js 16 / App Router / React 19. APIs, conventions, and fil
 本文档是面向 AI/人类协作者的前端约束。更完整的架构说明见：
 
 - `src/features/README.md`
-- `../docs/FRONTEND_SSR_MVC.md`
-- `../docs/FRONTEND_NEXT_OPTIMIZATION.md`
+- `../docs/fe/FRONTEND_SSR_MVC.md`
+- `../docs/fe/FRONTEND_NEXT_OPTIMIZATION.md`
 
 ## 1. Why these rules exist
 

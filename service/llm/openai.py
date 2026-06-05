@@ -26,7 +26,16 @@ from typing import Any
 
 import httpx
 
-from service.llm.client import ChatChunk, ChatMessage, LLMError, ThinkingMode, ToolCall, ToolSpec
+from service.llm._http_errors import classify_http_error
+from service.llm.client import (
+    ChatChunk,
+    ChatMessage,
+    LLMError,
+    LLMUpstreamUnavailableError,
+    ThinkingMode,
+    ToolCall,
+    ToolSpec,
+)
 
 __all__ = ["OpenAIClient"]
 
@@ -273,8 +282,11 @@ class OpenAIClient:
             ) as resp:
                 if resp.status_code >= 400:
                     body = await resp.aread()
-                    raise LLMError(
-                        f"openai chat completions failed: {resp.status_code} {body[:200]!r}"
+                    raise classify_http_error(
+                        provider="openai",
+                        status=resp.status_code,
+                        headers=resp.headers,
+                        body=body,
                     )
                 async for line in resp.aiter_lines():
                     if not line:
@@ -324,7 +336,7 @@ class OpenAIClient:
                         # Don't break here — let the loop catch [DONE] or
                         # a trailing usage frame, so ``usage`` is populated.
         except httpx.HTTPError as exc:
-            raise LLMError(f"openai transport error: {exc}") from exc
+            raise LLMUpstreamUnavailableError(f"openai transport error: {exc}") from exc
 
         # Drain any tool_calls that arrived without a finish_reason
         # (some servers omit finish_reason on tool calls and rely on
@@ -358,7 +370,12 @@ class OpenAIClient:
                 },
             )
             if resp.status_code >= 400:
-                raise LLMError(f"openai embeddings failed: {resp.status_code} {resp.text[:200]!r}")
+                raise classify_http_error(
+                    provider="openai",
+                    status=resp.status_code,
+                    headers=resp.headers,
+                    body=resp.text,
+                )
             data = resp.json()
             entries = data.get("data")
             if not isinstance(entries, list):
@@ -368,4 +385,4 @@ class OpenAIClient:
             entries.sort(key=lambda e: int(e.get("index", 0)))
             return [[float(x) for x in e.get("embedding", [])] for e in entries]
         except httpx.HTTPError as exc:
-            raise LLMError(f"openai transport error: {exc}") from exc
+            raise LLMUpstreamUnavailableError(f"openai transport error: {exc}") from exc

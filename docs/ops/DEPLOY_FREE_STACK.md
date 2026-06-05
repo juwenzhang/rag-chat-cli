@@ -87,8 +87,8 @@ deploy/backend/render.yaml
 websites/Dockerfile
 websites/.dockerignore
 deploy/websites/render.yaml
-docs/DEPLOY_BACKEND_DOCKER.md
-docs/DEPLOY_WEBSITES.md
+docs/ops/DEPLOY_BACKEND_DOCKER.md
+docs/fe/DEPLOY_WEBSITES.md
 minio/Dockerfile
 minio/start.sh
 minio/README.md

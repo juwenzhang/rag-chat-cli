@@ -2,7 +2,7 @@
 
 One-way stream from server to client — the companion bidirectional variant
 lives in :mod:`api.routers.chat_ws`. The two share the same event schema
-(:mod:`api.streaming.protocol`, see also ``docs/STREAM_PROTOCOL.md``) and
+(:mod:`api.streaming.protocol`, see also ``docs/backend/STREAM_PROTOCOL.md``) and
 are both backed by :meth:`core.chat_service.ChatService.generate`.
 
 Since v1.2 the :class:`ChatService` is wired with :class:`DbChatMemory`, so
@@ -37,6 +37,7 @@ from api.streaming.protocol import ErrorEvent, coerce_event
 from api.streaming.sse import event_to_sse, merge_with_keepalive
 from service.chat.service import ChatService
 from service.db.models import ChatSession, Message, Provider, User
+from service.streaming import TransportErrorCode
 
 __all__ = ["router"]
 
@@ -61,7 +62,7 @@ SSE_HEADERS: dict[str, str] = {
                 "Server-Sent Events stream. Each frame is `event: <type>` + `data: <json>`. "
                 "Event types: `retrieval`, `token`, `thought`, `tool_call`, `tool_result`, "
                 "`done`, `error`. Schema: `api.streaming.protocol.StreamEvent`. "
-                "Full vocabulary in `docs/STREAM_PROTOCOL.md`."
+                "Full vocabulary in `docs/backend/STREAM_PROTOCOL.md`."
             ),
         },
     },
@@ -116,11 +117,15 @@ async def chat_stream(
                     event = coerce_event(raw_event)
                 except Exception:
                     logger.warning("dropping malformed event: %r", raw_event)
-                    event = ErrorEvent(code="PROTOCOL", message="malformed event")
+                    event = ErrorEvent(
+                        code=TransportErrorCode.PROTOCOL.value, message="malformed event"
+                    )
                 yield event_to_sse(event)
         except Exception as exc:
             logger.exception("chat_stream blew up mid-flight")
-            yield event_to_sse(ErrorEvent(code="INTERNAL", message=str(exc)))
+            yield event_to_sse(
+                ErrorEvent(code=TransportErrorCode.INTERNAL.value, message=str(exc))
+            )
         finally:
             await service.aclose()
 
@@ -240,11 +245,15 @@ async def chat_stream_regenerate(
                     event = coerce_event(raw_event)
                 except Exception:
                     logger.warning("dropping malformed event: %r", raw_event)
-                    event = ErrorEvent(code="PROTOCOL", message="malformed event")
+                    event = ErrorEvent(
+                        code=TransportErrorCode.PROTOCOL.value, message="malformed event"
+                    )
                 yield event_to_sse(event)
         except Exception as exc:
             logger.exception("chat_stream_regenerate blew up mid-flight")
-            yield event_to_sse(ErrorEvent(code="INTERNAL", message=str(exc)))
+            yield event_to_sse(
+                ErrorEvent(code=TransportErrorCode.INTERNAL.value, message=str(exc))
+            )
         finally:
             await service.aclose()
 

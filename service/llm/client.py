@@ -14,13 +14,18 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
+from typing import Any, ClassVar, Literal, Protocol, TypeAlias, runtime_checkable
 
 __all__ = [
     "ChatChunk",
     "ChatMessage",
+    "LLMAuthError",
     "LLMClient",
     "LLMError",
+    "LLMModelNotFoundError",
+    "LLMRateLimitError",
+    "LLMSubscriptionRequiredError",
+    "LLMUpstreamUnavailableError",
     "Role",
     "ThinkingMode",
     "ToolCall",
@@ -106,11 +111,59 @@ class ChatChunk:
 
 
 class LLMError(Exception):
-    """Transport / protocol errors raised by any :class:`LLMClient`.
+    """Base class for LLM transport / protocol errors. See subclasses below.
 
-    Sub-classes may refine this (e.g. ``LLMConnectionError``) but callers
-    should generally be able to ``except LLMError`` at the service boundary.
+    ``code`` is the stable machine-readable id surfaced as the SSE/WS
+    ``error`` event's ``code`` field; see ``docs/backend/ERROR_CODES.md``.
+    Optional fields carry actionable upstream context for the UI (status,
+    upgrade URL, retry-after seconds). Callers can ``except LLMError`` at
+    the service boundary and branch on ``exc.code`` when needed.
     """
+
+    code: ClassVar[str] = "llm_error"
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        upstream_status: int | None = None,
+        upstream_url: str | None = None,
+        retry_after: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.upstream_status: int | None = upstream_status
+        self.upstream_url: str | None = upstream_url
+        self.retry_after: int | None = retry_after
+
+
+class LLMRateLimitError(LLMError):
+    """429 / quota exhaustion / front-CDN throttling (e.g. ollama.com HTML 429)."""
+
+    code: ClassVar[str] = "llm_rate_limited"
+
+
+class LLMSubscriptionRequiredError(LLMError):
+    """Ollama Cloud paywall: model requires a paid subscription."""
+
+    code: ClassVar[str] = "llm_subscription_required"
+
+
+class LLMAuthError(LLMError):
+    """401 / 403 — API key missing or invalid."""
+
+    code: ClassVar[str] = "llm_unauthorized"
+
+
+class LLMModelNotFoundError(LLMError):
+    """404 — model not pulled / wrong name."""
+
+    code: ClassVar[str] = "llm_model_not_found"
+
+
+class LLMUpstreamUnavailableError(LLMError):
+    """5xx, HTML error pages, transport timeouts."""
+
+    code: ClassVar[str] = "llm_upstream_unavailable"
 
 
 @runtime_checkable
