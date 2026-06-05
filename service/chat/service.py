@@ -33,6 +33,7 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from service.chat._events import aborted_event as _aborted_event
@@ -87,6 +88,27 @@ logger = logging.getLogger(__name__)
 _tracer = get_tracer(__name__)
 
 __all__ = ["ChatService"]
+
+
+@dataclass
+class _LLMRoundResult:
+    """Mutable container for one LLM streaming round's outputs.
+
+    The async generator :meth:`ChatService._stream_llm_round` yields UI
+    events but writes its terminal state here so the caller can decide
+    whether to stop the outer ``generate`` loop. Using a passed-in
+    container instead of return values keeps the helper a true async
+    iterator (callers can ``async for`` over it cleanly) without losing
+    structured access to "did the LLM error / abort fire / what was
+    collected".
+    """
+
+    text: list[str] = field(default_factory=list)
+    thinking: list[str] = field(default_factory=list)
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    usage: dict[str, Any] | None = None
+    aborted: bool = False
+    error_event: Event | None = None
 
 
 class ChatService:
@@ -321,6 +343,88 @@ class ChatService:
         except Exception as exc:
             logger.warning("user_memory.recent() failed: %s", exc)
             return []
+
+    async def _stream_llm_round(
+        self,
+        messages_for_call: list[ChatMessage],
+        *,
+        model: str | None,
+        tools: list[ToolSpec] | None,
+        think: ThinkingMode | None,
+        abort: AbortContext | None,
+        result: _LLMRoundResult,
+        traced: bool = False,
+    ) -> AsyncIterator[Event]:
+        """Stream one LLM call, emitting UI events and writing into ``result``.
+
+        Identical wrapping is used by both the main ReAct step and the
+        max-steps fallback synthesis call — the only difference between
+        them was the OTel span around the main step. ``traced=True``
+        opens that span; otherwise the call runs unwrapped.
+
+        On any of the three terminal conditions — ``LLMError``, abort,
+        unexpected exception — the corresponding fields on ``result``
+        are populated and the generator returns. The caller checks
+        ``result.aborted`` / ``result.error_event`` after consuming the
+        events and decides whether to surface ``result.error_event`` and
+        bail out of the surrounding ``generate`` loop.
+        """
+        think_filter = _ThinkTagStreamFilter()
+
+        async def _consume_stream() -> AsyncIterator[Event]:
+            async for chunk in self._llm.chat_stream(
+                messages_for_call,
+                model=model,
+                tools=tools,
+                think=think,
+            ):
+                if abort is not None and abort.aborted:
+                    result.aborted = True
+                    yield _aborted_event()
+                    return
+                if chunk.thinking:
+                    result.thinking.append(chunk.thinking)
+                    yield {"type": EventType.THOUGHT.value, "text": chunk.thinking}
+                if chunk.delta:
+                    for kind, text in think_filter.feed(chunk.delta):
+                        if kind == "thought":
+                            yield {"type": EventType.THOUGHT.value, "text": text}
+                        elif text:
+                            result.text.append(text)
+                            yield {"type": EventType.TOKEN.value, "delta": text}
+                if chunk.tool_calls:
+                    result.tool_calls.extend(chunk.tool_calls)
+                if chunk.done and chunk.usage:
+                    result.usage = dict(chunk.usage)
+            for kind, text in think_filter.flush():
+                if kind == "thought":
+                    yield {"type": EventType.THOUGHT.value, "text": text}
+                elif text:
+                    result.text.append(text)
+                    yield {"type": EventType.TOKEN.value, "delta": text}
+
+        try:
+            if traced:
+                with _tracer.start_as_current_span("chat.llm_stream") as llm_span:
+                    llm_span.set_attribute(
+                        "llm.model", str(model or getattr(self._llm, "chat_model", "?"))
+                    )
+                    llm_span.set_attribute("llm.message_count", len(messages_for_call))
+                    if tools:
+                        llm_span.set_attribute("llm.tool_count", len(tools))
+                    async for event in _consume_stream():
+                        yield event
+            else:
+                async for event in _consume_stream():
+                    yield event
+        except LLMError as exc:
+            result.error_event = _llm_error_event(exc)
+        except Exception as exc:
+            result.error_event = {
+                "type": EventType.ERROR.value,
+                "code": FlowErrorCode.UNEXPECTED.value,
+                "message": f"{type(exc).__name__}: {exc}",
+            }
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -558,67 +662,34 @@ class ChatService:
             # to the compressed copy; the persisted memory is untouched.
             messages_for_call = await self._fit_to_budget(messages)
 
-            collected_text: list[str] = []
-            collected_thinking: list[str] = []
-            collected_tool_calls: list[ToolCall] = []
-            think_filter = _ThinkTagStreamFilter()
-
-            try:
-                with _tracer.start_as_current_span("chat.llm_stream") as llm_span:
-                    llm_span.set_attribute(
-                        "llm.model", str(model or getattr(self._llm, "chat_model", "?"))
-                    )
-                    llm_span.set_attribute("llm.message_count", len(messages_for_call))
-                    if tools_for_call:
-                        llm_span.set_attribute("llm.tool_count", len(tools_for_call))
-                    async for chunk in self._llm.chat_stream(
-                        messages_for_call,
-                        model=model,
-                        tools=tools_for_call,
-                        think=think,
-                    ):
-                        if abort is not None and abort.aborted:
-                            yield _aborted_event()
-                            return
-                        if chunk.thinking:
-                            collected_thinking.append(chunk.thinking)
-                            yield {"type": EventType.THOUGHT.value, "text": chunk.thinking}
-                        if chunk.delta:
-                            for kind, text in think_filter.feed(chunk.delta):
-                                if kind == "thought":
-                                    yield {"type": EventType.THOUGHT.value, "text": text}
-                                elif text:
-                                    collected_text.append(text)
-                                    yield {"type": EventType.TOKEN.value, "delta": text}
-                        if chunk.tool_calls:
-                            collected_tool_calls.extend(chunk.tool_calls)
-                        if chunk.done and chunk.usage:
-                            usage = dict(chunk.usage)
-                    for kind, text in think_filter.flush():
-                        if kind == "thought":
-                            yield {"type": EventType.THOUGHT.value, "text": text}
-                        elif text:
-                            collected_text.append(text)
-                            yield {"type": EventType.TOKEN.value, "delta": text}
-            except LLMError as exc:
-                yield _llm_error_event(exc)
+            round_result = _LLMRoundResult()
+            async for ev in self._stream_llm_round(
+                messages_for_call,
+                model=model,
+                tools=tools_for_call,
+                think=think,
+                abort=abort,
+                result=round_result,
+                traced=True,
+            ):
+                yield ev
+            if round_result.aborted:
                 return
-            except Exception as exc:
-                yield {
-                    "type": EventType.ERROR.value,
-                    "code": FlowErrorCode.UNEXPECTED.value,
-                    "message": f"{type(exc).__name__}: {exc}",
-                }
+            if round_result.error_event is not None:
+                yield round_result.error_event
                 return
+            if round_result.usage is not None:
+                usage = round_result.usage
 
-            assistant_text = "".join(collected_text)
+            collected_tool_calls = round_result.tool_calls
+            assistant_text = "".join(round_result.text)
             if not collected_tool_calls and not assistant_text.strip():
                 assistant_text = _empty_answer_fallback(turn_sources)
                 yield {"type": EventType.TOKEN.value, "delta": assistant_text}
             assistant_msg = ChatMessage(
                 role="assistant",
                 content=assistant_text,
-                thinking="".join(collected_thinking),
+                thinking="".join(round_result.thinking),
                 tool_calls=tuple(collected_tool_calls),
                 sources=tuple(turn_sources),
             )
@@ -744,56 +815,33 @@ class ChatService:
                 )
             )
             messages_for_call = await self._fit_to_budget(messages)
-            final_text: list[str] = []
-            final_thinking: list[str] = []
-            think_filter = _ThinkTagStreamFilter()
-            try:
-                async for chunk in self._llm.chat_stream(
-                    messages_for_call,
-                    model=model,
-                    tools=None,
-                    think=think,
-                ):
-                    if abort is not None and abort.aborted:
-                        yield _aborted_event()
-                        return
-                    if chunk.thinking:
-                        final_thinking.append(chunk.thinking)
-                        yield {"type": EventType.THOUGHT.value, "text": chunk.thinking}
-                    if chunk.delta:
-                        for kind, text in think_filter.feed(chunk.delta):
-                            if kind == "thought":
-                                yield {"type": EventType.THOUGHT.value, "text": text}
-                            elif text:
-                                final_text.append(text)
-                                yield {"type": EventType.TOKEN.value, "delta": text}
-                    if chunk.done and chunk.usage:
-                        usage = dict(chunk.usage)
-                for kind, text in think_filter.flush():
-                    if kind == "thought":
-                        yield {"type": EventType.THOUGHT.value, "text": text}
-                    elif text:
-                        final_text.append(text)
-                        yield {"type": EventType.TOKEN.value, "delta": text}
-            except LLMError as exc:
-                yield _llm_error_event(exc)
+            final_round = _LLMRoundResult()
+            async for ev in self._stream_llm_round(
+                messages_for_call,
+                model=model,
+                tools=None,
+                think=think,
+                abort=abort,
+                result=final_round,
+                traced=False,
+            ):
+                yield ev
+            if final_round.aborted:
                 return
-            except Exception as exc:
-                yield {
-                    "type": EventType.ERROR.value,
-                    "code": FlowErrorCode.UNEXPECTED.value,
-                    "message": f"{type(exc).__name__}: {exc}",
-                }
+            if final_round.error_event is not None:
+                yield final_round.error_event
                 return
+            if final_round.usage is not None:
+                usage = final_round.usage
 
-            final_answer = "".join(final_text)
+            final_answer = "".join(final_round.text)
             if not final_answer.strip():
                 final_answer = _empty_answer_fallback(turn_sources)
                 yield {"type": EventType.TOKEN.value, "delta": final_answer}
             assistant_msg = ChatMessage(
                 role="assistant",
                 content=final_answer,
-                thinking="".join(final_thinking),
+                thinking="".join(final_round.thinking),
                 sources=tuple(turn_sources),
             )
             try:

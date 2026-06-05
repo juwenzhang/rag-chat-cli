@@ -79,6 +79,27 @@ api/, alembic/, scripts/
 
 `service.py` 保留 `ChatService` 类 + `generate` / `generate_full` 主流。后续可以继续拆 `generate` 内部的 tool-loop 分支。
 
+## 3.2 ChatService.generate 的 LLM-round 去重（B4 第二刀）
+
+`generate` 里有两段 LLM 流式调用：主 ReAct 步骤 + 兜底 synthesis 调用，结构 ~80% 重合（chunk dispatch、`<think>` 过滤、`LLMError` / abort / unexpected 三态终止）。提取成：
+
+- `_LLMRoundResult` — 装 `(text, thinking, tool_calls, usage, aborted, error_event)` 的 mutable 容器
+- `ChatService._stream_llm_round(...)` — async generator：转发 UI 事件 + 写结果到 result 容器；`traced=True` 时包 OTel span
+
+调用方现在统一是 ~14 行：
+
+```python
+round_result = _LLMRoundResult()
+async for ev in self._stream_llm_round(..., result=round_result, traced=True):
+    yield ev
+if round_result.aborted: return
+if round_result.error_event is not None:
+    yield round_result.error_event
+    return
+```
+
+`generate` 主体从 484 → 428 行；真重复消除约 70 行 ×2，行数小幅上升是因为多了一个 helper 方法的样板。
+
 ## 4. 待重构方向（折中扁平 DDD）
 
 未来分批迁移，**不一刀切**。每批控制在 1 PR ≤ 800 行 diff。
