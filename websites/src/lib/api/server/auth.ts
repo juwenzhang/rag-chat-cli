@@ -49,7 +49,7 @@ export async function me(token: string): Promise<UserOut> {
 }
 
 /**
- * Future endpoint (per docs/AUTH_DESIGN.md §3.1).
+ * Future endpoint (per docs/backend/AUTH_DESIGN.md §3.1).
  * Sends a 6-digit code to the user's email; returns once dispatched.
  *
  * For now this is a stub that the backend will provide later — callers

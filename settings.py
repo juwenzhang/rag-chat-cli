@@ -61,7 +61,11 @@ _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
     "DB_POOL_RECYCLE": ("db", "pool_recycle"),
     "DB_ECHO_SQL": ("db", "echo_sql"),
     # redis
+    "REDIS_ENABLED": ("redis", "enabled"),
     "REDIS_URL": ("redis", "redis_url"),
+    "REDIS_CACHE_DEFAULT_TTL": ("redis", "cache_default_ttl"),
+    "REDIS_LLM_RATE_PER_USER": ("redis", "llm_rate_per_user"),
+    "REDIS_LLM_RATE_WINDOW_S": ("redis", "llm_rate_window_s"),
     # ollama
     "OLLAMA_BASE_URL": ("ollama", "base_url"),
     "OLLAMA_CHAT_MODEL": ("ollama", "chat_model"),
@@ -125,7 +129,7 @@ class AppSettings(_GroupBase):
     # CSV env var `APP_CORS_ORIGINS=http://a,http://b` becomes `["http://a", "http://b"]`.
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     # Allowed `X-Client-Id` values for the `/v1/*` (non-browser) surface.
-    # See docs/MULTI_CLIENT_AUTH_DESIGN.md Phase 1. Web clients hitting the
+    # See docs/backend/MULTI_CLIENT_AUTH_DESIGN.md Phase 1. Web clients hitting the
     # legacy root paths skip this check entirely.
     allowed_client_ids: list[str] = Field(default_factory=lambda: ["lhx-rag-cli", "lhx-rag-web"])
 
@@ -152,14 +156,32 @@ class AuthSettings(_GroupBase):
 
 class DBSettings(_GroupBase):
     database_url: str = "postgresql+asyncpg://rag:rag@postgres:5432/ragdb"
-    # Async engine pool knobs (see AGENTS.md §4 / docs/DEVELOPMENT.md).
+    # Async engine pool knobs (see AGENTS.md §4 / docs/backend/DEVELOPMENT.md).
     pool_size: int = 10
     pool_recycle: int = 1800  # seconds; recycle connections older than this.
     echo_sql: bool = False
 
 
 class RedisSettings(_GroupBase):
+    """Connection + behaviour knobs for the optional Redis runtime.
+
+    When ``enabled=False`` the platform layer skips connecting and helpers
+    degrade to no-op (cache miss / rate-limit allow). This keeps the
+    backend bootable for local dev without a Redis daemon while the
+    production deployment can opt in by toggling the env flag.
+    """
+
+    enabled: bool = False
     redis_url: str = "redis://redis:6379/0"
+    # Default TTL (seconds) for the generic ``cached()`` decorator when
+    # call sites don't override it. 5 min keeps hot reads cheap without
+    # masking config changes for long.
+    cache_default_ttl: int = 300
+    # Per-user LLM call budget within ``llm_rate_window_s``. Triggers
+    # ``LLMRateLimitError`` before we even reach the upstream provider,
+    # protecting Ollama Cloud / OpenAI quota from misbehaving clients.
+    llm_rate_per_user: int = 30
+    llm_rate_window_s: int = 60
 
 
 class OllamaSettings(_GroupBase):

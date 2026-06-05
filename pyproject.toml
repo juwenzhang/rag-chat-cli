@@ -154,3 +154,33 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["scripts.*"]
 disallow_untyped_decorators = false
+
+# ---------------------------------------------------------------------------
+# basedpyright — IDE-side type checker (CI 仍以 mypy 为 SSOT)
+#
+# 默认 strict 在 FastAPI / SQLAlchemy 项目里会刷出大量噪声 warning，与
+# mypy 不一致。这里把规则集对齐到「跟 mypy 等价 + 能抓真 bug」的水平：
+# - 关掉跟 FastAPI 惯用语冲突的规则（Depends(...) 在默认参数中是必需）
+# - 关掉跟 SQLAlchemy ORM 动态属性冲突的规则
+# - 保留 strict 下真正能抓 bug 的：return-type / argument-type / unused-import
+#
+# 修改后 IDE 报警与 `make typecheck` 输出在同一量级，避免「IDE 报红一片
+# 但 CI 全绿」的认知失调。
+# ---------------------------------------------------------------------------
+[tool.basedpyright]
+include = ["api", "service", "scripts", "settings.py"]
+pythonVersion = "3.10"
+typeCheckingMode = "standard"
+
+# FastAPI 默认参数惯用 `Depends(...)` / `Query(...)` / `Header(...)`，
+# 这是框架 API 设计要求，不是反模式。
+reportCallInDefaultInitializer = "none"
+
+# 业务层大量 await Session.execute(...) / scalar(...)，把返回值丢弃是
+# 写入 / commit 的常态。逐个 `_ =` 没有信息量，在 mypy 里也不报。
+reportUnusedCallResult = "none"
+
+# SQLAlchemy 2.0 typed Mapped[...] 还没覆盖到所有 helper，session.scalar
+# 等返回 Any。这是 SQLAlchemy 的 bug 不是业务问题。
+reportAny = "none"
+reportExplicitAny = "none"

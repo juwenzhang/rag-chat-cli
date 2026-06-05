@@ -25,6 +25,7 @@ import re
 import secrets
 import string
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -44,10 +45,12 @@ from api.schemas.wiki import (
     WikiPageShareOut,
     WikiPageSharePublicOut,
     WikiPageUpdateIn,
+    WikiRole,
     WikiUpdateIn,
+    WikiVisibility,
 )
+from service.core.errors import ForbiddenError, NotFoundError
 from service.db.models import User, Wiki, WikiMember, WikiPage, WikiPageShare
-from service.errors import ForbiddenError, NotFoundError
 from service.orgs.policy import require_role as service_require_org_role
 from service.wiki.policy import EffectiveRole
 from service.wiki.policy import require_wiki_role as service_require_wiki_role
@@ -106,7 +109,10 @@ def _to_wiki_out(wiki: Wiki, role: EffectiveRole) -> WikiOut:
         description=wiki.description,
         created_by_user_id=wiki.created_by_user_id,
         is_default=wiki.is_default,
-        visibility=wiki.visibility,  # type: ignore[arg-type]
+        # DB column is plain ``str``; constrained to WikiVisibility literals
+        # at the application layer, so the cast is the single narrowing
+        # point before the value flows to Pydantic.
+        visibility=cast(WikiVisibility, wiki.visibility),
         created_at=wiki.created_at,
         updated_at=wiki.updated_at,
         role=role,
@@ -322,7 +328,7 @@ def _member_to_out(member: WikiMember, target_user: User) -> WikiMemberOut:
         user_id=target_user.id,
         email=target_user.email,
         display_name=target_user.display_name,
-        role=member.role,  # type: ignore[arg-type]
+        role=cast(WikiRole, member.role),
         created_at=member.created_at,
     )
 

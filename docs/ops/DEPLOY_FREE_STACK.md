@@ -87,8 +87,8 @@ deploy/backend/render.yaml
 websites/Dockerfile
 websites/.dockerignore
 deploy/websites/render.yaml
-docs/DEPLOY_BACKEND_DOCKER.md
-docs/DEPLOY_WEBSITES.md
+docs/ops/DEPLOY_BACKEND_DOCKER.md
+docs/fe/DEPLOY_WEBSITES.md
 minio/Dockerfile
 minio/start.sh
 minio/README.md
@@ -114,6 +114,7 @@ HF_TOKEN=<Hugging Face write token>
 ## 注意事项
 
 - Render Free 会休眠，第一次请求可能冷启动。
+- HF Space 长时间无流量也会休眠 → 用 [KEEPALIVE.md](KEEPALIVE.md) 描述的 GH Actions cron + `hf-keep-alive` Space 双保险消除。
 - 免费平台不适合跑本地 Ollama 模型。
 - RAG embedding 模型必须和数据库向量维度匹配。
 - `RAG_EMBED_DIM` 默认是 `768`，如果换 embedding 模型，可能需要迁移数据库 schema。

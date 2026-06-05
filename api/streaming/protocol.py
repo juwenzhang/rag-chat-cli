@@ -103,6 +103,11 @@ class ErrorEvent(BaseModel):
     type: Literal["error"] = "error"
     code: str
     message: str
+    # Optional upstream context — populated for LLM-upstream errors. See
+    # ``docs/backend/ERROR_CODES.md`` for the full code dictionary.
+    upstream_status: int | None = None
+    upstream_url: str | None = None
+    retry_after: int | None = None
 
 
 #: Discriminated union so pydantic can pick the right concrete event from a

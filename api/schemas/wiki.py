@@ -28,6 +28,7 @@ __all__ = [
     "WikiPageShareOut",
     "WikiPageSharePublicOut",
     "WikiPageUpdateIn",
+    "WikiRole",
     "WikiUpdateIn",
     "WikiVisibility",
 ]

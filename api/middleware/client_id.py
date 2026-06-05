@@ -1,6 +1,6 @@
 """``X-Client-Id`` middleware — Phase 1 of multi-client auth.
 
-See ``docs/MULTI_CLIENT_AUTH_DESIGN.md`` for the full picture. The runtime
+See ``docs/backend/MULTI_CLIENT_AUTH_DESIGN.md`` for the full picture. The runtime
 contract is short:
 
 * Requests under ``/v1/*`` (the non-browser surface used by the Ink CLI and

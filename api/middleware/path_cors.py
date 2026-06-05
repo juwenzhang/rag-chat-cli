@@ -13,7 +13,7 @@ This middleware delegates to a real ``CORSMiddleware`` instance only when
 the path does **not** match an excluded prefix; everything else falls
 through untouched and is handled by the sub-app's own middleware.
 
-See ``docs/MULTI_CLIENT_AUTH_DESIGN.md`` Phase 1.
+See ``docs/backend/MULTI_CLIENT_AUTH_DESIGN.md`` Phase 1.
 """
 
 from __future__ import annotations

@@ -1,5 +1,6 @@
 import type {
   AnswerSource,
+  ErrorPayload,
   KnowledgeHit,
   MessageEvaluationOut,
   ToolCallOut,
@@ -24,8 +25,8 @@ export interface UIMessage {
   evaluation?: MessageEvaluationOut;
   /** True while the SSE stream is still appending. */
   streaming?: boolean;
-  /** Failure message if the stream errored out. */
-  error?: string;
+  /** Structured failure payload if the stream errored out. */
+  error?: ErrorPayload;
   /** Resolved model / provider the backend used to produce this turn. */
   model?: string | null;
   provider?: string | null;

@@ -17,6 +17,7 @@ __all__ = [
     "OrgOut",
     "OrgTransferIn",
     "OrgUpdateIn",
+    "Role",
 ]
 
 

@@ -19,7 +19,7 @@ Browser  ─HTTP─►  Next.js (this app)  ─HTTP+Bearer─►  FastAPI (../ap
   is structurally prevented.
 
 See [`../docs/ROADMAP.md`](../docs/ROADMAP.md) and
-[`../docs/AUTH_DESIGN.md`](../docs/AUTH_DESIGN.md) for the full design.
+[`../docs/backend/AUTH_DESIGN.md`](../docs/backend/AUTH_DESIGN.md) for the full design.
 
 ## Quick start
 
@@ -106,7 +106,7 @@ src/
 
 Email-code verification UI is in place; the backend endpoint
 (`/auth/code/send`) is planned per
-[`../docs/AUTH_DESIGN.md`](../docs/AUTH_DESIGN.md). The form gracefully
+[`../docs/backend/AUTH_DESIGN.md`](../docs/backend/AUTH_DESIGN.md). The form gracefully
 degrades when the endpoint isn't available.
 
 ## Chat streaming

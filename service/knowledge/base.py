@@ -2,13 +2,9 @@
 
 The :class:`KnowledgeBase` Protocol is the integration seam between
 :class:`~service.chat.service.ChatService` and a retriever implementation.
-Two concrete impls exist today:
-
-* :class:`~service.knowledge.local.FileKnowledgeBase` — on-disk JSONL store
-  with stdlib cosine search; used in the unauthenticated CLI path.
-* :class:`~service.knowledge.pgvector.PgvectorKnowledgeBase` — production
-  retriever over Postgres + pgvector + pg_trgm; used once a DB is
-  reachable and the user is logged in.
+The single production impl is :class:`~service.knowledge.pgvector.PgvectorKnowledgeBase`
+(Postgres + pgvector + pg_trgm); all surfaces (REST / SSE / WS / TUI) talk
+to the server, so there is no on-disk fallback retriever anymore.
 """
 
 from __future__ import annotations
@@ -37,17 +33,10 @@ class KnowledgeHit:
 
 @dataclass(frozen=True, slots=True)
 class DocumentInfo:
-    """Document-level metadata, shared across all KB impls.
+    """Document-level metadata returned by KB admin API.
 
-    Both :class:`~service.knowledge.local.FileKnowledgeBase` (on-disk JSONL)
-    and :class:`~service.knowledge.pgvector.PgvectorKnowledgeBase` (Postgres
-    + pgvector) return this from their ``list_documents`` /
-    ``add_document`` admin API so REPL slash commands (``/kb``, ``/save``)
-    don't have to branch on KB type for inspection.
-
-    ``id`` is the string form of the underlying identifier — UUID hex on
-    both impls today. ``tags`` is preserved through ``meta["tags"]`` on
-    Pgvector so the same field round-trips through both stores.
+    ``id`` is the string form of the underlying UUID. ``tags`` round-trips
+    via ``meta["tags"]`` on the pgvector backend.
     """
 
     id: str

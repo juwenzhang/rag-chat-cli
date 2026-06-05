@@ -1,0 +1,70 @@
+name: deploy hf keep-alive
+
+# Mirrors deploy/hf-keep-alive/ to the HF Space main branch on every
+# push that touches the worker. Pattern is the same as deploy-hf-backend.yml:
+# materialise a clean staging dir, build a single-commit history, force-push
+# to the Space (which then triggers HF's Docker build).
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - .github/workflows/deploy-hf-keep-alive.yml
+      - deploy/hf-keep-alive/**
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hf-keep-alive-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  push-space:
+    name: push keep-alive worker to Hugging Face Space
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Push deploy/hf-keep-alive/ to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USER: luhanxin
+          HF_SPACE: hf-keep-alive
+        run: |
+          set -euo pipefail
+          if [ -z "${HF_TOKEN:-}" ]; then
+            echo "Missing GitHub secret: HF_TOKEN" >&2
+            exit 1
+          fi
+
+          src_sha="$(git rev-parse HEAD)"
+          src_short="$(git rev-parse --short HEAD)"
+          stage="$(mktemp -d)"
+
+          # The Space wants exactly the contents of deploy/hf-keep-alive/
+          # at its repo root — README.md (with HF Space frontmatter),
+          # Dockerfile, app.py, .dockerignore. No nesting.
+          cp -a deploy/hf-keep-alive/. "${stage}/"
+
+          # Drop dev cruft that might have slipped in.
+          find "${stage}" -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find "${stage}" -type f \
+            \( -name '*.pyc' -o -name '*.pyo' -o -name '.DS_Store' \) -delete
+
+          # Single-commit history so the Space carries no extra blobs.
+          cd "${stage}"
+          git init -q -b main
+          git config user.email "ci@github.actions"
+          git config user.name "github-actions[bot]"
+          git add -A
+          git commit -q -m "deploy: keep-alive snapshot from ${GITHUB_REPOSITORY}@${src_short}
+
+          Source of truth: deploy/hf-keep-alive/ in
+          https://github.com/${GITHUB_REPOSITORY}."
+
+          git remote add hf \
+            "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}"
+          # Force-push because every snapshot rewrites history.
+          git push --force hf main

@@ -121,23 +121,33 @@ Terminal failure. Exactly one per generate() invocation, in lieu of `done`.
 ```json
 {
   "type": "error",
-  "code": "max_steps_reached",
-  "message": "agent exceeded 5 reasoning steps"
+  "code": "llm_rate_limited",
+  "message": "Ollama upstream rate-limited",
+  "upstream_status": 429,
+  "upstream_url": "https://ollama.com/upgrade",
+  "retry_after": 60
 }
 ```
 
-Defined `code` values (informational, not exhaustive):
+Fields:
 
-| code | meaning |
+| Field | Type | Notes |
+|---|---|---|
+| `code` | string | Stable machine-readable id; clients branch on this. |
+| `message` | string | Human-readable fallback. May be empty for `ABORTED`. |
+| `upstream_status` | int \| null | HTTP status from the LLM upstream when applicable. |
+| `upstream_url` | string \| null | Actionable URL extracted from the upstream body (e.g. `https://ollama.com/upgrade`). |
+| `retry_after` | int \| null | Seconds (parsed from `Retry-After`); `null` if the upstream did not provide one. |
+
+Full `code` dictionary lives in [ERROR_CODES.md](ERROR_CODES.md). Add new
+codes there *and* update this protocol file's `code` summary table:
+
+| code | summary |
 |---|---|
-| `ABORTED` | client invoked abort (WS `{type:"abort"}`, HTTP disconnect) |
-| `llm_error` | upstream LLM provider returned non-2xx / malformed |
-| `retrieval_failed` | KnowledgeBase.search raised |
-| `memory_read_failed` / `memory_write_failed` | chat-memory IO |
-| `max_steps_reached` | ReAct loop bound hit without a tool-free reply |
-| `PROTOCOL` | malformed event surfaced by `coerce_event` (transport-level) |
-| `INTERNAL` | unhandled exception in the router |
-| `unexpected` | unhandled exception inside `ChatService.generate` |
+| `llm_rate_limited` / `llm_subscription_required` / `llm_unauthorized` / `llm_model_not_found` / `llm_upstream_unavailable` / `llm_error` | LLM upstream conditions |
+| `ABORTED` | client cancelled |
+| `retrieval_failed` / `memory_read_failed` / `memory_write_failed` / `max_steps_reached` / `unexpected` | ChatService flow errors |
+| `PROTOCOL` / `INTERNAL` | transport-level errors |
 
 ---
 

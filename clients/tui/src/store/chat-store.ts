@@ -1,9 +1,11 @@
 import {create} from 'zustand';
 
 import type {ApiClient} from '../api/client';
+import {ErrorCode, MessageRole, StreamEventType} from '../api/enums';
 import {readSse} from '../api/sse';
 import type {
   AnswerSource,
+  ErrorPayload,
   KnowledgeHit,
   MessageOut,
   StreamEvent,
@@ -19,7 +21,7 @@ import {logger} from '../util/logger';
  */
 export interface UIMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system' | 'tool';
+  role: MessageRole;
   content: string;
   createdAt: string;
   streaming: boolean;
@@ -32,7 +34,7 @@ export interface UIMessage {
   durationMs?: number;
   model?: string | null;
   provider?: string | null;
-  error?: string;
+  error?: ErrorPayload;
 }
 
 interface ChatState {
@@ -117,7 +119,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (get().streaming) return;
     const userMessage: UIMessage = {
       id: `${TEMP_PREFIX}user-${Date.now()}`,
-      role: 'user',
+      role: MessageRole.User,
       content,
       createdAt: new Date().toISOString(),
       streaming: false,
@@ -129,7 +131,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
     const assistant: UIMessage = {
       id: `${TEMP_PREFIX}asst-${Date.now()}`,
-      role: 'assistant',
+      role: MessageRole.Assistant,
       content: '',
       createdAt: new Date().toISOString(),
       streaming: true,
@@ -164,7 +166,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (get().streaming) return;
     const placeholder: UIMessage = {
       id: `${TEMP_PREFIX}asst-${Date.now()}`,
-      role: 'assistant',
+      role: MessageRole.Assistant,
       content: '',
       createdAt: new Date().toISOString(),
       streaming: true,
@@ -228,14 +230,14 @@ function appendMessages(
 
 function applyEvent(message: UIMessage, event: StreamEvent): UIMessage {
   switch (event.type) {
-    case 'retrieval':
+    case StreamEventType.Retrieval:
       return {...message, retrieval: event.data.hits};
-    case 'token':
+    case StreamEventType.Token:
       return {...message, content: message.content + (event.data.delta ?? '')};
-    case 'thought':
+    case StreamEventType.Thought:
       if (!event.data.text) return message;
       return {...message, thoughts: [...message.thoughts, event.data.text]};
-    case 'tool_call':
+    case StreamEventType.ToolCall:
       return {
         ...message,
         toolCalls: [
@@ -243,7 +245,7 @@ function applyEvent(message: UIMessage, event: StreamEvent): UIMessage {
           {id: event.data.tool_call_id, name: event.data.tool_name, arguments: event.data.arguments}
         ]
       };
-    case 'tool_result':
+    case StreamEventType.ToolResult:
       return {
         ...message,
         toolResults: [
@@ -256,7 +258,7 @@ function applyEvent(message: UIMessage, event: StreamEvent): UIMessage {
           }
         ]
       };
-    case 'done':
+    case StreamEventType.Done:
       return {
         ...message,
         streaming: false,
@@ -267,8 +269,8 @@ function applyEvent(message: UIMessage, event: StreamEvent): UIMessage {
         model: event.data.model ?? null,
         provider: event.data.provider_name ?? null
       };
-    case 'error':
-      return {...message, streaming: false, error: event.data.message || event.data.code};
+    case StreamEventType.Error:
+      return {...message, streaming: false, error: event.data};
     default:
       return message;
   }
@@ -322,9 +324,12 @@ function handleStreamError(
     : error instanceof Error
       ? error.message
       : 'stream failed';
+  const payload: ErrorPayload | undefined = aborted
+    ? undefined
+    : {code: ErrorCode.TransportError, message};
   set((state) => {
     const messages = state.messages.map((m) =>
-      m.id === messageId ? {...m, streaming: false, error: aborted ? undefined : message} : m
+      m.id === messageId ? {...m, streaming: false, error: payload} : m
     );
     const cache = Object.fromEntries(
       Object.entries(state.cache).map(([sid, list]) => {
@@ -332,9 +337,7 @@ function handleStreamError(
         return [
           sid,
           list.map((m) =>
-            m.id === messageId
-              ? {...m, streaming: false, error: aborted ? undefined : message}
-              : m
+            m.id === messageId ? {...m, streaming: false, error: payload} : m
           )
         ];
       })

@@ -15,7 +15,7 @@ Wire protocol (JSON frames):
     ``{"type": "done",        "message_id": "...", "usage": {...}}``
     ``{"type": "error",       "code": "...", "message": "..."}``
 
-See ``docs/STREAM_PROTOCOL.md`` for the full vocabulary and field rules.
+See ``docs/backend/STREAM_PROTOCOL.md`` for the full vocabulary and field rules.
 
 One generation per connection for now — the client is expected to close
 after ``done`` / ``error``. Keeping it minimal makes reasoning about abort
@@ -38,11 +38,15 @@ from starlette.websockets import WebSocketState
 
 from api.chat_deps import get_chat_service_for_user
 from api.deps import authenticate_ws
+from api.routers._chat_helpers import resolve_provider_name
 from api.streaming.protocol import ErrorEvent, coerce_event
 from service.chat.service import ChatService
-from service.db.models import ChatSession, Provider, UserPreference
+from service.core.streaming import EventType, TransportErrorCode
+from service.core.streaming.abort import AbortContext
+from service.db.models import ChatSession
 from service.db.session import current_session_factory
-from service.streaming.abort import AbortContext
+from service.llm.client import LLMRateLimitError
+from service.llm.rate_limit import enforce_user_llm_quota
 
 __all__ = ["router"]
 
@@ -99,10 +103,12 @@ async def chat_ws(
             first = await ws.receive_json()
         except WebSocketDisconnect:
             return
-        if not isinstance(first, dict) or first.get("type") != "user_message":
+        if not isinstance(first, dict) or first.get("type") != EventType.USER_MESSAGE.value:
             await _safe_send(
                 ws,
-                ErrorEvent(code="PROTOCOL", message="expected user_message").model_dump(),
+                ErrorEvent(
+                    code=TransportErrorCode.PROTOCOL.value, message="expected user_message"
+                ).model_dump(),
             )
             await ws.close(code=WS_CLOSE_PROTOCOL)
             return
@@ -112,7 +118,9 @@ async def chat_ws(
         except (ValueError, TypeError):
             await _safe_send(
                 ws,
-                ErrorEvent(code="PROTOCOL", message="invalid session_id").model_dump(),
+                ErrorEvent(
+                    code=TransportErrorCode.PROTOCOL.value, message="invalid session_id"
+                ).model_dump(),
             )
             await ws.close(code=WS_CLOSE_PROTOCOL)
             return
@@ -121,7 +129,9 @@ async def chat_ws(
         if not isinstance(content, str) or not content.strip():
             await _safe_send(
                 ws,
-                ErrorEvent(code="PROTOCOL", message="empty content").model_dump(),
+                ErrorEvent(
+                    code=TransportErrorCode.PROTOCOL.value, message="empty content"
+                ).model_dump(),
             )
             await ws.close(code=WS_CLOSE_PROTOCOL)
             return
@@ -142,15 +152,7 @@ async def chat_ws(
                 await ws.close(code=WS_CLOSE_NOT_FOUND)
                 return
             session_model = owner.model
-            pid = owner.provider_id
-            if pid is None:
-                pref = await session.get(UserPreference, user.id)
-                if pref is not None:
-                    pid = pref.default_provider_id
-            if pid is not None:
-                prov = await session.get(Provider, pid)
-                if prov is not None and prov.user_id == user.id:
-                    provider_name = prov.name
+            provider_name = await resolve_provider_name(session, owner=owner, user_id=user.id)
 
         # 3) Kick off the reader (for abort / disconnect) and start streaming.
         reader_task = asyncio.create_task(_reader())
@@ -163,6 +165,7 @@ async def chat_ws(
             abort_ctx=abort_ctx,
             model=session_model,
             provider_name=provider_name,
+            user_id=str(user.id),
         )
 
     finally:
@@ -185,12 +188,14 @@ async def _stream_reply(
     content: str,
     use_rag: bool,
     abort_ctx: AbortContext,
+    user_id: str,
     model: str | None = None,
     provider_name: str | None = None,
 ) -> None:
     """Run :meth:`ChatService.generate` and push each event over the socket."""
 
     try:
+        await enforce_user_llm_quota(user_id=user_id, provider=provider_name or "default")
         async for raw in service.generate(
             str(session_uuid),
             content,
@@ -200,17 +205,30 @@ async def _stream_reply(
             think=True,
         ):
             # Stamp provider_name onto the done event (mirror of chat_stream).
-            if raw.get("type") == "done" and provider_name:
+            if raw.get("type") == EventType.DONE.value and provider_name:
                 raw = {**raw, "provider_name": provider_name}
             try:
                 event = coerce_event(raw)
             except Exception:
                 logger.warning("dropping malformed event: %r", raw)
-                event = ErrorEvent(code="PROTOCOL", message="malformed event")
+                event = ErrorEvent(
+                    code=TransportErrorCode.PROTOCOL.value, message="malformed event"
+                )
             await _safe_send(ws, event.model_dump())
+    except LLMRateLimitError as exc:
+        await _safe_send(
+            ws,
+            ErrorEvent(
+                code=type(exc).code,
+                message=str(exc),
+                retry_after=exc.retry_after,
+            ).model_dump(),
+        )
     except Exception as exc:
         logger.exception("chat_ws blew up mid-flight")
-        await _safe_send(ws, ErrorEvent(code="INTERNAL", message=str(exc)).model_dump())
+        await _safe_send(
+            ws, ErrorEvent(code=TransportErrorCode.INTERNAL.value, message=str(exc)).model_dump()
+        )
 
 
 async def _safe_send(ws: WebSocket, payload: dict[str, object]) -> None:

@@ -1,4 +1,5 @@
 import type { ApiDebugMeta } from "@/lib/api/shared/debug";
+import { MessageRole, StreamEventType } from "@/lib/api/shared/enums";
 
 /**
  * DTOs that mirror the FastAPI schemas in api/schemas/.
@@ -72,7 +73,7 @@ export interface ConnectivityTestOut {
 export interface MessageOut {
   id: string;
   session_id: string;
-  role: "user" | "assistant" | "system" | "tool";
+  role: MessageRole;
   content: string;
   tool_call_id?: string | null;
   tool_calls?: ToolCallOut[] | null;
@@ -150,7 +151,7 @@ export interface AnswerSource {
 
 /** A single message rendered inside a public share / bookmark payload. */
 export interface SharedMessage {
-  role: "user" | "assistant";
+  role: typeof MessageRole.User | typeof MessageRole.Assistant;
   content: string;
   tokens: number | null;
   model: string | null;
@@ -203,13 +204,13 @@ export interface BookmarkDetailOut {
   assistant_message: SharedMessage;
 }
 
-/** Streaming event vocabulary — mirrors core/streaming/events.py */
+/** Streaming event vocabulary — mirrors service/core/streaming/events.py */
 export type StreamEvent =
-  | { type: "retrieval"; data: { hits: KnowledgeHit[] } }
-  | { type: "token"; data: { delta: string } }
-  | { type: "thought"; data: { text: string } }
+  | { type: typeof StreamEventType.Retrieval; data: { hits: KnowledgeHit[] } }
+  | { type: typeof StreamEventType.Token; data: { delta: string } }
+  | { type: typeof StreamEventType.Thought; data: { text: string } }
   | {
-      type: "tool_call";
+      type: typeof StreamEventType.ToolCall;
       data: {
         tool_call_id: string;
         tool_name: string;
@@ -217,7 +218,7 @@ export type StreamEvent =
       };
     }
   | {
-      type: "tool_result";
+      type: typeof StreamEventType.ToolResult;
       data: {
         tool_call_id: string;
         tool_name: string;
@@ -226,7 +227,7 @@ export type StreamEvent =
       };
     }
   | {
-      type: "done";
+      type: typeof StreamEventType.Done;
       data: {
         message_id?: string;
         usage?: Record<string, number>;
@@ -238,7 +239,20 @@ export type StreamEvent =
         provider_name?: string | null;
       };
     }
-  | { type: "error"; data: { code: string; message: string } };
+  | { type: typeof StreamEventType.Error; data: ErrorPayload };
+
+/**
+ * Structured error event payload. ``code`` is the stable machine-readable
+ * id; UI branches on it. ``upstream_*`` and ``retry_after`` are populated
+ * for LLM-upstream errors. See ``docs/backend/ERROR_CODES.md``.
+ */
+export interface ErrorPayload {
+  code: string;
+  message: string;
+  upstream_status?: number | null;
+  upstream_url?: string | null;
+  retry_after?: number | null;
+}
 
 /* ─────────────────────────────────────────────────────────────────
    Orgs and Wiki — Notion/Lark-style workspaces + block-based pages

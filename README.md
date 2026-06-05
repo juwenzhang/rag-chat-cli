@@ -64,8 +64,8 @@ treats the chat layer as production software:
 | **Local first** | Ollama is the reference backend. OpenAI-compatible providers (vLLM, Groq, OpenRouter, …) are second-class only because they ship later in the boot sequence. |
 | **Real persistence** | Postgres for sessions, messages, memory, knowledge; pgvector for embeddings; Redis for the worker queue. No "in-memory store" tricks. |
 | **Two real UIs** | A Next.js web app (RSC + streaming) and an Ink terminal client share one OpenAPI surface. Anything one can do, the other can do. |
-| **Multi-client auth** | A dedicated `/v1/*` sub-app with per-client allowlists isolates non-browser traffic from the website's CORS policy, so reverse proxies (HF Spaces, CDNs) can't break the CLI. See [docs/MULTI_CLIENT_AUTH_DESIGN.md](docs/MULTI_CLIENT_AUTH_DESIGN.md). |
-| **Stable streaming protocol** | One `Event` vocabulary (`token`, `thought`, `tool_call`, `tool_result`, `retrieval`, `done`, `error`) flows over SSE — clients render it the same way. See [docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md). |
+| **Multi-client auth** | A dedicated `/v1/*` sub-app with per-client allowlists isolates non-browser traffic from the website's CORS policy, so reverse proxies (HF Spaces, CDNs) can't break the CLI. See [docs/backend/MULTI_CLIENT_AUTH_DESIGN.md](docs/backend/MULTI_CLIENT_AUTH_DESIGN.md). |
+| **Stable streaming protocol** | One `Event` vocabulary (`token`, `thought`, `tool_call`, `tool_result`, `retrieval`, `done`, `error`) flows over SSE — clients render it the same way. See [docs/backend/STREAM_PROTOCOL.md](docs/backend/STREAM_PROTOCOL.md). |
 
 ---
 
@@ -291,9 +291,9 @@ Highlights:
   reflected in the TUI.
 
 Deploy guides:
-[docs/DEPLOY_WEBSITES.md](docs/DEPLOY_WEBSITES.md),
-[docs/DEPLOY_BACKEND_DOCKER.md](docs/DEPLOY_BACKEND_DOCKER.md),
-[docs/DEPLOY_FREE_STACK.md](docs/DEPLOY_FREE_STACK.md).
+[docs/fe/DEPLOY_WEBSITES.md](docs/fe/DEPLOY_WEBSITES.md),
+[docs/ops/DEPLOY_BACKEND_DOCKER.md](docs/ops/DEPLOY_BACKEND_DOCKER.md),
+[docs/ops/DEPLOY_FREE_STACK.md](docs/ops/DEPLOY_FREE_STACK.md).
 
 ---
 
@@ -319,7 +319,7 @@ OpenAPI is auto-published at `GET /openapi.json` and the Swagger UI at
 
 The streaming event vocabulary (`token`, `thought`, `tool_call`,
 `tool_result`, `retrieval`, `done`, `error`) is documented in
-[docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md).
+[docs/backend/STREAM_PROTOCOL.md](docs/backend/STREAM_PROTOCOL.md).
 
 ---
 
@@ -381,16 +381,16 @@ Resolution order: `options.baseUrl` → `RAG_API_BASE_URL` →
 
 ## Documentation index
 
-- [docs/MULTI_CLIENT_AUTH_DESIGN.md](docs/MULTI_CLIENT_AUTH_DESIGN.md) — why `/v1` exists, device-flow roadmap.
-- [docs/STREAM_PROTOCOL.md](docs/STREAM_PROTOCOL.md) — wire format for SSE events.
-- [docs/AUTH_DESIGN.md](docs/AUTH_DESIGN.md) — JWT access / refresh, password policy.
-- [docs/CHAT_OBSERVABILITY_EVALUATION_VISION.md](docs/CHAT_OBSERVABILITY_EVALUATION_VISION.md) — eval / vision pipeline.
-- [docs/OLLAMA_CAPABILITIES_ADAPTATION.md](docs/OLLAMA_CAPABILITIES_ADAPTATION.md) — capability detection & fallbacks.
-- [docs/WEB_SEARCH_CONTEXT_OPTIMIZATION.md](docs/WEB_SEARCH_CONTEXT_OPTIMIZATION.md) — tool result trimming.
-- [docs/FRONTEND_NEXT_OPTIMIZATION.md](docs/FRONTEND_NEXT_OPTIMIZATION.md) — RSC / streaming notes.
-- [docs/FRONTEND_SSR_MVC.md](docs/FRONTEND_SSR_MVC.md) — server-action layout for the web app.
-- [docs/DEPLOY_BACKEND_DOCKER.md](docs/DEPLOY_BACKEND_DOCKER.md), [DEPLOY_WEBSITES.md](docs/DEPLOY_WEBSITES.md), [DEPLOY_FREE_STACK.md](docs/DEPLOY_FREE_STACK.md) — operator guides.
-- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — local toolchain (uv, alembic, pre-commit).
+- [docs/backend/MULTI_CLIENT_AUTH_DESIGN.md](docs/backend/MULTI_CLIENT_AUTH_DESIGN.md) — why `/v1` exists, device-flow roadmap.
+- [docs/backend/STREAM_PROTOCOL.md](docs/backend/STREAM_PROTOCOL.md) — wire format for SSE events.
+- [docs/backend/AUTH_DESIGN.md](docs/backend/AUTH_DESIGN.md) — JWT access / refresh, password policy.
+- [docs/ai/CHAT_OBSERVABILITY_EVALUATION_VISION.md](docs/ai/CHAT_OBSERVABILITY_EVALUATION_VISION.md) — eval / vision pipeline.
+- [docs/ollama/OLLAMA_CAPABILITIES_ADAPTATION.md](docs/ollama/OLLAMA_CAPABILITIES_ADAPTATION.md) — capability detection & fallbacks.
+- [docs/ai/WEB_SEARCH_CONTEXT_OPTIMIZATION.md](docs/ai/WEB_SEARCH_CONTEXT_OPTIMIZATION.md) — tool result trimming.
+- [docs/fe/FRONTEND_NEXT_OPTIMIZATION.md](docs/fe/FRONTEND_NEXT_OPTIMIZATION.md) — RSC / streaming notes.
+- [docs/fe/FRONTEND_SSR_MVC.md](docs/fe/FRONTEND_SSR_MVC.md) — server-action layout for the web app.
+- [docs/ops/DEPLOY_BACKEND_DOCKER.md](docs/ops/DEPLOY_BACKEND_DOCKER.md), [DEPLOY_WEBSITES.md](docs/fe/DEPLOY_WEBSITES.md), [DEPLOY_FREE_STACK.md](docs/ops/DEPLOY_FREE_STACK.md) — operator guides.
+- [docs/backend/DEVELOPMENT.md](docs/backend/DEVELOPMENT.md) — local toolchain (uv, alembic, pre-commit).
 - [openspec/](openspec/) — living spec; current `refactor/tui-refactor`
   branch hosts the TUI rewrite + multi-client auth phase 1.
 

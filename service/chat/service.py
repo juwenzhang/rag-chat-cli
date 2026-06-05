@@ -29,24 +29,58 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any, ClassVar, Literal
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
+from service.chat._events import aborted_event as _aborted_event
+from service.chat._events import llm_error_event as _llm_error_event
+from service.chat._sources import (
+    WEB_EVIDENCE_INSTRUCTION as _WEB_EVIDENCE_INSTRUCTION,
+)
+from service.chat._sources import (
+    empty_answer_fallback as _empty_answer_fallback,
+)
+from service.chat._sources import (
+    maybe_uuid as _maybe_uuid,
+)
+from service.chat._sources import (
+    sources_from_hits as _sources_from_hits,
+)
+from service.chat._sources import (
+    sources_from_tool_result as _sources_from_tool_result,
+)
+from service.chat._think_filter import ThinkTagStreamFilter as _ThinkTagStreamFilter
+from service.chat._tool_helpers import (
+    build_web_search_query as _build_web_search_query,
+)
+from service.chat._tool_helpers import (
+    compact_history_tool_messages as _compact_history_tool_messages,
+)
+from service.chat._tool_helpers import (
+    should_auto_web_search as _should_auto_web_search,
+)
+from service.chat._tool_helpers import (
+    tool_call_key as _tool_call_key,
+)
+from service.chat._tool_helpers import (
+    tool_turn_limit as _tool_turn_limit,
+)
 from service.chat.history import HistorySummarizer
 from service.chat.limits import DEFAULT_LIMITS, ResourceLimits
 from service.chat.prompts import DEFAULT_TEMPLATES, PromptBuilder
 from service.chat.tokens import TokenBudget, Tokenizer, trim_to_budget
-from service.common.observability import UsageAccumulator, get_tracer
+from service.core.observability import UsageAccumulator, get_tracer
+from service.core.streaming.abort import AbortContext
+from service.core.streaming.error_codes import EventType, FlowErrorCode
+from service.core.streaming.events import Event
 from service.knowledge.base import KnowledgeBase, KnowledgeHit
 from service.llm.client import ChatMessage, LLMClient, LLMError, ThinkingMode, ToolCall, ToolSpec
 from service.memory.chat_memory import ChatMemory
 from service.memory.user_memory import FactExtractor, UserMemoryEntry, UserMemoryStore
-from service.streaming.abort import AbortContext
-from service.streaming.events import Event
 from service.tools import ToolRegistry, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -54,6 +88,27 @@ logger = logging.getLogger(__name__)
 _tracer = get_tracer(__name__)
 
 __all__ = ["ChatService"]
+
+
+@dataclass
+class _LLMRoundResult:
+    """Mutable container for one LLM streaming round's outputs.
+
+    The async generator :meth:`ChatService._stream_llm_round` yields UI
+    events but writes its terminal state here so the caller can decide
+    whether to stop the outer ``generate`` loop. Using a passed-in
+    container instead of return values keeps the helper a true async
+    iterator (callers can ``async for`` over it cleanly) without losing
+    structured access to "did the LLM error / abort fire / what was
+    collected".
+    """
+
+    text: list[str] = field(default_factory=list)
+    thinking: list[str] = field(default_factory=list)
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    usage: dict[str, Any] | None = None
+    aborted: bool = False
+    error_event: Event | None = None
 
 
 class ChatService:
@@ -240,8 +295,8 @@ class ChatService:
             return await self._memory.get(session_id), None
         except Exception as exc:
             return [], {
-                "type": "error",
-                "code": "memory_read_failed",
+                "type": EventType.ERROR.value,
+                "code": FlowErrorCode.MEMORY_READ_FAILED.value,
                 "message": str(exc),
             }
 
@@ -261,12 +316,12 @@ class ChatService:
             hits = await self._kb.search(user_text, top_k=top_k)
         except Exception as exc:
             return [], {
-                "type": "error",
-                "code": "retrieval_failed",
+                "type": EventType.ERROR.value,
+                "code": FlowErrorCode.RETRIEVAL_FAILED.value,
                 "message": str(exc),
             }
         return hits, {
-            "type": "retrieval",
+            "type": EventType.RETRIEVAL.value,
             "hits": [
                 {
                     "document_id": getattr(h, "document_id", None),
@@ -288,6 +343,88 @@ class ChatService:
         except Exception as exc:
             logger.warning("user_memory.recent() failed: %s", exc)
             return []
+
+    async def _stream_llm_round(
+        self,
+        messages_for_call: list[ChatMessage],
+        *,
+        model: str | None,
+        tools: list[ToolSpec] | None,
+        think: ThinkingMode | None,
+        abort: AbortContext | None,
+        result: _LLMRoundResult,
+        traced: bool = False,
+    ) -> AsyncIterator[Event]:
+        """Stream one LLM call, emitting UI events and writing into ``result``.
+
+        Identical wrapping is used by both the main ReAct step and the
+        max-steps fallback synthesis call — the only difference between
+        them was the OTel span around the main step. ``traced=True``
+        opens that span; otherwise the call runs unwrapped.
+
+        On any of the three terminal conditions — ``LLMError``, abort,
+        unexpected exception — the corresponding fields on ``result``
+        are populated and the generator returns. The caller checks
+        ``result.aborted`` / ``result.error_event`` after consuming the
+        events and decides whether to surface ``result.error_event`` and
+        bail out of the surrounding ``generate`` loop.
+        """
+        think_filter = _ThinkTagStreamFilter()
+
+        async def _consume_stream() -> AsyncIterator[Event]:
+            async for chunk in self._llm.chat_stream(
+                messages_for_call,
+                model=model,
+                tools=tools,
+                think=think,
+            ):
+                if abort is not None and abort.aborted:
+                    result.aborted = True
+                    yield _aborted_event()
+                    return
+                if chunk.thinking:
+                    result.thinking.append(chunk.thinking)
+                    yield {"type": EventType.THOUGHT.value, "text": chunk.thinking}
+                if chunk.delta:
+                    for kind, text in think_filter.feed(chunk.delta):
+                        if kind == "thought":
+                            yield {"type": EventType.THOUGHT.value, "text": text}
+                        elif text:
+                            result.text.append(text)
+                            yield {"type": EventType.TOKEN.value, "delta": text}
+                if chunk.tool_calls:
+                    result.tool_calls.extend(chunk.tool_calls)
+                if chunk.done and chunk.usage:
+                    result.usage = dict(chunk.usage)
+            for kind, text in think_filter.flush():
+                if kind == "thought":
+                    yield {"type": EventType.THOUGHT.value, "text": text}
+                elif text:
+                    result.text.append(text)
+                    yield {"type": EventType.TOKEN.value, "delta": text}
+
+        try:
+            if traced:
+                with _tracer.start_as_current_span("chat.llm_stream") as llm_span:
+                    llm_span.set_attribute(
+                        "llm.model", str(model or getattr(self._llm, "chat_model", "?"))
+                    )
+                    llm_span.set_attribute("llm.message_count", len(messages_for_call))
+                    if tools:
+                        llm_span.set_attribute("llm.tool_count", len(tools))
+                    async for event in _consume_stream():
+                        yield event
+            else:
+                async for event in _consume_stream():
+                    yield event
+        except LLMError as exc:
+            result.error_event = _llm_error_event(exc)
+        except Exception as exc:
+            result.error_event = {
+                "type": EventType.ERROR.value,
+                "code": FlowErrorCode.UNEXPECTED.value,
+                "message": f"{type(exc).__name__}: {exc}",
+            }
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -409,9 +546,9 @@ class ChatService:
         # the prompt prelude via :class:`PromptBuilder` below.
         history = _compact_history_tool_messages(history)
         if think is not False:
-            yield {"type": "thought", "text": "Thinking through the request"}
+            yield {"type": EventType.THOUGHT.value, "text": "Thinking through the request"}
         if use_rag and self._kb is not None:
-            yield {"type": "thought", "text": "Searching local knowledge base"}
+            yield {"type": EventType.THOUGHT.value, "text": "Searching local knowledge base"}
         hits, retrieval_event = await self._retrieve_for_turn(
             user_text,
             use_rag=use_rag,
@@ -421,7 +558,7 @@ class ChatService:
         turn_sources = _sources_from_hits(hits)
         if retrieval_event is not None:
             yield retrieval_event
-            if retrieval_event.get("type") == "error":
+            if retrieval_event.get("type") == EventType.ERROR.value:
                 return
 
         # 2. Pull long-term user memories (#16). Soft failure: a broken DB
@@ -439,8 +576,8 @@ class ChatService:
                 await self._memory.append(session_id, user_msg)
             except Exception as exc:
                 yield {
-                    "type": "error",
-                    "code": "memory_write_failed",
+                    "type": EventType.ERROR.value,
+                    "code": FlowErrorCode.MEMORY_WRITE_FAILED.value,
                     "message": str(exc),
                 }
                 return
@@ -484,9 +621,9 @@ class ChatService:
                 arguments={"query": _build_web_search_query(user_text), "limit": 5},
             )
             executed_tool_keys.add(_tool_call_key(tc))
-            yield {"type": "thought", "text": "Searching web"}
+            yield {"type": EventType.THOUGHT.value, "text": "Searching web"}
             yield {
-                "type": "tool_call",
+                "type": EventType.TOOL_CALL.value,
                 "tool_call_id": tc.id,
                 "tool_name": tc.name,
                 "arguments": tc.arguments,
@@ -497,7 +634,7 @@ class ChatService:
             if new_sources:
                 turn_sources.extend(new_sources)
             yield {
-                "type": "tool_result",
+                "type": EventType.TOOL_RESULT.value,
                 "tool_call_id": tc.id,
                 "tool_name": tc.name,
                 "content": result.content,
@@ -525,71 +662,34 @@ class ChatService:
             # to the compressed copy; the persisted memory is untouched.
             messages_for_call = await self._fit_to_budget(messages)
 
-            collected_text: list[str] = []
-            collected_thinking: list[str] = []
-            collected_tool_calls: list[ToolCall] = []
-            think_filter = _ThinkTagStreamFilter()
-
-            try:
-                with _tracer.start_as_current_span("chat.llm_stream") as llm_span:
-                    llm_span.set_attribute(
-                        "llm.model", str(model or getattr(self._llm, "chat_model", "?"))
-                    )
-                    llm_span.set_attribute("llm.message_count", len(messages_for_call))
-                    if tools_for_call:
-                        llm_span.set_attribute("llm.tool_count", len(tools_for_call))
-                    async for chunk in self._llm.chat_stream(
-                        messages_for_call,
-                        model=model,
-                        tools=tools_for_call,
-                        think=think,
-                    ):
-                        if abort is not None and abort.aborted:
-                            yield _aborted_event()
-                            return
-                        if chunk.thinking:
-                            collected_thinking.append(chunk.thinking)
-                            yield {"type": "thought", "text": chunk.thinking}
-                        if chunk.delta:
-                            for kind, text in think_filter.feed(chunk.delta):
-                                if kind == "thought":
-                                    yield {"type": "thought", "text": text}
-                                elif text:
-                                    collected_text.append(text)
-                                    yield {"type": "token", "delta": text}
-                        if chunk.tool_calls:
-                            collected_tool_calls.extend(chunk.tool_calls)
-                        if chunk.done and chunk.usage:
-                            usage = dict(chunk.usage)
-                    for kind, text in think_filter.flush():
-                        if kind == "thought":
-                            yield {"type": "thought", "text": text}
-                        elif text:
-                            collected_text.append(text)
-                            yield {"type": "token", "delta": text}
-            except LLMError as exc:
-                yield {
-                    "type": "error",
-                    "code": "llm_error",
-                    "message": str(exc),
-                }
+            round_result = _LLMRoundResult()
+            async for ev in self._stream_llm_round(
+                messages_for_call,
+                model=model,
+                tools=tools_for_call,
+                think=think,
+                abort=abort,
+                result=round_result,
+                traced=True,
+            ):
+                yield ev
+            if round_result.aborted:
                 return
-            except Exception as exc:
-                yield {
-                    "type": "error",
-                    "code": "unexpected",
-                    "message": f"{type(exc).__name__}: {exc}",
-                }
+            if round_result.error_event is not None:
+                yield round_result.error_event
                 return
+            if round_result.usage is not None:
+                usage = round_result.usage
 
-            assistant_text = "".join(collected_text)
+            collected_tool_calls = round_result.tool_calls
+            assistant_text = "".join(round_result.text)
             if not collected_tool_calls and not assistant_text.strip():
                 assistant_text = _empty_answer_fallback(turn_sources)
-                yield {"type": "token", "delta": assistant_text}
+                yield {"type": EventType.TOKEN.value, "delta": assistant_text}
             assistant_msg = ChatMessage(
                 role="assistant",
                 content=assistant_text,
-                thinking="".join(collected_thinking),
+                thinking="".join(round_result.thinking),
                 tool_calls=tuple(collected_tool_calls),
                 sources=tuple(turn_sources),
             )
@@ -597,8 +697,8 @@ class ChatService:
                 await self._memory.append(session_id, assistant_msg)
             except Exception as exc:
                 yield {
-                    "type": "error",
-                    "code": "memory_write_failed",
+                    "type": EventType.ERROR.value,
+                    "code": FlowErrorCode.MEMORY_WRITE_FAILED.value,
                     "message": str(exc),
                 }
                 return
@@ -627,11 +727,11 @@ class ChatService:
                     yield _aborted_event()
                     return
                 yield {
-                    "type": "thought",
+                    "type": EventType.THOUGHT.value,
                     "text": f"Running tool: {tc.name}",
                 }
                 yield {
-                    "type": "tool_call",
+                    "type": EventType.TOOL_CALL.value,
                     "tool_call_id": tc.id,
                     "tool_name": tc.name,
                     "arguments": tc.arguments,
@@ -674,7 +774,7 @@ class ChatService:
                 if new_sources:
                     turn_sources.extend(new_sources)
                 yield {
-                    "type": "tool_result",
+                    "type": EventType.TOOL_RESULT.value,
                     "tool_call_id": tc.id,
                     "tool_name": tc.name,
                     "content": result.content,
@@ -690,8 +790,8 @@ class ChatService:
                     await self._memory.append(session_id, tool_msg)
                 except Exception as exc:
                     yield {
-                        "type": "error",
-                        "code": "memory_write_failed",
+                        "type": EventType.ERROR.value,
+                        "code": FlowErrorCode.MEMORY_WRITE_FAILED.value,
                         "message": str(exc),
                     }
                     return
@@ -702,7 +802,7 @@ class ChatService:
             # final synthesis call with tools disabled so the user gets an answer
             # instead of a bare "agent exceeded N reasoning steps" failure.
             yield {
-                "type": "thought",
+                "type": EventType.THOUGHT.value,
                 "text": "Tool step limit reached; synthesizing from collected results",
             }
             messages.append(
@@ -715,68 +815,41 @@ class ChatService:
                 )
             )
             messages_for_call = await self._fit_to_budget(messages)
-            final_text: list[str] = []
-            final_thinking: list[str] = []
-            think_filter = _ThinkTagStreamFilter()
-            try:
-                async for chunk in self._llm.chat_stream(
-                    messages_for_call,
-                    model=model,
-                    tools=None,
-                    think=think,
-                ):
-                    if abort is not None and abort.aborted:
-                        yield _aborted_event()
-                        return
-                    if chunk.thinking:
-                        final_thinking.append(chunk.thinking)
-                        yield {"type": "thought", "text": chunk.thinking}
-                    if chunk.delta:
-                        for kind, text in think_filter.feed(chunk.delta):
-                            if kind == "thought":
-                                yield {"type": "thought", "text": text}
-                            elif text:
-                                final_text.append(text)
-                                yield {"type": "token", "delta": text}
-                    if chunk.done and chunk.usage:
-                        usage = dict(chunk.usage)
-                for kind, text in think_filter.flush():
-                    if kind == "thought":
-                        yield {"type": "thought", "text": text}
-                    elif text:
-                        final_text.append(text)
-                        yield {"type": "token", "delta": text}
-            except LLMError as exc:
-                yield {
-                    "type": "error",
-                    "code": "llm_error",
-                    "message": str(exc),
-                }
+            final_round = _LLMRoundResult()
+            async for ev in self._stream_llm_round(
+                messages_for_call,
+                model=model,
+                tools=None,
+                think=think,
+                abort=abort,
+                result=final_round,
+                traced=False,
+            ):
+                yield ev
+            if final_round.aborted:
                 return
-            except Exception as exc:
-                yield {
-                    "type": "error",
-                    "code": "unexpected",
-                    "message": f"{type(exc).__name__}: {exc}",
-                }
+            if final_round.error_event is not None:
+                yield final_round.error_event
                 return
+            if final_round.usage is not None:
+                usage = final_round.usage
 
-            final_answer = "".join(final_text)
+            final_answer = "".join(final_round.text)
             if not final_answer.strip():
                 final_answer = _empty_answer_fallback(turn_sources)
-                yield {"type": "token", "delta": final_answer}
+                yield {"type": EventType.TOKEN.value, "delta": final_answer}
             assistant_msg = ChatMessage(
                 role="assistant",
                 content=final_answer,
-                thinking="".join(final_thinking),
+                thinking="".join(final_round.thinking),
                 sources=tuple(turn_sources),
             )
             try:
                 await self._memory.append(session_id, assistant_msg)
             except Exception as exc:
                 yield {
-                    "type": "error",
-                    "code": "memory_write_failed",
+                    "type": EventType.ERROR.value,
+                    "code": FlowErrorCode.MEMORY_WRITE_FAILED.value,
                     "message": str(exc),
                 }
                 return
@@ -825,7 +898,7 @@ class ChatService:
         # 7. Terminator.
         duration_ms = int((time.monotonic() - started) * 1000)
         effective_model = model or getattr(self._llm, "chat_model", None)
-        done: Event = {"type": "done", "duration_ms": duration_ms}
+        done: Event = {"type": EventType.DONE.value, "duration_ms": duration_ms}
         if usage is not None:
             done["usage"] = usage
         if effective_model:
@@ -891,15 +964,15 @@ class ChatService:
             auto_web_search=auto_web_search,
         ):
             etype = event.get("type")
-            if etype == "token":
+            if etype == EventType.TOKEN.value:
                 delta = event.get("delta")
                 if isinstance(delta, str):
                     content_parts.append(delta)
-            elif etype == "retrieval":
+            elif etype == EventType.RETRIEVAL.value:
                 raw_hits = event.get("hits")
                 if isinstance(raw_hits, list):
                     hits = list(raw_hits)
-            elif etype == "tool_call":
+            elif etype == EventType.TOOL_CALL.value:
                 tool_calls.append(
                     {
                         "tool_call_id": event.get("tool_call_id"),
@@ -907,7 +980,7 @@ class ChatService:
                         "arguments": event.get("arguments"),
                     }
                 )
-            elif etype == "tool_result":
+            elif etype == EventType.TOOL_RESULT.value:
                 tool_results.append(
                     {
                         "tool_call_id": event.get("tool_call_id"),
@@ -916,7 +989,7 @@ class ChatService:
                         "is_error": event.get("is_error"),
                     }
                 )
-            elif etype == "done":
+            elif etype == EventType.DONE.value:
                 raw_usage = event.get("usage")
                 if isinstance(raw_usage, dict):
                     usage = dict(raw_usage)
@@ -926,9 +999,9 @@ class ChatService:
                 raw_sources = event.get("sources")
                 if isinstance(raw_sources, list):
                     sources = [s for s in raw_sources if isinstance(s, dict)]
-            elif etype == "error":
+            elif etype == EventType.ERROR.value:
                 error = {
-                    "code": str(event.get("code", "UNKNOWN")),
+                    "code": str(event.get("code", FlowErrorCode.UNEXPECTED.value)),
                     "message": str(event.get("message", "")),
                 }
                 break
@@ -943,308 +1016,3 @@ class ChatService:
             "tool_results": tool_results or None,
             "error": error,
         }
-
-
-class _ThinkTagStreamFilter:
-    """Split streamed text into answer tokens and ``<think>`` thought text."""
-
-    _OPEN: ClassVar[str] = "<think>"
-    _CLOSE: ClassVar[str] = "</think>"
-
-    def __init__(self) -> None:
-        self._buffer: str = ""
-        self._in_think: bool = False
-
-    def feed(self, text: str) -> list[tuple[str, str]]:
-        self._buffer += text
-        return self._drain(final=False)
-
-    def flush(self) -> list[tuple[str, str]]:
-        return self._drain(final=True)
-
-    def _drain(self, *, final: bool) -> list[tuple[str, str]]:
-        out: list[tuple[str, str]] = []
-        while self._buffer:
-            if self._in_think:
-                idx = self._find(self._CLOSE)
-                if idx >= 0:
-                    self._emit(out, "thought", self._buffer[:idx])
-                    self._buffer = self._buffer[idx + len(self._CLOSE) :]
-                    self._in_think = False
-                    continue
-                if final:
-                    self._emit(out, "thought", self._buffer)
-                    self._buffer = ""
-                break
-
-            idx = self._find(self._OPEN)
-            if idx >= 0:
-                self._emit(out, "token", self._buffer[:idx])
-                self._buffer = self._buffer[idx + len(self._OPEN) :]
-                self._in_think = True
-                continue
-            keep = 0 if final else len(self._OPEN) - 1
-            safe_len = max(0, len(self._buffer) - keep)
-            if safe_len:
-                self._emit(out, "token", self._buffer[:safe_len])
-                self._buffer = self._buffer[safe_len:]
-            break
-        if final:
-            self._buffer = ""
-        return out
-
-    def _find(self, tag: str) -> int:
-        return self._buffer.lower().find(tag)
-
-    @staticmethod
-    def _emit(out: list[tuple[str, str]], kind: str, text: str) -> None:
-        if text:
-            out.append((kind, text))
-
-
-def _aborted_event() -> Event:
-    return {
-        "type": "error",
-        "code": "ABORTED",
-        "message": "client aborted the stream",
-    }
-
-
-_WEB_EVIDENCE_INSTRUCTION = (
-    "Use the following web/tool evidence for factual claims when relevant. Evidence may be "
-    "compressed; do not assume omitted details. Preserve exact option names, commands, "
-    "versions, defaults, and caveats. If evidence is insufficient, state the gap explicitly."
-)
-
-
-def _empty_answer_fallback(sources: list[dict[str, Any]]) -> str:
-    if sources:
-        return (
-            "I gathered supporting sources but the model did not produce a final answer. "
-            "Please retry, or open the sources panel to inspect the collected evidence."
-        )
-    return "The model stopped before producing a final answer. Please retry."
-
-
-def _compact_history_tool_messages(messages: list[ChatMessage]) -> list[ChatMessage]:
-    compacted: list[ChatMessage] = []
-    for message in messages:
-        if message.role != "tool":
-            compacted.append(message)
-            continue
-        content = _compact_tool_result_for_history(message.content, message.tool_name)
-        compacted.append(
-            ChatMessage(
-                role="tool",
-                content=content,
-                tool_call_id=message.tool_call_id,
-                tool_name=message.tool_name,
-            )
-        )
-    return compacted
-
-
-def _compact_tool_result_for_history(content: str, tool_name: str | None) -> str:
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError:
-        return _compact_context_text(content, max_chars=1_500)
-    if not isinstance(data, dict):
-        return _compact_context_text(content, max_chars=1_500)
-
-    if tool_name == "web_search" or "results" in data:
-        compact: dict[str, Any] = {
-            "summary": "Previous web_search result compacted for context budget.",
-            "query": data.get("query"),
-            "provider": data.get("provider"),
-        }
-        if data.get("warning"):
-            compact["warning"] = data.get("warning")
-        raw_results = data.get("results")
-        results: list[dict[str, str]] = []
-        if isinstance(raw_results, list):
-            for item in raw_results[:5]:
-                if not isinstance(item, dict):
-                    continue
-                title = _compact_context_text(str(item.get("title") or ""), max_chars=160)
-                url = str(item.get("url") or "")
-                if title or url:
-                    results.append({"title": title, "url": url})
-        compact["results"] = results
-        return json.dumps(compact, ensure_ascii=False)
-
-    if tool_name == "web_fetch" or "text" in data:
-        compact = {
-            "summary": "Previous web_fetch result compacted for context budget.",
-            "title": data.get("title"),
-            "url": data.get("url"),
-            "provider": data.get("provider"),
-            "text": _compact_context_text(str(data.get("text") or ""), max_chars=1_200),
-        }
-        return json.dumps(compact, ensure_ascii=False)
-
-    return _compact_context_text(content, max_chars=1_500)
-
-
-def _build_web_search_query(text: str) -> str:
-    query = " ".join(text.split())
-    if len(query) <= 240:
-        return query
-    return query[:239].rstrip() + "…"
-
-
-def _compact_context_text(text: str, *, max_chars: int) -> str:
-    cleaned = " ".join(text.split())
-    if len(cleaned) <= max_chars:
-        return cleaned
-    return cleaned[: max(0, max_chars - 1)].rstrip() + "…"
-
-
-def _tool_call_key(call: ToolCall) -> str:
-    try:
-        args = json.dumps(call.arguments, sort_keys=True, ensure_ascii=False, default=str)
-    except TypeError:
-        args = repr(call.arguments)
-    return f"{call.name}:{args}"
-
-
-def _tool_turn_limit(name: str) -> int | None:
-    if name == "web_search":
-        return 1
-    if name == "web_fetch":
-        return 2
-    return None
-
-
-_WEB_SEARCH_OFF_MARKERS = (
-    "不要联网",
-    "不用联网",
-    "不要搜索",
-    "不用搜索",
-    "仅根据本地",
-    "只根据本地",
-    "no web",
-    "don't search",
-    "do not search",
-)
-
-_WEB_SEARCH_STRONG_MARKERS = (
-    "最新",
-    "当前",
-    "现在",
-    "今天",
-    "实时",
-    "近期",
-    "官方",
-    "官网",
-    "文档",
-    "资料来源",
-    "引用",
-    "来源",
-    "查一下",
-    "搜索",
-    "联网",
-    "202",
-    "latest",
-    "current",
-    "today",
-    "official",
-    "docs",
-    "documentation",
-    "source",
-    "citation",
-)
-
-_WEB_SEARCH_RESEARCH_MARKERS = (
-    "深度",
-    "总结",
-    "综述",
-    "调研",
-    "对比",
-    "比较",
-    "最佳实践",
-    "架构",
-    "原理",
-    "核心概念",
-    "deep dive",
-    "research",
-    "survey",
-    "compare",
-    "best practice",
-    "architecture",
-    "core concept",
-)
-
-
-def _should_auto_web_search(
-    text: str,
-    *,
-    mode: bool | Literal["auto", "always", "off"],
-    has_local_hits: bool,
-) -> bool:
-    if mode is True or mode == "always":
-        return True
-    if mode is False or mode == "off":
-        return False
-
-    normalized = " ".join(text.lower().split())
-    if not normalized:
-        return False
-    if any(marker in normalized for marker in _WEB_SEARCH_OFF_MARKERS):
-        return False
-    if any(marker in normalized for marker in _WEB_SEARCH_STRONG_MARKERS):
-        return True
-    if any(marker in normalized for marker in _WEB_SEARCH_RESEARCH_MARKERS):
-        return not has_local_hits or len(normalized) >= 24
-    return False
-
-
-def _sources_from_hits(hits: list[KnowledgeHit]) -> list[dict[str, Any]]:
-    sources: list[dict[str, Any]] = []
-    for rank, hit in enumerate(hits, start=1):
-        source: dict[str, Any] = {
-            "source_type": "document",
-            "rank": rank,
-            "title": hit.title,
-            "quote": hit.content,
-            "score": hit.score,
-            "source": hit.source,
-        }
-        if hit.document_id is not None:
-            source["document_id"] = hit.document_id
-        if hit.chunk_id is not None:
-            source["chunk_id"] = hit.chunk_id
-        sources.append(source)
-    return sources
-
-
-def _sources_from_tool_result(result: ToolResult, *, start_rank: int) -> list[dict[str, Any]]:
-    metadata = result.metadata or {}
-    raw_sources = metadata.get("sources")
-    if not isinstance(raw_sources, list):
-        return []
-    sources: list[dict[str, Any]] = []
-    rank = start_rank
-    for raw in raw_sources:
-        if not isinstance(raw, dict):
-            continue
-        source = dict(raw)
-        source.setdefault("source_type", "tool")
-        source["rank"] = rank
-        rank += 1
-        sources.append(source)
-    return sources
-
-
-def _maybe_uuid(s: str) -> uuid.UUID | None:
-    """Try to parse ``s`` as a UUID; return ``None`` on failure.
-
-    Used to convert the opaque ``session_id`` passed to :meth:`generate`
-    into a foreign key for ``user_memories.source_session_id``. File-backed
-    sessions use short hex tokens that won't parse as UUIDs and degrade to
-    ``None`` here, which is the intended behaviour (no FK to attach).
-    """
-    try:
-        return uuid.UUID(s)
-    except (ValueError, TypeError):
-        return None

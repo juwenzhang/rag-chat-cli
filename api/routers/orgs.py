@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -30,9 +31,10 @@ from api.schemas.org import (
     OrgOut,
     OrgTransferIn,
     OrgUpdateIn,
+    Role,
 )
+from service.core.errors import ForbiddenError, NotFoundError
 from service.db.models import Org, OrgMember, User
-from service.errors import ForbiddenError, NotFoundError
 from service.orgs.policy import get_membership as service_get_membership
 from service.orgs.policy import require_role as service_require_role
 
@@ -73,7 +75,10 @@ def _to_out(org: Org, role: str) -> OrgOut:
         is_personal=org.is_personal,
         created_at=org.created_at,
         updated_at=org.updated_at,
-        role=role,  # type: ignore[arg-type]
+        # DB stores ``role`` as plain ``str``; the column is constrained
+        # to the Role literals at the application layer, so the cast is
+        # the right place to narrow once for the whole router.
+        role=cast(Role, role),
     )
 
 
@@ -200,7 +205,7 @@ def _member_to_out(member: OrgMember, target_user: User) -> MemberOut:
         user_id=target_user.id,
         email=target_user.email,
         display_name=target_user.display_name,
-        role=member.role,  # type: ignore[arg-type]
+        role=cast(Role, member.role),
         created_at=member.created_at,
     )
 

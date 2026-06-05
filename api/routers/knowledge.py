@@ -18,8 +18,8 @@ from api.schemas.knowledge import (
     DocumentUpdateIn,
     SearchHitOut,
 )
+from service.core.errors import NotFoundError
 from service.db.models import Document, User
-from service.errors import NotFoundError
 from service.knowledge import KnowledgeService
 from service.providers.runtime import build_llm_for_user
 

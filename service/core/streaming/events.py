@@ -63,6 +63,10 @@ class Event(TypedDict, total=False):
     sources: list[dict[str, Any]]
     code: str
     message: str
+    # error — optional upstream context for LLM errors (rate limit / paywall / 401)
+    upstream_status: int
+    upstream_url: str
+    retry_after: int
     # done — Sprint 2: reveal resolved model + provider for the answer footer
     model: str
     provider_name: str

@@ -74,7 +74,7 @@ export async function registerAction(
 
 /**
  * Triggers /auth/code/send. Gracefully reports "unavailable" if the
- * backend hasn't shipped that endpoint yet (per docs/AUTH_DESIGN.md §3.1
+ * backend hasn't shipped that endpoint yet (per docs/backend/AUTH_DESIGN.md §3.1
  * the email-code flow is still pending).
  */
 export async function sendCodeAction(

@@ -1,3 +1,4 @@
+import {ErrorCode} from './enums';
 import {clearTokens, loadTokens, saveTokens, type StoredTokens} from './token-store';
 import {ApiError} from './types';
 import type {
@@ -44,7 +45,7 @@ const FALLBACK_BASE_URL = 'http://127.0.0.1:8000';
  * Path prefix and client identification shared by every request.
  *
  * `/v1/*` is the FastAPI sub-app dedicated to non-browser clients
- * (see ``docs/MULTI_CLIENT_AUTH_DESIGN.md``). It enforces an
+ * (see ``docs/backend/MULTI_CLIENT_AUTH_DESIGN.md``). It enforces an
  * ``X-Client-Id`` allowlist instead of an ``Origin`` allowlist so reverse
  * proxies that strip / refuse browser-flavoured headers (Hugging Face
  * Spaces, some CDNs) keep the CLI working.
@@ -350,7 +351,7 @@ export class ApiClient {
     try {
       return JSON.parse(text) as T;
     } catch {
-      throw new ApiError(response.status, 'PARSE', `Invalid JSON from ${path}`);
+      throw new ApiError(response.status, ErrorCode.Parse, `Invalid JSON from ${path}`);
     }
   }
 

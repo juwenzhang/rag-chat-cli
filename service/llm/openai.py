@@ -26,7 +26,16 @@ from typing import Any
 
 import httpx
 
-from service.llm.client import ChatChunk, ChatMessage, LLMError, ThinkingMode, ToolCall, ToolSpec
+from service.llm._base_http import BaseHTTPLLMClient
+from service.llm._http_errors import classify_http_error
+from service.llm.client import (
+    ChatChunk,
+    ChatMessage,
+    LLMError,
+    ThinkingMode,
+    ToolCall,
+    ToolSpec,
+)
 
 __all__ = ["OpenAIClient"]
 
@@ -145,7 +154,7 @@ class _ToolCallBuilder:
 # ---------------------------------------------------------------------------
 
 
-class OpenAIClient:
+class OpenAIClient(BaseHTTPLLMClient):
     """Async HTTP client speaking the OpenAI v1 wire format.
 
     Construct directly or via :meth:`from_settings`. The constructor does
@@ -156,6 +165,8 @@ class OpenAIClient:
     most local-OpenAI-compatible servers (we still send the header
     unconditionally when set — harmless for the local case).
     """
+
+    _provider = "openai"
 
     def __init__(
         self,
@@ -173,7 +184,7 @@ class OpenAIClient:
         self._api_key = api_key
         self._timeout = timeout
         self._organization = organization
-        self._client: httpx.AsyncClient | None = None
+        self._client = None
 
     @classmethod
     def from_settings(cls, s: Any | None = None) -> OpenAIClient:
@@ -191,41 +202,13 @@ class OpenAIClient:
         )
 
     # ------------------------------------------------------------------
-    # Properties
+    # Provider-specific extra header
     # ------------------------------------------------------------------
-    @property
-    def base_url(self) -> str:
-        return self._base_url
-
-    @property
-    def chat_model(self) -> str:
-        return self._chat_model
-
-    @property
-    def embed_model(self) -> str:
-        return self._embed_model
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-    def _ensure_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            headers: dict[str, str] = {}
-            if self._api_key:
-                headers["Authorization"] = f"Bearer {self._api_key}"
-            if self._organization:
-                headers["OpenAI-Organization"] = self._organization
-            self._client = httpx.AsyncClient(
-                base_url=self._base_url,
-                timeout=self._timeout,
-                headers=headers,
-            )
-        return self._client
-
-    async def aclose(self) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+    def _default_headers(self) -> dict[str, str]:
+        headers = super()._default_headers()
+        if self._organization:
+            headers["OpenAI-Organization"] = self._organization
+        return headers
 
     # ------------------------------------------------------------------
     # LLMClient
@@ -273,8 +256,11 @@ class OpenAIClient:
             ) as resp:
                 if resp.status_code >= 400:
                     body = await resp.aread()
-                    raise LLMError(
-                        f"openai chat completions failed: {resp.status_code} {body[:200]!r}"
+                    raise classify_http_error(
+                        provider="openai",
+                        status=resp.status_code,
+                        headers=resp.headers,
+                        body=body,
                     )
                 async for line in resp.aiter_lines():
                     if not line:
@@ -324,7 +310,7 @@ class OpenAIClient:
                         # Don't break here — let the loop catch [DONE] or
                         # a trailing usage frame, so ``usage`` is populated.
         except httpx.HTTPError as exc:
-            raise LLMError(f"openai transport error: {exc}") from exc
+            raise self._transport_error(exc) from exc
 
         # Drain any tool_calls that arrived without a finish_reason
         # (some servers omit finish_reason on tool calls and rely on
@@ -358,7 +344,12 @@ class OpenAIClient:
                 },
             )
             if resp.status_code >= 400:
-                raise LLMError(f"openai embeddings failed: {resp.status_code} {resp.text[:200]!r}")
+                raise classify_http_error(
+                    provider="openai",
+                    status=resp.status_code,
+                    headers=resp.headers,
+                    body=resp.text,
+                )
             data = resp.json()
             entries = data.get("data")
             if not isinstance(entries, list):
@@ -368,4 +359,4 @@ class OpenAIClient:
             entries.sort(key=lambda e: int(e.get("index", 0)))
             return [[float(x) for x in e.get("embedding", [])] for e in entries]
         except httpx.HTTPError as exc:
-            raise LLMError(f"openai transport error: {exc}") from exc
+            raise self._transport_error(exc) from exc

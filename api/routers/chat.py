@@ -23,6 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat_deps import get_chat_service_for_user
 from api.deps import get_current_user, get_db_session
+from api.routers._chat_helpers import (
+    own_message_row,
+    previous_user_content,
+    require_session_owner,
+)
 from api.schemas.chat import (
     ChatSessionOut,
     ChatSessionUpdateIn,
@@ -36,6 +41,7 @@ from api.schemas.common import Page
 from api.schemas.share import ForkFromShareIn
 from service.chat.service import ChatService
 from service.chat.titles import synthesize_preview_title
+from service.core.errors import ForbiddenError, NotFoundError
 from service.db.models import (
     ChatSession,
     Message,
@@ -45,7 +51,6 @@ from service.db.models import (
     Wiki,
     WikiPage,
 )
-from service.errors import ForbiddenError, NotFoundError
 from service.llm.client import ChatMessage
 from service.providers import ProviderNotFoundError, get_provider
 from service.wiki.policy import require_wiki_role
@@ -101,9 +106,7 @@ async def patch_session(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ChatSessionOut:
-    row = await session.get(ChatSession, session_id)
-    if row is None or row.user_id != user.id:
-        raise HTTPException(status_code=404, detail="session not found")
+    row = await require_session_owner(session, session_id, user.id)
 
     if body.title is not None:
         row.title = body.title
@@ -250,9 +253,7 @@ async def delete_session(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> Response:
-    row = await session.get(ChatSession, session_id)
-    if row is None or row.user_id != user.id:
-        raise HTTPException(status_code=404, detail="session not found")
+    row = await require_session_owner(session, session_id, user.id)
     await session.delete(row)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -324,11 +325,7 @@ async def list_messages(
     page: Annotated[int, Query(ge=1)] = 1,
     size: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> Page[MessageOut]:
-    owner = await session.get(ChatSession, session_id)
-    if owner is None or owner.user_id != user.id:
-        # Return 404 rather than 403 to avoid leaking the existence of other
-        # users' sessions (AGENTS.md §6 enumeration guidance).
-        raise HTTPException(status_code=404, detail="session not found")
+    await require_session_owner(session, session_id, user.id)
 
     offset = (page - 1) * size
     q = (
@@ -359,7 +356,7 @@ async def get_message_evaluation(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> MessageEvaluationOut:
-    msg = await _own_message_row(session, user.id, message_id)
+    msg = await own_message_row(session, user.id, message_id)
     if msg.role != "assistant":
         raise HTTPException(status_code=400, detail="only assistant messages can be evaluated")
     row = await session.scalar(
@@ -380,78 +377,29 @@ async def evaluate_message(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> MessageEvaluationOut:
-    from service.evaluation import evaluate_answer
-    from service.llm.ollama import OllamaClient
-    from settings import settings
+    from service.evaluation import EvaluationDisabledError, judge_message_for_user
 
-    if not settings.evaluation.enabled:
-        raise HTTPException(status_code=400, detail="evaluation is disabled")
-
-    msg = await _own_message_row(session, user.id, message_id)
+    msg = await own_message_row(session, user.id, message_id)
     if msg.role != "assistant":
         raise HTTPException(status_code=400, detail="only assistant messages can be evaluated")
 
+    # Idempotency: a message can only be judged once.
     existing = await session.scalar(
         select(MessageEvaluation).where(MessageEvaluation.message_id == message_id)
     )
     if existing is not None:
         return MessageEvaluationOut.model_validate(existing)
 
-    question = await _previous_user_content(session, msg)
-    llm = OllamaClient(
-        base_url=settings.ollama.base_url,
-        chat_model=settings.evaluation.model,
-        embed_model=settings.ollama.embed_model,
-        timeout=float(settings.evaluation.timeout),
-        api_key=settings.ollama.api_key,
-    )
+    question = await previous_user_content(session, msg)
     try:
-        evaluation = await evaluate_answer(
-            llm=llm,
-            model=settings.evaluation.model,
-            question=question or "",
-            answer=msg.content,
-            sources=msg.sources,
+        row = await judge_message_for_user(
+            session, message=msg, user_id=user.id, question=question or ""
         )
+    except EvaluationDisabledError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"evaluation failed: {exc}") from exc
-    finally:
-        await llm.aclose()
-
-    row = MessageEvaluation(
-        message_id=msg.id,
-        session_id=msg.session_id,
-        user_id=user.id,
-        model=settings.evaluation.model,
-        overall=evaluation.overall,
-        helpfulness=evaluation.helpfulness,
-        groundedness=evaluation.groundedness,
-        citation_quality=evaluation.citation_quality,
-        completeness=evaluation.completeness,
-        risk=evaluation.risk,
-        comment=evaluation.comment,
-        raw=evaluation.raw,
-    )
-    session.add(row)
-    await session.commit()
-    await session.refresh(row)
     return MessageEvaluationOut.model_validate(row)
-
-
-async def _previous_user_content(session: AsyncSession, msg: Message) -> str | None:
-    return cast(
-        str | None,
-        await session.scalar(
-            select(Message.content)
-            .where(
-                Message.session_id == msg.session_id,
-                Message.role == "user",
-                Message.created_at <= msg.created_at,
-            )
-            .order_by(Message.created_at.desc())
-            .limit(1)
-        ),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -459,22 +407,6 @@ async def _previous_user_content(session: AsyncSession, msg: Message) -> str | N
 # and trim-history operations. These don't touch the LLM; re-running is a
 # separate POST /chat/stream call after the edit lands.
 # ---------------------------------------------------------------------------
-
-
-async def _own_message_row(
-    session: AsyncSession, user_id: uuid.UUID, message_id: uuid.UUID
-) -> Message:
-    """Resolve a message row and verify the caller owns its session.
-
-    Returns 404 (not 403) on cross-user access to avoid leaking ids.
-    """
-    msg = await session.get(Message, message_id)
-    if msg is None:
-        raise HTTPException(status_code=404, detail="message not found")
-    owner = await session.get(ChatSession, msg.session_id)
-    if owner is None or owner.user_id != user_id:
-        raise HTTPException(status_code=404, detail="message not found")
-    return msg
 
 
 @router.patch(
@@ -488,7 +420,7 @@ async def update_message(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> MessageOut:
-    msg = await _own_message_row(session, user.id, message_id)
+    msg = await own_message_row(session, user.id, message_id)
     msg.content = body.content
     await session.commit()
     await session.refresh(msg)
@@ -505,7 +437,7 @@ async def delete_message(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
-    msg = await _own_message_row(session, user.id, message_id)
+    msg = await own_message_row(session, user.id, message_id)
     await session.delete(msg)
     await session.commit()
 
@@ -527,13 +459,31 @@ async def post_message(
     session: AsyncSession = Depends(get_db_session),
     service: ChatService = Depends(get_chat_service_for_user),
 ) -> MessageOut:
-    owner = await session.get(ChatSession, body.session_id)
-    if owner is None or owner.user_id != user.id:
-        raise HTTPException(status_code=404, detail="session not found")
+    owner = await require_session_owner(session, body.session_id, user.id)
+
+    # Per-user LLM quota — raises LLMRateLimitError on overflow, which the
+    # exception middleware turns into 429 + Retry-After.
+    from service.llm.rate_limit import enforce_user_llm_quota
+
+    await enforce_user_llm_quota(user_id=str(user.id))
 
     # ChatService owns persistence (user + assistant rows) since v1.2; we
     # only need the aggregated result to shape the HTTP response.
-    result = await _generate_reply(service, body, model=owner.model)
+    try:
+        result = await service.generate_full(
+            str(body.session_id),
+            body.content,
+            use_rag=body.use_rag,
+            model=owner.model,
+            think=body.think,
+        )
+    finally:
+        await service.aclose()
+    if result["error"] is not None:
+        raise HTTPException(
+            status_code=502,
+            detail=f"upstream LLM error: {result['error']['code']}",
+        )
 
     # Fetch the row ChatService just wrote so the response carries a real
     # ``id`` / ``created_at``. Cheap — single index scan on (session_id, created_at).
@@ -553,38 +503,14 @@ async def post_message(
     # ``tokens`` is informational; ChatService currently doesn't fill it in
     # (usage_tokens flows through the stream ``done`` event). Patch it here
     # to keep the response shape stable with pre-v1.2.
-    if result["tokens"] is not None and last_assistant.tokens is None:
-        last_assistant.tokens = result["tokens"]
-        await session.commit()
-        await session.refresh(last_assistant)
-    return MessageOut.model_validate(last_assistant)
-
-
-async def _generate_reply(
-    service: ChatService, body: MessageIn, *, model: str | None
-) -> dict[str, int | None]:
-    """Run :meth:`ChatService.generate_full` and unpack the usage field."""
-    try:
-        result = await service.generate_full(
-            str(body.session_id),
-            body.content,
-            use_rag=body.use_rag,
-            model=model,
-            think=body.think,
-        )
-    finally:
-        await service.aclose()
-
-    if result["error"] is not None:
-        raise HTTPException(
-            status_code=502,
-            detail=f"upstream LLM error: {result['error']['code']}",
-        )
-
-    usage_tokens: int | None = None
     usage = result["usage"]
+    usage_tokens: int | None = None
     if isinstance(usage, dict):
         tok = usage.get("eval_count") or usage.get("completion_tokens")
         if isinstance(tok, int):
             usage_tokens = tok
-    return {"tokens": usage_tokens}
+    if usage_tokens is not None and last_assistant.tokens is None:
+        last_assistant.tokens = usage_tokens
+        await session.commit()
+        await session.refresh(last_assistant)
+    return MessageOut.model_validate(last_assistant)

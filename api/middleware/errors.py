@@ -29,6 +29,14 @@ from service.auth.errors import (
     TokenReuseError,
     UserNotActiveError,
 )
+from service.llm.client import (
+    LLMAuthError,
+    LLMError,
+    LLMModelNotFoundError,
+    LLMRateLimitError,
+    LLMSubscriptionRequiredError,
+    LLMUpstreamUnavailableError,
+)
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -98,6 +106,18 @@ _AUTH_MAP: dict[type[AuthError], tuple[int, str]] = {
 }
 
 
+# LLM-layer exceptions translated to HTTP status. ``code`` mirrors the
+# class-level :pyattr:`LLMError.code` so REST consumers get the same
+# vocabulary as the streaming protocol's ``error`` events.
+_LLM_STATUS: dict[type[LLMError], int] = {
+    LLMRateLimitError: 429,
+    LLMSubscriptionRequiredError: 402,
+    LLMAuthError: 401,
+    LLMModelNotFoundError: 404,
+    LLMUpstreamUnavailableError: 502,
+}
+
+
 def install_exception_handlers(app: FastAPI) -> None:
     """Register every handler on ``app``.
 
@@ -119,6 +139,27 @@ def install_exception_handlers(app: FastAPI) -> None:
             request=request,
             details={"errors": exc.errors()},
         )
+
+    @app.exception_handler(LLMError)
+    async def _handle_llm(request: Request, exc: LLMError) -> JSONResponse:
+        status = _LLM_STATUS.get(type(exc), 502)
+        details: dict[str, object] = {}
+        if exc.upstream_status is not None:
+            details["upstream_status"] = exc.upstream_status
+        if exc.upstream_url is not None:
+            details["upstream_url"] = exc.upstream_url
+        if exc.retry_after is not None:
+            details["retry_after"] = exc.retry_after
+        response = _json(
+            type(exc).code,
+            str(exc) or type(exc).code,
+            status,
+            request=request,
+            details=details or None,
+        )
+        if exc.retry_after is not None:
+            response.headers["Retry-After"] = str(exc.retry_after)
+        return response
 
     @app.exception_handler(StarletteHTTPException)
     async def _handle_http(request: Request, exc: StarletteHTTPException) -> JSONResponse:

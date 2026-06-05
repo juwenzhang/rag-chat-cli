@@ -7,6 +7,7 @@
  * these commands are largely "admin" actions that talk to non-chat endpoints.
  * Keeping them separate also makes the file diff easier to review.
  */
+import {MessageRole} from '../api/enums';
 import {ApiError} from '../api/types';
 import {useChatStore} from '../store/chat-store';
 import {useProviderStore} from '../store/provider-store';
@@ -537,7 +538,7 @@ function lastAssistantId(): string | null {
   const messages = useChatStore.getState().messages;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i];
-    if (m && m.role === 'assistant' && !m.id.startsWith('temp-')) return m.id;
+    if (m && m.role === MessageRole.Assistant && !m.id.startsWith('temp-')) return m.id;
   }
   return null;
 }
@@ -546,7 +547,7 @@ function lastUserId(): string | null {
   const messages = useChatStore.getState().messages;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i];
-    if (m && m.role === 'user' && !m.id.startsWith('temp-')) return m.id;
+    if (m && m.role === MessageRole.User && !m.id.startsWith('temp-')) return m.id;
   }
   return null;
 }

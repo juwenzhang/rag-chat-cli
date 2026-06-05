@@ -17,10 +17,10 @@ from api.schemas.asset import AssetOut
 from service.db.models import Asset, User
 from service.knowledge import KnowledgeService
 from service.llm.ollama import OllamaClient
+from service.platform.storage import ObjectStorage, build_object_storage
+from service.platform.storage.images import normalize_image_to_webp
+from service.platform.storage.vision import describe_image_asset
 from service.providers.runtime import build_llm_for_user
-from service.storage import ObjectStorage, build_object_storage
-from service.storage.images import normalize_image_to_webp
-from service.storage.vision import describe_image_asset
 
 __all__ = ["router"]
 

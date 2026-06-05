@@ -2,7 +2,7 @@
 
 One-way stream from server to client — the companion bidirectional variant
 lives in :mod:`api.routers.chat_ws`. The two share the same event schema
-(:mod:`api.streaming.protocol`, see also ``docs/STREAM_PROTOCOL.md``) and
+(:mod:`api.streaming.protocol`, see also ``docs/backend/STREAM_PROTOCOL.md``) and
 are both backed by :meth:`core.chat_service.ChatService.generate`.
 
 Since v1.2 the :class:`ChatService` is wired with :class:`DbChatMemory`, so
@@ -32,11 +32,15 @@ from starlette.responses import StreamingResponse
 
 from api.chat_deps import get_chat_service_for_user
 from api.deps import get_current_user, get_db_session
+from api.routers._chat_helpers import require_session_owner, resolve_provider_name
 from api.schemas.chat import MessageIn
 from api.streaming.protocol import ErrorEvent, coerce_event
 from api.streaming.sse import event_to_sse, merge_with_keepalive
 from service.chat.service import ChatService
-from service.db.models import ChatSession, Message, Provider, User
+from service.core.streaming import TransportErrorCode
+from service.db.models import Message, User
+from service.llm.client import LLMRateLimitError
+from service.llm.rate_limit import enforce_user_llm_quota
 
 __all__ = ["router"]
 
@@ -61,7 +65,7 @@ SSE_HEADERS: dict[str, str] = {
                 "Server-Sent Events stream. Each frame is `event: <type>` + `data: <json>`. "
                 "Event types: `retrieval`, `token`, `thought`, `tool_call`, `tool_result`, "
                 "`done`, `error`. Schema: `api.streaming.protocol.StreamEvent`. "
-                "Full vocabulary in `docs/STREAM_PROTOCOL.md`."
+                "Full vocabulary in `docs/backend/STREAM_PROTOCOL.md`."
             ),
         },
     },
@@ -74,9 +78,7 @@ async def chat_stream(
 ) -> StreamingResponse:
     # Own the session's user / existence check up-front so 404 / 403 come
     # back as proper JSON instead of a half-opened SSE stream.
-    owner = await session.get(ChatSession, body.session_id)
-    if owner is None or owner.user_id != user.id:
-        raise HTTPException(status_code=404, detail="session not found")
+    owner = await require_session_owner(session, body.session_id, user.id)
 
     # Per-session model pin (Sprint 2). NULL → ChatService uses its
     # construction-time default.
@@ -85,21 +87,11 @@ async def chat_stream(
     # Resolve provider name once, up-front, so we can stamp it onto the ``done``
     # event for the UI footer ("answered by qwen2.5:7b on local-ollama"). Falls
     # back to the user's default provider when the session has no pin.
-    provider_name: str | None = None
-    provider_id_for_label = owner.provider_id
-    if provider_id_for_label is None:
-        from service.db.models import UserPreference
-
-        pref = await session.get(UserPreference, user.id)
-        if pref is not None:
-            provider_id_for_label = pref.default_provider_id
-    if provider_id_for_label is not None:
-        prov = await session.get(Provider, provider_id_for_label)
-        if prov is not None and prov.user_id == user.id:
-            provider_name = prov.name
+    provider_name = await resolve_provider_name(session, owner=owner, user_id=user.id)
 
     async def _byte_stream() -> AsyncIterator[bytes]:
         try:
+            await enforce_user_llm_quota(user_id=str(user.id), provider=provider_name or "default")
             async for raw_event in service.generate(
                 str(body.session_id),
                 body.content,
@@ -116,11 +108,21 @@ async def chat_stream(
                     event = coerce_event(raw_event)
                 except Exception:
                     logger.warning("dropping malformed event: %r", raw_event)
-                    event = ErrorEvent(code="PROTOCOL", message="malformed event")
+                    event = ErrorEvent(
+                        code=TransportErrorCode.PROTOCOL.value, message="malformed event"
+                    )
                 yield event_to_sse(event)
+        except LLMRateLimitError as exc:
+            yield event_to_sse(
+                ErrorEvent(
+                    code=type(exc).code,
+                    message=str(exc),
+                    retry_after=exc.retry_after,
+                )
+            )
         except Exception as exc:
             logger.exception("chat_stream blew up mid-flight")
-            yield event_to_sse(ErrorEvent(code="INTERNAL", message=str(exc)))
+            yield event_to_sse(ErrorEvent(code=TransportErrorCode.INTERNAL.value, message=str(exc)))
         finally:
             await service.aclose()
 
@@ -181,9 +183,7 @@ async def chat_stream_regenerate(
     Both reduce to "make the conversation end on a fresh assistant
     reply"; we don't need separate routes.
     """
-    owner = await session.get(ChatSession, body.session_id)
-    if owner is None or owner.user_id != user.id:
-        raise HTTPException(status_code=404, detail="session not found")
+    owner = await require_session_owner(session, body.session_id, user.id)
 
     # Walk back from the end of the transcript: drop the trailing
     # assistant turn (and any tool turns it produced) so the next call
@@ -209,21 +209,11 @@ async def chat_stream_regenerate(
 
     # ── below mirrors ``chat_stream`` — provider label + SSE stream.
     session_model = owner.model
-    provider_name: str | None = None
-    provider_id_for_label = owner.provider_id
-    if provider_id_for_label is None:
-        from service.db.models import UserPreference
-
-        pref = await session.get(UserPreference, user.id)
-        if pref is not None:
-            provider_id_for_label = pref.default_provider_id
-    if provider_id_for_label is not None:
-        prov = await session.get(Provider, provider_id_for_label)
-        if prov is not None and prov.user_id == user.id:
-            provider_name = prov.name
+    provider_name = await resolve_provider_name(session, owner=owner, user_id=user.id)
 
     async def _byte_stream() -> AsyncIterator[bytes]:
         try:
+            await enforce_user_llm_quota(user_id=str(user.id), provider=provider_name or "default")
             async for raw_event in service.generate(
                 str(body.session_id),
                 user_text,
@@ -240,11 +230,21 @@ async def chat_stream_regenerate(
                     event = coerce_event(raw_event)
                 except Exception:
                     logger.warning("dropping malformed event: %r", raw_event)
-                    event = ErrorEvent(code="PROTOCOL", message="malformed event")
+                    event = ErrorEvent(
+                        code=TransportErrorCode.PROTOCOL.value, message="malformed event"
+                    )
                 yield event_to_sse(event)
+        except LLMRateLimitError as exc:
+            yield event_to_sse(
+                ErrorEvent(
+                    code=type(exc).code,
+                    message=str(exc),
+                    retry_after=exc.retry_after,
+                )
+            )
         except Exception as exc:
             logger.exception("chat_stream_regenerate blew up mid-flight")
-            yield event_to_sse(ErrorEvent(code="INTERNAL", message=str(exc)))
+            yield event_to_sse(ErrorEvent(code=TransportErrorCode.INTERNAL.value, message=str(exc)))
         finally:
             await service.aclose()
 
