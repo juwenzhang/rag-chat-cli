@@ -14,12 +14,12 @@ from typing import Any
 
 import httpx
 
+from service.llm._base_http import BaseHTTPLLMClient
 from service.llm._http_errors import classify_http_error
 from service.llm.client import (
     ChatChunk,
     ChatMessage,
     LLMError,
-    LLMUpstreamUnavailableError,
     ThinkingMode,
     ToolCall,
     ToolSpec,
@@ -102,12 +102,14 @@ def _parse_tool_calls(msg: dict[str, Any]) -> tuple[ToolCall, ...]:
 __all__ = ["OllamaClient"]
 
 
-class OllamaClient:
+class OllamaClient(BaseHTTPLLMClient):
     """HTTP client for an Ollama server.
 
     Construction is cheap; the underlying ``httpx.AsyncClient`` is created
     lazily on first call. Remember ``await client.aclose()`` at shutdown.
     """
+
+    _provider = "ollama"
 
     def __init__(
         self,
@@ -125,7 +127,7 @@ class OllamaClient:
         self._timeout = timeout
         self._api_key = api_key
         self._think = think
-        self._client: httpx.AsyncClient | None = None
+        self._client = None
 
     @classmethod
     def from_settings(cls, s: Any | None = None) -> OllamaClient:
@@ -142,41 +144,8 @@ class OllamaClient:
             think=s.ollama.think,
         )
 
-    @property
-    def base_url(self) -> str:
-        return self._base_url
-
-    @property
-    def chat_model(self) -> str:
-        return self._chat_model
-
-    @property
-    def embed_model(self) -> str:
-        return self._embed_model
-
-    @property
-    def api_key(self) -> str | None:
-        return self._api_key
-
     def __repr__(self) -> str:  # pragma: no cover
         return f"OllamaClient(base_url={self._base_url!r}, chat_model={self._chat_model!r})"
-
-    def _ensure_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            headers: dict[str, str] = {}
-            if self._api_key:
-                headers["Authorization"] = f"Bearer {self._api_key}"
-            self._client = httpx.AsyncClient(
-                base_url=self._base_url,
-                timeout=self._timeout,
-                headers=headers,
-            )
-        return self._client
-
-    async def aclose(self) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
 
     async def set_api_key(self, api_key: str | None) -> None:
         """Update the Bearer token; recycles the underlying httpx client.
@@ -267,7 +236,7 @@ class OllamaClient:
                     if done:
                         return
         except httpx.HTTPError as exc:
-            raise LLMUpstreamUnavailableError(f"ollama transport error: {exc}") from exc
+            raise self._transport_error(exc) from exc
 
     async def embed(
         self,
@@ -323,7 +292,7 @@ class OllamaClient:
                     raise LLMError(f"ollama /api/embeddings returned no embedding: {data!r}")
                 vectors.append([float(x) for x in embedding])
         except httpx.HTTPError as exc:
-            raise LLMUpstreamUnavailableError(f"ollama transport error: {exc}") from exc
+            raise self._transport_error(exc) from exc
         return vectors
 
     async def ping(self) -> bool:
@@ -404,4 +373,4 @@ class OllamaClient:
                     if data.get("error") or data.get("status") == "success":
                         return
         except httpx.HTTPError as exc:
-            raise LLMUpstreamUnavailableError(f"ollama transport error: {exc}") from exc
+            raise self._transport_error(exc) from exc

@@ -120,6 +120,25 @@ if round_result.error_event is not None:
 
 **`post_message` 内联 `_generate_reply`**：原 helper 只一个调用方，把 generate_full + 错误检查 + usage 解码合到主函数，去掉中间 dict 转换。
 
+## 3.4 LLM 客户端共享基类（B4 第四刀）
+
+`OllamaClient` 和 `OpenAIClient` 80% 同构。提取 `service/llm/_base_http.py::BaseHTTPLLMClient`，承载**真重复**的部分：
+
+- `_ensure_client` / `aclose` 生命周期
+- `base_url` / `chat_model` / `embed_model` / `api_key` 4 个 read-only properties
+- `_default_headers` 钩子（基类管 `Authorization: Bearer`，子类 override 加更多）
+- `_transport_error` 工厂函数（包装 `httpx.HTTPError` 为 provider-tagged `LLMUpstreamUnavailableError`）
+
+**保留各自**：`chat_stream` / `embed` 的协议层（NDJSON vs SSE、whole vs incremental tool_calls、`/api/embed` vs `/v1/embeddings`），这些不是真重复，硬合并反而损害可读性。
+
+OpenAI 的 `OpenAI-Organization` header 通过 override `_default_headers` 自然叠加；transport-error 在 4 处调用点统一改为 `raise self._transport_error(exc) from exc`。
+
+行数变化：
+- `ollama.py`: 407 → 376（−31）
+- `openai.py`: 388 → 362（−26）
+- 新增 `_base_http.py`: 116 行
+- 净减重复代码：−89 行（×2 的复制变 +1 的基类）
+
 ## 4. 待重构方向（折中扁平 DDD）
 
 未来分批迁移，**不一刀切**。每批控制在 1 PR ≤ 800 行 diff。
