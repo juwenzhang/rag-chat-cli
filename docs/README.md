@@ -5,6 +5,7 @@
 ## backend/ — Python 后端 / FastAPI / 协议
 
 - [DEVELOPMENT.md](backend/DEVELOPMENT.md) — 本地工具链（uv / alembic / pre-commit）。
+- [SERVICE_LAYOUT.md](backend/SERVICE_LAYOUT.md) — `service/` 模块清单、依赖图、重构分批。
 - [STREAM_PROTOCOL.md](backend/STREAM_PROTOCOL.md) — SSE / WS 事件线协议。
 - [ERROR_CODES.md](backend/ERROR_CODES.md) — 流式 `error` 事件的 `code` 字典 + UI 建议。
 - [AUTH_DESIGN.md](backend/AUTH_DESIGN.md) — JWT access / refresh、密码策略。
