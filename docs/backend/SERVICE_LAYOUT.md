@@ -66,6 +66,19 @@ api/, alembic/, scripts/
 
 > 知识库与会话现在是**纯 CS 架构**：所有客户端必登录，所有数据落 Postgres。
 
+## 3.1 chat/ 内部拆分（B4 第一刀）
+
+`service/chat/service.py` 从 1261 行瘦到 972 行（−23%），16 个 free function + 1 个独立类按职责拆到内部 helper 模块（`_xxx.py` 命名表示包内私有）：
+
+| 文件 | 职责 | 行数 |
+| --- | --- | --- |
+| `_think_filter.py` | `<think>` 标签流式拆分器 | ~73 |
+| `_events.py` | `aborted_event` / `llm_error_event` 构造器 | ~42 |
+| `_sources.py` | sources_from_hits / sources_from_tool_result / empty_answer_fallback / maybe_uuid | ~97 |
+| `_tool_helpers.py` | tool_call_key / tool_turn_limit / 历史压缩 / 自动联网决策 + 关键词常量 | ~219 |
+
+`service.py` 保留 `ChatService` 类 + `generate` / `generate_full` 主流。后续可以继续拆 `generate` 内部的 tool-loop 分支。
+
 ## 4. 待重构方向（折中扁平 DDD）
 
 未来分批迁移，**不一刀切**。每批控制在 1 PR ≤ 800 行 diff。

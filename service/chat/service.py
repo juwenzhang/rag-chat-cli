@@ -29,13 +29,45 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any, ClassVar, Literal
+from typing import Any, Literal
 
+from service.chat._events import aborted_event as _aborted_event
+from service.chat._events import llm_error_event as _llm_error_event
+from service.chat._sources import (
+    WEB_EVIDENCE_INSTRUCTION as _WEB_EVIDENCE_INSTRUCTION,
+)
+from service.chat._sources import (
+    empty_answer_fallback as _empty_answer_fallback,
+)
+from service.chat._sources import (
+    maybe_uuid as _maybe_uuid,
+)
+from service.chat._sources import (
+    sources_from_hits as _sources_from_hits,
+)
+from service.chat._sources import (
+    sources_from_tool_result as _sources_from_tool_result,
+)
+from service.chat._think_filter import ThinkTagStreamFilter as _ThinkTagStreamFilter
+from service.chat._tool_helpers import (
+    build_web_search_query as _build_web_search_query,
+)
+from service.chat._tool_helpers import (
+    compact_history_tool_messages as _compact_history_tool_messages,
+)
+from service.chat._tool_helpers import (
+    should_auto_web_search as _should_auto_web_search,
+)
+from service.chat._tool_helpers import (
+    tool_call_key as _tool_call_key,
+)
+from service.chat._tool_helpers import (
+    tool_turn_limit as _tool_turn_limit,
+)
 from service.chat.history import HistorySummarizer
 from service.chat.limits import DEFAULT_LIMITS, ResourceLimits
 from service.chat.prompts import DEFAULT_TEMPLATES, PromptBuilder
@@ -938,324 +970,3 @@ class ChatService:
         }
 
 
-class _ThinkTagStreamFilter:
-    """Split streamed text into answer tokens and ``<think>`` thought text."""
-
-    _OPEN: ClassVar[str] = "<think>"
-    _CLOSE: ClassVar[str] = "</think>"
-
-    def __init__(self) -> None:
-        self._buffer: str = ""
-        self._in_think: bool = False
-
-    def feed(self, text: str) -> list[tuple[str, str]]:
-        self._buffer += text
-        return self._drain(final=False)
-
-    def flush(self) -> list[tuple[str, str]]:
-        return self._drain(final=True)
-
-    def _drain(self, *, final: bool) -> list[tuple[str, str]]:
-        out: list[tuple[str, str]] = []
-        while self._buffer:
-            if self._in_think:
-                idx = self._find(self._CLOSE)
-                if idx >= 0:
-                    self._emit(out, "thought", self._buffer[:idx])
-                    self._buffer = self._buffer[idx + len(self._CLOSE) :]
-                    self._in_think = False
-                    continue
-                if final:
-                    self._emit(out, "thought", self._buffer)
-                    self._buffer = ""
-                break
-
-            idx = self._find(self._OPEN)
-            if idx >= 0:
-                self._emit(out, "token", self._buffer[:idx])
-                self._buffer = self._buffer[idx + len(self._OPEN) :]
-                self._in_think = True
-                continue
-            keep = 0 if final else len(self._OPEN) - 1
-            safe_len = max(0, len(self._buffer) - keep)
-            if safe_len:
-                self._emit(out, "token", self._buffer[:safe_len])
-                self._buffer = self._buffer[safe_len:]
-            break
-        if final:
-            self._buffer = ""
-        return out
-
-    def _find(self, tag: str) -> int:
-        return self._buffer.lower().find(tag)
-
-    @staticmethod
-    def _emit(out: list[tuple[str, str]], kind: str, text: str) -> None:
-        if text:
-            out.append((kind, text))
-
-
-def _aborted_event() -> Event:
-    return {
-        "type": EventType.ERROR.value,
-        "code": FlowErrorCode.ABORTED.value,
-        "message": "client aborted the stream",
-    }
-
-
-def _llm_error_event(exc: LLMError) -> Event:
-    """Surface an :class:`LLMError` as a structured ``error`` event.
-
-    Carries ``code`` (subclass-specific, e.g. ``llm_rate_limited``) plus
-    optional upstream context (`upstream_status`, `upstream_url`,
-    `retry_after`) so the UI can render quota / paywall / auth prompts
-    without text-matching the message. See ``docs/backend/ERROR_CODES.md``.
-    """
-    event: Event = {"type": EventType.ERROR.value, "code": exc.code, "message": str(exc)}
-    if exc.upstream_status is not None:
-        event["upstream_status"] = exc.upstream_status
-    if exc.upstream_url is not None:
-        event["upstream_url"] = exc.upstream_url
-    if exc.retry_after is not None:
-        event["retry_after"] = exc.retry_after
-    return event
-
-
-_WEB_EVIDENCE_INSTRUCTION = (
-    "Use the following web/tool evidence for factual claims when relevant. Evidence may be "
-    "compressed; do not assume omitted details. Preserve exact option names, commands, "
-    "versions, defaults, and caveats. If evidence is insufficient, state the gap explicitly."
-)
-
-
-def _empty_answer_fallback(sources: list[dict[str, Any]]) -> str:
-    if sources:
-        return (
-            "I gathered supporting sources but the model did not produce a final answer. "
-            "Please retry, or open the sources panel to inspect the collected evidence."
-        )
-    return "The model stopped before producing a final answer. Please retry."
-
-
-def _compact_history_tool_messages(messages: list[ChatMessage]) -> list[ChatMessage]:
-    compacted: list[ChatMessage] = []
-    for message in messages:
-        if message.role != "tool":
-            compacted.append(message)
-            continue
-        content = _compact_tool_result_for_history(message.content, message.tool_name)
-        compacted.append(
-            ChatMessage(
-                role="tool",
-                content=content,
-                tool_call_id=message.tool_call_id,
-                tool_name=message.tool_name,
-            )
-        )
-    return compacted
-
-
-def _compact_tool_result_for_history(content: str, tool_name: str | None) -> str:
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError:
-        return _compact_context_text(content, max_chars=1_500)
-    if not isinstance(data, dict):
-        return _compact_context_text(content, max_chars=1_500)
-
-    if tool_name == "web_search" or "results" in data:
-        compact: dict[str, Any] = {
-            "summary": "Previous web_search result compacted for context budget.",
-            "query": data.get("query"),
-            "provider": data.get("provider"),
-        }
-        if data.get("warning"):
-            compact["warning"] = data.get("warning")
-        raw_results = data.get("results")
-        results: list[dict[str, str]] = []
-        if isinstance(raw_results, list):
-            for item in raw_results[:5]:
-                if not isinstance(item, dict):
-                    continue
-                title = _compact_context_text(str(item.get("title") or ""), max_chars=160)
-                url = str(item.get("url") or "")
-                if title or url:
-                    results.append({"title": title, "url": url})
-        compact["results"] = results
-        return json.dumps(compact, ensure_ascii=False)
-
-    if tool_name == "web_fetch" or "text" in data:
-        compact = {
-            "summary": "Previous web_fetch result compacted for context budget.",
-            "title": data.get("title"),
-            "url": data.get("url"),
-            "provider": data.get("provider"),
-            "text": _compact_context_text(str(data.get("text") or ""), max_chars=1_200),
-        }
-        return json.dumps(compact, ensure_ascii=False)
-
-    return _compact_context_text(content, max_chars=1_500)
-
-
-def _build_web_search_query(text: str) -> str:
-    query = " ".join(text.split())
-    if len(query) <= 240:
-        return query
-    return query[:239].rstrip() + "…"
-
-
-def _compact_context_text(text: str, *, max_chars: int) -> str:
-    cleaned = " ".join(text.split())
-    if len(cleaned) <= max_chars:
-        return cleaned
-    return cleaned[: max(0, max_chars - 1)].rstrip() + "…"
-
-
-def _tool_call_key(call: ToolCall) -> str:
-    try:
-        args = json.dumps(call.arguments, sort_keys=True, ensure_ascii=False, default=str)
-    except TypeError:
-        args = repr(call.arguments)
-    return f"{call.name}:{args}"
-
-
-def _tool_turn_limit(name: str) -> int | None:
-    if name == "web_search":
-        return 1
-    if name == "web_fetch":
-        return 2
-    return None
-
-
-_WEB_SEARCH_OFF_MARKERS = (
-    "不要联网",
-    "不用联网",
-    "不要搜索",
-    "不用搜索",
-    "仅根据本地",
-    "只根据本地",
-    "no web",
-    "don't search",
-    "do not search",
-)
-
-_WEB_SEARCH_STRONG_MARKERS = (
-    "最新",
-    "当前",
-    "现在",
-    "今天",
-    "实时",
-    "近期",
-    "官方",
-    "官网",
-    "文档",
-    "资料来源",
-    "引用",
-    "来源",
-    "查一下",
-    "搜索",
-    "联网",
-    "202",
-    "latest",
-    "current",
-    "today",
-    "official",
-    "docs",
-    "documentation",
-    "source",
-    "citation",
-)
-
-_WEB_SEARCH_RESEARCH_MARKERS = (
-    "深度",
-    "总结",
-    "综述",
-    "调研",
-    "对比",
-    "比较",
-    "最佳实践",
-    "架构",
-    "原理",
-    "核心概念",
-    "deep dive",
-    "research",
-    "survey",
-    "compare",
-    "best practice",
-    "architecture",
-    "core concept",
-)
-
-
-def _should_auto_web_search(
-    text: str,
-    *,
-    mode: bool | Literal["auto", "always", "off"],
-    has_local_hits: bool,
-) -> bool:
-    if mode is True or mode == "always":
-        return True
-    if mode is False or mode == "off":
-        return False
-
-    normalized = " ".join(text.lower().split())
-    if not normalized:
-        return False
-    if any(marker in normalized for marker in _WEB_SEARCH_OFF_MARKERS):
-        return False
-    if any(marker in normalized for marker in _WEB_SEARCH_STRONG_MARKERS):
-        return True
-    if any(marker in normalized for marker in _WEB_SEARCH_RESEARCH_MARKERS):
-        return not has_local_hits or len(normalized) >= 24
-    return False
-
-
-def _sources_from_hits(hits: list[KnowledgeHit]) -> list[dict[str, Any]]:
-    sources: list[dict[str, Any]] = []
-    for rank, hit in enumerate(hits, start=1):
-        source: dict[str, Any] = {
-            "source_type": "document",
-            "rank": rank,
-            "title": hit.title,
-            "quote": hit.content,
-            "score": hit.score,
-            "source": hit.source,
-        }
-        if hit.document_id is not None:
-            source["document_id"] = hit.document_id
-        if hit.chunk_id is not None:
-            source["chunk_id"] = hit.chunk_id
-        sources.append(source)
-    return sources
-
-
-def _sources_from_tool_result(result: ToolResult, *, start_rank: int) -> list[dict[str, Any]]:
-    metadata = result.metadata or {}
-    raw_sources = metadata.get("sources")
-    if not isinstance(raw_sources, list):
-        return []
-    sources: list[dict[str, Any]] = []
-    rank = start_rank
-    for raw in raw_sources:
-        if not isinstance(raw, dict):
-            continue
-        source = dict(raw)
-        source.setdefault("source_type", "tool")
-        source["rank"] = rank
-        rank += 1
-        sources.append(source)
-    return sources
-
-
-def _maybe_uuid(s: str) -> uuid.UUID | None:
-    """Try to parse ``s`` as a UUID; return ``None`` on failure.
-
-    Used to convert the opaque ``session_id`` passed to :meth:`generate`
-    into a foreign key for ``user_memories.source_session_id``. File-backed
-    sessions use short hex tokens that won't parse as UUIDs and degrade to
-    ``None`` here, which is the intended behaviour (no FK to attach).
-    """
-    try:
-        return uuid.UUID(s)
-    except (ValueError, TypeError):
-        return None
