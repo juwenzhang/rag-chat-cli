@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from service.storage.base import StoredObject
+from service.platform.storage.base import StoredObject
 
 __all__ = ["S3ObjectStorage"]
 

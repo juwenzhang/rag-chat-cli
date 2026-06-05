@@ -11,7 +11,7 @@ from service.llm.client import ChatMessage, LLMError
 if TYPE_CHECKING:
     from service.db.models import Asset
     from service.llm.client import LLMClient
-    from service.storage.base import ObjectStorage
+    from service.platform.storage.base import ObjectStorage
     from settings import Settings
 
 __all__ = ["describe_image_asset"]

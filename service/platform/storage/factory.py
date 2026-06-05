@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from service.storage.base import ObjectStorage
-from service.storage.local import LocalObjectStorage
-from service.storage.s3 import S3ObjectStorage
+from service.platform.storage.base import ObjectStorage
+from service.platform.storage.local import LocalObjectStorage
+from service.platform.storage.s3 import S3ObjectStorage
 
 if TYPE_CHECKING:
     from settings import Settings

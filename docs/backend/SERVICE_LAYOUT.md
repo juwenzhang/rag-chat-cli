@@ -18,9 +18,8 @@
 | `service/mcp/` | ~480 | MCP（Model Context Protocol）stdio 客户端 + tool 适配 | tools 注册 |
 | `service/memory/` | ~600 | 会话记忆（`DbChatMemory`）+ 用户长期记忆（`UserMemoryStore`） | chat |
 | `service/orgs/` | ~50 | 组织成员策略（角色/权限） | `api/routers/orgs.py`、`api/routers/wiki.py` |
-| `service/platform/` | ~250 | 基础设施：Redis 单例 / cache / rate limiter | LLM 路由 / chat |
+| `service/platform/` | ~1.5k | 基础设施：Redis 单例 / cache / rate limiter + 对象存储（local / S3 / image / vision） | LLM 路由 / chat / assets |
 | `service/providers/` | ~1k | Provider 注册表 + 加密存储 + runtime 解析 + model_kinds | chat factory / providers router |
-| `service/storage/` | ~1.2k | 对象存储抽象（local / S3）+ 图片 / vision 元数据 | assets router |
 | `service/tools/` | ~500 | 工具注册表 + 内建工具（codebase / web） | chat factory |
 | `service/wiki/` | ~60 | wiki 角色策略 | `api/routers/wiki.py` |
 | `service/workers/` | ~360 | Redis 队列 + worker 进程（P5 已写但未投产） | （暂无） |
@@ -159,6 +158,16 @@ import 改动：
 
 零行为变化，纯路径重整。`service/common/` 整个删除。
 
+## 3.6 对象存储搬到 `platform/`（B3）
+
+`service/storage/` → `service/platform/storage/`，与 `service/platform/redis.py` 并列归位到「基础设施」层。这个搬迁的意义和 B1 一样是**层归属正名**：对象存储和 Redis 一样不属于任何业务域，只是被业务调用的下游能力。
+
+import 改动：
+- `service/platform/storage/` 包内 4 处 self-reference（`base` / `local` / `s3` / `vision` / `factory` / `__init__`）
+- 1 个外部消费者 `api/routers/assets.py`
+
+零行为变化。`service/storage/` 整个目录消失。
+
 ## 4. 待重构方向（折中扁平 DDD）
 
 未来分批迁移，**不一刀切**。每批控制在 1 PR ≤ 800 行 diff。
@@ -181,7 +190,7 @@ service/
 | --- | --- | --- |
 | **B1** ✅ | `errors.py` + `common/observability.py` + `streaming/` → `core/` | 已落地，详见 §3.5 |
 | **B2** ✅ | `platform/redis.py`（单例 + cache + 限流），LLM 路由限流装饰器 | 已落地，详见 [`REDIS_INTEGRATION.md`](REDIS_INTEGRATION.md) |
-| **B3** | `storage/` → `platform/storage/` | 低 |
+| **B3** ✅ | `storage/` → `platform/storage/` | 已落地，详见 §3.6 |
 | **B4** | `chat/`、`knowledge/`、`memory/`、`auth/`、`orgs/`、`wiki/` → `domain/<name>/` | 中，import 量大但机械 |
 | **B5** | `tools/`、`mcp/` → `domain/tools/`，重新整理工具注册表 | 中 |
 | **B6** | `evaluation/` 收口到 `domain/chat/evaluation.py` | 低 |
