@@ -1,0 +1,62 @@
+name: keep-alive HF spaces
+
+# Hugging Face free Spaces sleep after a period of inactivity. We hit
+# every Space's lightest endpoint on a cron schedule so the user-facing
+# cold start never happens during normal hours. See docs/ops/KEEPALIVE.md
+# for the full design (this is the "A" leg of the A+D double-cover).
+on:
+  schedule:
+    - cron: "*/5 * * * *"      # every 5 minutes (UTC)
+  workflow_dispatch:
+
+# Cron + manual triggers should never queue up; the latest run is enough.
+concurrency:
+  group: keepalive-hf
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: ping HF Space endpoints
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping every target
+        env:
+          # Newline-separated. Override via repo Variables (Settings →
+          # Secrets and variables → Actions → Variables) without code
+          # change. Each line: <METHOD> <URL>; METHOD defaults to GET.
+          # Keep endpoints lightweight (health probes, /api/tags, etc).
+          KEEPALIVE_TARGETS: |
+            GET https://luhanxin-rag-chat-backend.hf.space/health
+            GET https://luhanxin-hf-ollama-service.hf.space/api/tags
+            GET https://luhanxin-hf-luhanxin-minio.hf.space/minio/health/live
+            GET https://luhanxin-hf-keep-alive.hf.space/
+        run: |
+          set -u
+          rc=0
+          while IFS= read -r line; do
+            line="${line#"${line%%[![:space:]]*}"}"   # ltrim
+            line="${line%"${line##*[![:space:]]}"}"   # rtrim
+            [ -z "$line" ] && continue
+            method="${line%% *}"
+            url="${line#* }"
+            # Tolerate "GET <url>" or just "<url>".
+            if [ "$method" = "$url" ]; then method=GET; fi
+            printf 'ping %-6s %s ... ' "$method" "$url"
+            # -m 30 = total timeout; -o /dev/null = drop body; --retry
+            # 2 = network hiccups don't fail the workflow; -w prints
+            # final status code on its own line.
+            if status=$(curl -fsS -X "$method" -m 30 --retry 2 --retry-delay 5 \
+                              -o /dev/null -w "%{http_code}" "$url"); then
+              echo "OK ($status)"
+            else
+              echo "FAIL"
+              rc=1
+            fi
+          done <<< "${KEEPALIVE_TARGETS}"
+          # Exit non-zero if any target failed; the workflow's Actions
+          # tab then surfaces a red run for the failing target.
+          exit "$rc"

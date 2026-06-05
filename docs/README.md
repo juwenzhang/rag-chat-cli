@@ -40,6 +40,7 @@
 
 - [DEPLOY_BACKEND_DOCKER.md](ops/DEPLOY_BACKEND_DOCKER.md)
 - [DEPLOY_FREE_STACK.md](ops/DEPLOY_FREE_STACK.md)
+- [KEEPALIVE.md](ops/KEEPALIVE.md) — HF Space 防睡眠双保险（GH Actions cron + `hf-keep-alive` Space）
 
 ## 资产
 
