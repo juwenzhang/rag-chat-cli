@@ -35,6 +35,7 @@
 - [ ] `class FooError` 子类必须有 `code: ClassVar[str]`，匹配前端 `ErrorCode`
 - [ ] `TypedDict` 字段用 `total=False`，可选字段写明，不要动态 setattr
 - [ ] 函数签名能写 `-> None` / 具体类型就别 `-> Any`
+- [ ] 类型收口用 `cast(T, value)`（PEP 484，两套 typechecker 都认），**不要写 `# type: ignore[xxx]`**（mypy 方言，basedpyright 看不懂）。`cast` 必须在转换边界（DB 列 → DTO、外部 dict → TypedDict），不要在中间随手用
 
 ### B.2 Service 层
 

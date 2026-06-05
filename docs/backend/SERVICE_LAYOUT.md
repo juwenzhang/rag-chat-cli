@@ -158,6 +158,20 @@ import 改动：
 
 零行为变化，纯路径重整。`service/common/` 整个删除。
 
+## 3.5.1 IDE basedpyright 噪声治理（B1 收尾）
+
+`pyproject.toml` 加 `[tool.basedpyright]` 节，把 IDE 类型检查规则集对齐到 mypy 等价度。CI/Makefile 仍以 mypy 为 SSOT，basedpyright 只服务 IDE 实时反馈。关掉的几条都是 FastAPI / SQLAlchemy 项目里**与框架惯用语冲突**的规则：
+
+| 规则 | 关掉原因 |
+| --- | --- |
+| `reportCallInDefaultInitializer` | `def f(s = Depends(...))` 是 FastAPI 框架要求，不是反模式 |
+| `reportUnusedCallResult` | `await session.execute(...)` 写入路径丢弃返回值是常态，逐个 `_ =` 没有信息量 |
+| `reportAny` / `reportExplicitAny` | SQLAlchemy 2.0 typed `Mapped[...]` 还没覆盖到所有 helper（如 `session.scalar` 返回 `Any`），是 SQLAlchemy 自身的类型缺陷 |
+
+效果：IDE 在重灾区文件（`api/routers/wiki.py` 51 个 warning、`orgs.py` 35 个 warning、`chat.py` 多处）的 noise 全部清空，**真正的 type error 才会浮出来**。
+
+> 同时把仓库里所有 `# type: ignore[xxx]` 改成了 `cast(T, value)` —— 前者是 mypy 方言，basedpyright 看不懂；后者是 PEP 484 标准，两套 typechecker 通吃。规则写入 [`CODE_REVIEW_CHECKLIST.md`](../engineering/CODE_REVIEW_CHECKLIST.md) §B.1。
+
 ## 3.6 对象存储搬到 `platform/`（B3）
 
 `service/storage/` → `service/platform/storage/`，与 `service/platform/redis.py` 并列归位到「基础设施」层。这个搬迁的意义和 B1 一样是**层归属正名**：对象存储和 Redis 一样不属于任何业务域，只是被业务调用的下游能力。
