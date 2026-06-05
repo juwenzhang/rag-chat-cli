@@ -4,12 +4,27 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from service.llm.client import ChatMessage, LLMClient
 
-__all__ = ["AnswerEvaluation", "evaluate_answer"]
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from service.db.models import Message, MessageEvaluation
+
+__all__ = [
+    "AnswerEvaluation",
+    "EvaluationDisabledError",
+    "evaluate_answer",
+    "judge_message_for_user",
+]
+
+
+class EvaluationDisabledError(RuntimeError):
+    """Raised when the judge feature is gated off via ``settings.evaluation.enabled``."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,3 +139,70 @@ def _score(value: object) -> int:
 def _risk(value: object) -> str:
     text = str(value or "low").lower().strip()
     return text if text in {"low", "medium", "high"} else "low"
+
+
+# ---------------------------------------------------------------------------
+# High-level orchestration — used by the HTTP layer
+# ---------------------------------------------------------------------------
+
+
+async def judge_message_for_user(
+    db_session: AsyncSession,
+    *,
+    message: Message,
+    user_id: uuid.UUID,
+    question: str,
+) -> MessageEvaluation:
+    """Run the judge on ``message`` and persist a :class:`MessageEvaluation` row.
+
+    The caller owns the four pre-checks the HTTP layer cares about
+    (feature toggle, ownership, role, idempotency) — this function
+    assumes they have all passed and ``message.role == "assistant"``.
+
+    Settings are read here so HTTP routes don't have to reach across the
+    layer boundary. Raises :class:`EvaluationDisabledError` if the
+    feature is off; bubbles upstream LLM exceptions otherwise.
+    """
+    from service.db.models import MessageEvaluation
+    from service.llm.ollama import OllamaClient
+    from settings import settings
+
+    if not settings.evaluation.enabled:
+        raise EvaluationDisabledError("evaluation is disabled")
+
+    llm = OllamaClient(
+        base_url=settings.ollama.base_url,
+        chat_model=settings.evaluation.model,
+        embed_model=settings.ollama.embed_model,
+        timeout=float(settings.evaluation.timeout),
+        api_key=settings.ollama.api_key,
+    )
+    try:
+        evaluation = await evaluate_answer(
+            llm=llm,
+            model=settings.evaluation.model,
+            question=question,
+            answer=message.content,
+            sources=message.sources,
+        )
+    finally:
+        await llm.aclose()
+
+    row = MessageEvaluation(
+        message_id=message.id,
+        session_id=message.session_id,
+        user_id=user_id,
+        model=settings.evaluation.model,
+        overall=evaluation.overall,
+        helpfulness=evaluation.helpfulness,
+        groundedness=evaluation.groundedness,
+        citation_quality=evaluation.citation_quality,
+        completeness=evaluation.completeness,
+        risk=evaluation.risk,
+        comment=evaluation.comment,
+        raw=evaluation.raw,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    await db_session.refresh(row)
+    return row

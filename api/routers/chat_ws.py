@@ -38,9 +38,10 @@ from starlette.websockets import WebSocketState
 
 from api.chat_deps import get_chat_service_for_user
 from api.deps import authenticate_ws
+from api.routers._chat_helpers import resolve_provider_name
 from api.streaming.protocol import ErrorEvent, coerce_event
 from service.chat.service import ChatService
-from service.db.models import ChatSession, Provider, UserPreference
+from service.db.models import ChatSession
 from service.db.session import current_session_factory
 from service.llm.client import LLMRateLimitError
 from service.llm.rate_limit import enforce_user_llm_quota
@@ -151,15 +152,9 @@ async def chat_ws(
                 await ws.close(code=WS_CLOSE_NOT_FOUND)
                 return
             session_model = owner.model
-            pid = owner.provider_id
-            if pid is None:
-                pref = await session.get(UserPreference, user.id)
-                if pref is not None:
-                    pid = pref.default_provider_id
-            if pid is not None:
-                prov = await session.get(Provider, pid)
-                if prov is not None and prov.user_id == user.id:
-                    provider_name = prov.name
+            provider_name = await resolve_provider_name(
+                session, owner=owner, user_id=user.id
+            )
 
         # 3) Kick off the reader (for abort / disconnect) and start streaming.
         reader_task = asyncio.create_task(_reader())

@@ -100,6 +100,26 @@ if round_result.error_event is not None:
 
 `generate` 主体从 484 → 428 行；真重复消除约 70 行 ×2，行数小幅上升是因为多了一个 helper 方法的样板。
 
+## 3.3 api/routers/chat* 路由减肥（B4 第三刀）
+
+`api/routers/chat.py` 596 → 516 行（−13%），并把 chat_stream / chat_ws 的重复模式收口到共享 helper：
+
+**新增** `api/routers/_chat_helpers.py`（HTTP 形态的工具，不属于 service/）：
+
+| 函数 | 职责 | 替换的重复点 |
+| --- | --- | --- |
+| `require_session_owner(session, sid, user_id)` | 加载 ChatSession + 校验所有权，404 不泄漏 | chat.py 4 处 + chat_stream.py 2 处 = 6 处 |
+| `resolve_provider_name(session, owner, user_id)` | session pin → user pref → Provider 名（带 user_id 校验） | chat_stream.py 2 处 + chat_ws.py 1 处 = 3 处 |
+| `own_message_row(session, user_id, mid)` | 加载 Message + 校验所有权 | chat.py 4 处（局部 helper 上提） |
+| `previous_user_content(session, msg)` | 同会话最近一条 user 消息内容 | chat.py 局部 helper 上提 |
+
+**`evaluate_message` 业务搬到 `service/evaluation/service.py::judge_message_for_user`**：
+- 路由层只剩 4 行核心调度（前置校验 + 调 service + 异常 mapping）
+- LLM 客户端构造 / `evaluate_answer` 调用 / `MessageEvaluation` 行写入这 ~50 行业务移到 service
+- 新增 `EvaluationDisabledError` 让路由层用 `try/except → 400` 的方式映射，去掉 service 层对 HTTP 的耦合
+
+**`post_message` 内联 `_generate_reply`**：原 helper 只一个调用方，把 generate_full + 错误检查 + usage 解码合到主函数，去掉中间 dict 转换。
+
 ## 4. 待重构方向（折中扁平 DDD）
 
 未来分批迁移，**不一刀切**。每批控制在 1 PR ≤ 800 行 diff。

@@ -32,11 +32,12 @@ from starlette.responses import StreamingResponse
 
 from api.chat_deps import get_chat_service_for_user
 from api.deps import get_current_user, get_db_session
+from api.routers._chat_helpers import require_session_owner, resolve_provider_name
 from api.schemas.chat import MessageIn
 from api.streaming.protocol import ErrorEvent, coerce_event
 from api.streaming.sse import event_to_sse, merge_with_keepalive
 from service.chat.service import ChatService
-from service.db.models import ChatSession, Message, Provider, User
+from service.db.models import Message, User
 from service.llm.client import LLMRateLimitError
 from service.llm.rate_limit import enforce_user_llm_quota
 from service.streaming import TransportErrorCode
@@ -77,9 +78,7 @@ async def chat_stream(
 ) -> StreamingResponse:
     # Own the session's user / existence check up-front so 404 / 403 come
     # back as proper JSON instead of a half-opened SSE stream.
-    owner = await session.get(ChatSession, body.session_id)
-    if owner is None or owner.user_id != user.id:
-        raise HTTPException(status_code=404, detail="session not found")
+    owner = await require_session_owner(session, body.session_id, user.id)
 
     # Per-session model pin (Sprint 2). NULL → ChatService uses its
     # construction-time default.
@@ -88,18 +87,7 @@ async def chat_stream(
     # Resolve provider name once, up-front, so we can stamp it onto the ``done``
     # event for the UI footer ("answered by qwen2.5:7b on local-ollama"). Falls
     # back to the user's default provider when the session has no pin.
-    provider_name: str | None = None
-    provider_id_for_label = owner.provider_id
-    if provider_id_for_label is None:
-        from service.db.models import UserPreference
-
-        pref = await session.get(UserPreference, user.id)
-        if pref is not None:
-            provider_id_for_label = pref.default_provider_id
-    if provider_id_for_label is not None:
-        prov = await session.get(Provider, provider_id_for_label)
-        if prov is not None and prov.user_id == user.id:
-            provider_name = prov.name
+    provider_name = await resolve_provider_name(session, owner=owner, user_id=user.id)
 
     async def _byte_stream() -> AsyncIterator[bytes]:
         try:
@@ -199,9 +187,7 @@ async def chat_stream_regenerate(
     Both reduce to "make the conversation end on a fresh assistant
     reply"; we don't need separate routes.
     """
-    owner = await session.get(ChatSession, body.session_id)
-    if owner is None or owner.user_id != user.id:
-        raise HTTPException(status_code=404, detail="session not found")
+    owner = await require_session_owner(session, body.session_id, user.id)
 
     # Walk back from the end of the transcript: drop the trailing
     # assistant turn (and any tool turns it produced) so the next call
@@ -227,18 +213,7 @@ async def chat_stream_regenerate(
 
     # ── below mirrors ``chat_stream`` — provider label + SSE stream.
     session_model = owner.model
-    provider_name: str | None = None
-    provider_id_for_label = owner.provider_id
-    if provider_id_for_label is None:
-        from service.db.models import UserPreference
-
-        pref = await session.get(UserPreference, user.id)
-        if pref is not None:
-            provider_id_for_label = pref.default_provider_id
-    if provider_id_for_label is not None:
-        prov = await session.get(Provider, provider_id_for_label)
-        if prov is not None and prov.user_id == user.id:
-            provider_name = prov.name
+    provider_name = await resolve_provider_name(session, owner=owner, user_id=user.id)
 
     async def _byte_stream() -> AsyncIterator[bytes]:
         try:
