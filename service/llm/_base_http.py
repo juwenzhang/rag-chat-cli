@@ -116,6 +116,4 @@ class BaseHTTPLLMClient:
             except httpx.HTTPError as exc:
                 raise self._transport_error(exc) from exc
         """
-        return LLMUpstreamUnavailableError(
-            f"{self._provider} transport error: {exc}"
-        )
+        return LLMUpstreamUnavailableError(f"{self._provider} transport error: {exc}")

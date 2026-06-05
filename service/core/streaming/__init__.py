@@ -7,6 +7,6 @@ API-layer routers re-use the same types via plain import.
 
 from __future__ import annotations
 
-from service.streaming.error_codes import EventType, FlowErrorCode, TransportErrorCode
+from service.core.streaming.error_codes import EventType, FlowErrorCode, TransportErrorCode
 
 __all__ = ["EventType", "FlowErrorCode", "TransportErrorCode"]

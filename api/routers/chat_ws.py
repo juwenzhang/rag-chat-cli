@@ -41,12 +41,12 @@ from api.deps import authenticate_ws
 from api.routers._chat_helpers import resolve_provider_name
 from api.streaming.protocol import ErrorEvent, coerce_event
 from service.chat.service import ChatService
+from service.core.streaming import EventType, TransportErrorCode
+from service.core.streaming.abort import AbortContext
 from service.db.models import ChatSession
 from service.db.session import current_session_factory
 from service.llm.client import LLMRateLimitError
 from service.llm.rate_limit import enforce_user_llm_quota
-from service.streaming import EventType, TransportErrorCode
-from service.streaming.abort import AbortContext
 
 __all__ = ["router"]
 
@@ -152,9 +152,7 @@ async def chat_ws(
                 await ws.close(code=WS_CLOSE_NOT_FOUND)
                 return
             session_model = owner.model
-            provider_name = await resolve_provider_name(
-                session, owner=owner, user_id=user.id
-            )
+            provider_name = await resolve_provider_name(session, owner=owner, user_id=user.id)
 
         # 3) Kick off the reader (for abort / disconnect) and start streaming.
         reader_task = asyncio.create_task(_reader())

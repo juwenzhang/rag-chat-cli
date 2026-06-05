@@ -9,7 +9,7 @@
 ## A. 红线（违反必返工）
 
 - [ ] **没有散落字符串字面量**当 type/code 用，全部走 enum
-  - 后端：`service/streaming/error_codes.py::EventType / FlowErrorCode / TransportErrorCode`
+  - 后端：`service/core/streaming/error_codes.py::EventType / FlowErrorCode / TransportErrorCode`
   - 前端 web：`websites/src/lib/api/shared/enums.ts`
   - 前端 TUI：`clients/tui/src/api/enums.ts`
 - [ ] **所有 LLM HTTP 调用**走 `service/llm/_http_errors.py::classify_http_error`，不要自己 `if status == 429`
@@ -38,7 +38,7 @@
 
 ### B.2 Service 层
 
-- [ ] 业务校验抛 `service.errors.NotFoundError / ForbiddenError`，让 `api/middleware/errors.py` 映射 HTTP
+- [ ] 业务校验抛 `service.core.errors.NotFoundError / ForbiddenError`，让 `api/middleware/errors.py` 映射 HTTP
 - [ ] 流式生成器用 `_llm_error_event(exc)` helper，不要每处手拼 dict
 - [ ] DB 操作走 short-lived `async with sf() as s`，**不要持有长会话**
 - [ ] 跨用户访问数据：在 service 层做 ownership check，不只靠路由
@@ -114,7 +114,7 @@
 - [ ] 每秒 > 10 次的循环调用 → 想 Redis 缓存（见 `docs/backend/SERVICE_LAYOUT.md` 的三件套计划）
 - [ ] LLM 调用 → 走限流装饰器（避免 429 烧 quota）
 - [ ] N+1 查询 → 用 `selectinload` / `joinedload`
-- [ ] 关键路径加 trace span（`service/common/observability.py`）
+- [ ] 关键路径加 trace span（`service/core/observability.py`）
 
 ---
 

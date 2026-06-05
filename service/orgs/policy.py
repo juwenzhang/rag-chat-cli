@@ -8,8 +8,8 @@ from typing import cast
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from service.core.errors import ForbiddenError, NotFoundError
 from service.db.models import OrgMember
-from service.errors import ForbiddenError, NotFoundError
 
 __all__ = ["get_membership", "require_role"]
 

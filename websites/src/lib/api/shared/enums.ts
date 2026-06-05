@@ -6,7 +6,7 @@
  * literals (``"token"``, ``"llm_rate_limited"``, …) directly.
  *
  * Backend counterparts:
- *   - ``service/streaming/error_codes.py`` (EventType / FlowErrorCode / TransportErrorCode)
+ *   - ``service/core/streaming/error_codes.py`` (EventType / FlowErrorCode / TransportErrorCode)
  *   - ``service/llm/client.py`` (LLMError subclass ``code`` ClassVars)
  *   - ``docs/backend/STREAM_PROTOCOL.md`` and ``docs/backend/ERROR_CODES.md``
  */
@@ -31,14 +31,14 @@ export const ErrorCode = {
   LlmModelNotFound: "llm_model_not_found",
   LlmUpstreamUnavailable: "llm_upstream_unavailable",
   LlmError: "llm_error",
-  // ChatService flow — service.streaming.FlowErrorCode.
+  // ChatService flow — service.core.streaming.FlowErrorCode.
   Aborted: "ABORTED",
   RetrievalFailed: "retrieval_failed",
   MemoryReadFailed: "memory_read_failed",
   MemoryWriteFailed: "memory_write_failed",
   MaxStepsReached: "max_steps_reached",
   Unexpected: "unexpected",
-  // Transport — service.streaming.TransportErrorCode.
+  // Transport — service.core.streaming.TransportErrorCode.
   Protocol: "PROTOCOL",
   Internal: "INTERNAL",
   // Client-only — produced when the SSE parser fails or fetch throws.

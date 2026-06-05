@@ -204,7 +204,7 @@ export interface BookmarkDetailOut {
   assistant_message: SharedMessage;
 }
 
-/** Streaming event vocabulary — mirrors service/streaming/events.py */
+/** Streaming event vocabulary — mirrors service/core/streaming/events.py */
 export type StreamEvent =
   | { type: typeof StreamEventType.Retrieval; data: { hits: KnowledgeHit[] } }
   | { type: typeof StreamEventType.Token; data: { delta: string } }

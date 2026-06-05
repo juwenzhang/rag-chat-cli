@@ -2,7 +2,7 @@
  * Shared enums mirroring the backend wire protocol.
  *
  * Single source of truth for the TUI client. Backend counterparts:
- *   - service/streaming/error_codes.py (EventType / FlowErrorCode / TransportErrorCode)
+ *   - service/core/streaming/error_codes.py (EventType / FlowErrorCode / TransportErrorCode)
  *   - service/llm/client.py (LLMError subclass `code` ClassVars)
  *   - docs/backend/STREAM_PROTOCOL.md and docs/backend/ERROR_CODES.md
  *

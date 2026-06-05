@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import func, select
 
+from service.core.errors import NotFoundError
 from service.db.models import Document
-from service.errors import NotFoundError
 from service.knowledge.ingest import DocumentIngestor
 from service.knowledge.pgvector import PgvectorKnowledgeBase
 

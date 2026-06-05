@@ -21,7 +21,7 @@ _limiter: RedisRateLimiter | None = None
 
 def _get_limiter() -> RedisRateLimiter:
     """Lazy build so we read settings *after* env loading is done."""
-    global _limiter  # noqa: PLW0603 - module-level singleton
+    global _limiter
     if _limiter is None:
         from settings import settings
 

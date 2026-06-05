@@ -25,7 +25,7 @@ class EventType(str, Enum):
 
     USER_MESSAGE = "user_message"
     RETRIEVAL = "retrieval"
-    TOKEN = "token"
+    TOKEN = "token"  # noqa: S105 — wire-protocol event name, not a credential
     THOUGHT = "thought"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"

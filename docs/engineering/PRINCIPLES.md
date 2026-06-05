@@ -80,7 +80,7 @@ async def set_title(self, session_id: str, title: str) -> None:
 
 | 事实 | SSOT 在哪 | 反例 |
 | --- | --- | --- |
-| 流式事件类型 | `service/streaming/error_codes.py::EventType` | 路由里散写 `"text_delta"` 字面量 |
+| 流式事件类型 | `service/core/streaming/error_codes.py::EventType` | 路由里散写 `"text_delta"` 字面量 |
 | 错误码 | `FlowErrorCode` / `TransportErrorCode` / `ErrorCode` (前端) | 前端 `if (msg.includes("rate")) ...` 字符嗅探 |
 | 消息角色 | `MessageRole` enum（前后端各一份，值对齐） | 散写 `"user"` / `"assistant"` |
 | LLM HTTP 错误分类 | `service/llm/_http_errors.py::classify_http_error` | 每个 client 自己解析 status |

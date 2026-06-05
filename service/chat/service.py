@@ -73,14 +73,14 @@ from service.chat.history import HistorySummarizer
 from service.chat.limits import DEFAULT_LIMITS, ResourceLimits
 from service.chat.prompts import DEFAULT_TEMPLATES, PromptBuilder
 from service.chat.tokens import TokenBudget, Tokenizer, trim_to_budget
-from service.common.observability import UsageAccumulator, get_tracer
+from service.core.observability import UsageAccumulator, get_tracer
+from service.core.streaming.abort import AbortContext
+from service.core.streaming.error_codes import EventType, FlowErrorCode
+from service.core.streaming.events import Event
 from service.knowledge.base import KnowledgeBase, KnowledgeHit
 from service.llm.client import ChatMessage, LLMClient, LLMError, ThinkingMode, ToolCall, ToolSpec
 from service.memory.chat_memory import ChatMemory
 from service.memory.user_memory import FactExtractor, UserMemoryEntry, UserMemoryStore
-from service.streaming.abort import AbortContext
-from service.streaming.error_codes import EventType, FlowErrorCode
-from service.streaming.events import Event
 from service.tools import ToolRegistry, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -1016,5 +1016,3 @@ class ChatService:
             "tool_results": tool_results or None,
             "error": error,
         }
-
-

@@ -2,15 +2,15 @@
 
 Lives next to :mod:`service.chat.service` so the chat orchestrator can
 emit canonical ``error`` frames without duplicating dict-shape literals.
-Both builders return :class:`service.streaming.events.Event` (TypedDict),
+Both builders return :class:`service.core.streaming.events.Event` (TypedDict),
 so callers get static field-name checking instead of free-form dicts.
 """
 
 from __future__ import annotations
 
+from service.core.streaming.error_codes import EventType, FlowErrorCode
+from service.core.streaming.events import Event
 from service.llm.client import LLMError
-from service.streaming.error_codes import EventType, FlowErrorCode
-from service.streaming.events import Event
 
 __all__ = ["aborted_event", "llm_error_event"]
 

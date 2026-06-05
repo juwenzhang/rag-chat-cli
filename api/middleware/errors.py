@@ -151,8 +151,11 @@ def install_exception_handlers(app: FastAPI) -> None:
         if exc.retry_after is not None:
             details["retry_after"] = exc.retry_after
         response = _json(
-            type(exc).code, str(exc) or type(exc).code, status,
-            request=request, details=details or None,
+            type(exc).code,
+            str(exc) or type(exc).code,
+            status,
+            request=request,
+            details=details or None,
         )
         if exc.retry_after is not None:
             response.headers["Retry-After"] = str(exc.retry_after)

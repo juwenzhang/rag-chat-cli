@@ -41,6 +41,7 @@ from api.schemas.common import Page
 from api.schemas.share import ForkFromShareIn
 from service.chat.service import ChatService
 from service.chat.titles import synthesize_preview_title
+from service.core.errors import ForbiddenError, NotFoundError
 from service.db.models import (
     ChatSession,
     Message,
@@ -50,7 +51,6 @@ from service.db.models import (
     Wiki,
     WikiPage,
 )
-from service.errors import ForbiddenError, NotFoundError
 from service.llm.client import ChatMessage
 from service.providers import ProviderNotFoundError, get_provider
 from service.wiki.policy import require_wiki_role

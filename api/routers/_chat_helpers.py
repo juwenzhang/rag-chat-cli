@@ -66,7 +66,7 @@ async def previous_user_content(session: AsyncSession, msg: Message) -> str | No
 
     Used by evaluation to recover the question that prompted ``msg``.
     """
-    return await session.scalar(
+    row: str | None = await session.scalar(
         select(Message.content)
         .where(
             Message.session_id == msg.session_id,
@@ -76,6 +76,7 @@ async def previous_user_content(session: AsyncSession, msg: Message) -> str | No
         .order_by(Message.created_at.desc())
         .limit(1)
     )
+    return row
 
 
 async def resolve_provider_name(

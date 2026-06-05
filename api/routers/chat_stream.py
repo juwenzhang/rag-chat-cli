@@ -37,10 +37,10 @@ from api.schemas.chat import MessageIn
 from api.streaming.protocol import ErrorEvent, coerce_event
 from api.streaming.sse import event_to_sse, merge_with_keepalive
 from service.chat.service import ChatService
+from service.core.streaming import TransportErrorCode
 from service.db.models import Message, User
 from service.llm.client import LLMRateLimitError
 from service.llm.rate_limit import enforce_user_llm_quota
-from service.streaming import TransportErrorCode
 
 __all__ = ["router"]
 
@@ -91,9 +91,7 @@ async def chat_stream(
 
     async def _byte_stream() -> AsyncIterator[bytes]:
         try:
-            await enforce_user_llm_quota(
-                user_id=str(user.id), provider=provider_name or "default"
-            )
+            await enforce_user_llm_quota(user_id=str(user.id), provider=provider_name or "default")
             async for raw_event in service.generate(
                 str(body.session_id),
                 body.content,
@@ -124,9 +122,7 @@ async def chat_stream(
             )
         except Exception as exc:
             logger.exception("chat_stream blew up mid-flight")
-            yield event_to_sse(
-                ErrorEvent(code=TransportErrorCode.INTERNAL.value, message=str(exc))
-            )
+            yield event_to_sse(ErrorEvent(code=TransportErrorCode.INTERNAL.value, message=str(exc)))
         finally:
             await service.aclose()
 
@@ -217,9 +213,7 @@ async def chat_stream_regenerate(
 
     async def _byte_stream() -> AsyncIterator[bytes]:
         try:
-            await enforce_user_llm_quota(
-                user_id=str(user.id), provider=provider_name or "default"
-            )
+            await enforce_user_llm_quota(user_id=str(user.id), provider=provider_name or "default")
             async for raw_event in service.generate(
                 str(body.session_id),
                 user_text,
@@ -250,9 +244,7 @@ async def chat_stream_regenerate(
             )
         except Exception as exc:
             logger.exception("chat_stream_regenerate blew up mid-flight")
-            yield event_to_sse(
-                ErrorEvent(code=TransportErrorCode.INTERNAL.value, message=str(exc))
-            )
+            yield event_to_sse(ErrorEvent(code=TransportErrorCode.INTERNAL.value, message=str(exc)))
         finally:
             await service.aclose()
 

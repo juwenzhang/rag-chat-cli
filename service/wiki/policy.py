@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import uuid
-from typing import Literal
+from typing import Literal, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from service.core.errors import ForbiddenError, NotFoundError
 from service.db.models import Org, Wiki, WikiMember
-from service.errors import ForbiddenError, NotFoundError
 from service.orgs.policy import get_membership as get_org_membership
 
 __all__ = ["EffectiveRole", "require_wiki_role", "resolve_wiki_role"]
@@ -38,11 +38,14 @@ async def resolve_wiki_role(
         )
         if wiki_member is None:
             return None
-        return wiki_member.role  # type: ignore[return-value]
+        # DB stores role as ``str``; the column is constrained to the
+        # EffectiveRole literals at the application layer, so the cast is
+        # safe and saves every consumer a defensive narrow.
+        return cast(EffectiveRole, wiki_member.role)
 
     if org_member is None:
         return None
-    return org_member.role  # type: ignore[return-value]
+    return cast(EffectiveRole, org_member.role)
 
 
 async def require_wiki_role(

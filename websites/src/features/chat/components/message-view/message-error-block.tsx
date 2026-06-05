@@ -49,7 +49,9 @@ export function MessageErrorBlock({ error }: { error: ErrorPayload }) {
   return (
     <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
-      <span className="whitespace-pre-wrap break-words">{error.message || error.code}</span>
+      <span className="whitespace-pre-wrap break-words">
+        {error.message || error.code}
+      </span>
     </div>
   );
 }
@@ -64,7 +66,10 @@ type Variant =
 function pickVariant(error: ErrorPayload): Variant {
   switch (error.code) {
     case ErrorCode.LlmSubscriptionRequired:
-      return { kind: "subscription", href: error.upstream_url ?? "https://ollama.com/upgrade" };
+      return {
+        kind: "subscription",
+        href: error.upstream_url ?? "https://ollama.com/upgrade",
+      };
     case ErrorCode.LlmRateLimited:
       return { kind: "rateLimited" };
     case ErrorCode.LlmUnauthorized:
