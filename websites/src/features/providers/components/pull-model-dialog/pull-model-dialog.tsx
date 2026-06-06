@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { isCloudModel } from "@/features/providers/utils/cloud";
 
 import {
   PullModelConfirmStep,
@@ -36,12 +37,6 @@ type Stage =
   | { kind: "pulling"; tag: string; isCloud: boolean; frame: ProgressFrame }
   | { kind: "done"; tag: string }
   | { kind: "error"; message: string; tag?: string };
-
-/** Cloud-flagged tags pull near-instantly because no GB-sized layers download. */
-function isCloudTag(tag: string): boolean {
-  const normalized = tag.trim().toLowerCase();
-  return normalized.endsWith(":cloud") || normalized.endsWith("-cloud");
-}
 
 export function PullModelDialog({
   providerName,
@@ -87,7 +82,7 @@ export function PullModelDialog({
 
   const startPull = useCallback(
     async (modelTag: string) => {
-      const cloud = isCloudTag(modelTag);
+      const cloud = isCloudModel(modelTag);
       setStage({ kind: "pulling", tag: modelTag, isCloud: cloud, frame: {} });
       const controller = new AbortController();
       abortRef.current = controller;
@@ -128,7 +123,7 @@ export function PullModelDialog({
     event.preventDefault();
     const nextTag = tag.trim();
     if (!nextTag) return;
-    if (isCloudTag(nextTag)) {
+    if (isCloudModel(nextTag)) {
       void startPull(nextTag);
     } else {
       setStage({ kind: "confirm-local", tag: nextTag });
@@ -159,7 +154,7 @@ export function PullModelDialog({
           <PullModelIdleForm
             tag={tag}
             description={description}
-            isCloud={isCloudTag}
+            isCloud={isCloudModel}
             onTagChange={setTag}
             onDescriptionChange={setDescription}
             onSubmit={onSubmit}

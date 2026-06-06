@@ -4,7 +4,9 @@ import { CloudDownload, Eye, Pencil, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { VirtualTable, type VirtualTableColumn } from "@/components/ui/virtual-table";
+import { isCloudModel } from "@/features/providers/utils/cloud";
 import type { ModelListItem } from "@/lib/api/shared/types";
+import { formatSize } from "@/lib/format";
 
 /** Virtualised model list for one provider card — name, size, note, actions. */
 export function ModelTable({
@@ -139,21 +141,4 @@ export function ModelTable({
       density="comfortable"
     />
   );
-}
-
-function isCloudModel(id: string): boolean {
-  const normalized = id.trim().toLowerCase();
-  return normalized.endsWith(":cloud") || normalized.endsWith("-cloud");
-}
-
-function formatSize(bytes: number): string {
-  if (bytes <= 0) return "";
-  const units = ["B", "K", "M", "G", "T"];
-  let i = 0;
-  let n = bytes;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n.toFixed(n < 10 ? 1 : 0)}${units[i]}`;
 }

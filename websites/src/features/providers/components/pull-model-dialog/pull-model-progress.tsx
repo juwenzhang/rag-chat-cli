@@ -2,6 +2,7 @@
 
 import { Loader2 } from "lucide-react";
 
+import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ProgressFrame } from "./pull-model-dialog-parts";
 
@@ -48,16 +49,4 @@ export function PullModelProgress({ frame, tag }: { frame: ProgressFrame; tag: s
       </div>
     </div>
   );
-}
-
-function formatBytes(n: number): string {
-  if (n <= 0) return "0";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
 }

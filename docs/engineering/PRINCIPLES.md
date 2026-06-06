@@ -144,6 +144,28 @@ src/
 | 状态形状、reducer、selector | `stores/` | 跨组件用 prop drilling |
 | 事件流编排（async + 多 store） | `hooks/` | 在 component 里写 useEffect 链 |
 | HTTP / SSE / WS 调用 | `lib/api/` | 在 store 里直接 `fetch()` |
+| 纯函数 util（无 React 依赖） | `utils/` 或 `lib/` | 散落在组件文件末尾 |
+
+**⚠ 强约束 — "组件文件即组件本身"**
+
+组件文件（`*.tsx`，文件名 = 组件名）**只能**包含：
+
+1. 默认导出的组件（或 1 个组件 + 它的 sub-component）
+2. 该文件 props/private types
+3. 极少量（≤5 行）紧耦合的内部 closure（如 `const isAdult = u => u.age >= 18`，仅在该文件 1 处使用）
+
+**不该出现**：
+
+- ❌ `function useXxx(...)` 自定义 hook → 搬到 `features/<domain>/hooks/use-xxx.ts`
+- ❌ `function xxxFn(...)` 跨域 util → 搬到 `features/<domain>/utils/xxx.ts` 或 `lib/`
+- ❌ 文件底部 `function helperA / helperB / helperC...` 工具堆
+
+**为什么是工程级硬规则，不是 DRY 后置补抽**：
+
+- 文件名 = 模块语义；混入隐藏的 hook/util 让文件含义模糊
+- 单测/grep/IDE 大纲都按文件粒度走；藏在文件末尾的 hook 等于隐形 API
+- 第 2 个消费者出现时，被迫做"搬迁 PR"——而迁移时一定会有人忘了改其他类似的，规则不一致就这么来的
+- 一开始就分，是 0 成本约束；事后抽，是有摩擦成本
 
 ---
 

@@ -10,6 +10,10 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  getButtonLabel,
+  getSwitchMessage,
+} from "@/features/chat/utils/model-selector-text";
 import { api } from "@/lib/api/browser";
 import type { ProviderOut, UserPreferenceOut } from "@/lib/api/shared/types";
 import { cn } from "@/lib/utils";
@@ -160,26 +164,4 @@ export function ModelSelector({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-function getSwitchMessage(
-  nextProviderId: string | null,
-  nextModel: string | null,
-  providers: ProviderWithModels[]
-): string {
-  if (nextProviderId === null && nextModel === null) {
-    return "Reverted to user default";
-  }
-  const providerName =
-    providers.find((provider) => provider.id === nextProviderId)?.name ?? "provider";
-  return nextModel
-    ? `Switched to ${providerName} · ${nextModel}`
-    : `Switched to ${providerName}`;
-}
-
-function getButtonLabel(model: string | null, providerName: string | null): string {
-  if (model && providerName) return `${providerName} · ${model}`;
-  if (model) return model;
-  if (providerName) return `${providerName} · auto`;
-  return "Default model";
 }

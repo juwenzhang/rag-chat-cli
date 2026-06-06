@@ -5,6 +5,7 @@ import type { RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { UIMessage } from "@/features/chat/components/types";
+import { findPreviousUserMessageId } from "@/features/chat/utils/find-previous-user-message-id";
 import { cn } from "@/lib/utils";
 
 import { EmptyState, type EmptyStateCopy } from "../empty-state";
@@ -121,15 +122,4 @@ function JumpToBottomButton({
       </Button>
     </div>
   );
-}
-
-function findPreviousUserMessageId(
-  messages: UIMessage[],
-  index: number
-): string | undefined {
-  if (messages[index].role !== "assistant") return undefined;
-  for (let i = index - 1; i >= 0; i--) {
-    if (messages[i].role === "user") return messages[i].id;
-  }
-  return undefined;
 }

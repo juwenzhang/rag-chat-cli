@@ -22,6 +22,13 @@ interface InitSessionInput {
 
 interface TurnOptions {
   onTurnStart?: () => void;
+  /**
+   * Fires after the SSE stream completes successfully (errors do not
+   * fire). ``isFirstTurn`` is true when this turn produced the very
+   * first assistant reply for the session — used by the host view to
+   * refresh the sidebar so the auto-generated title shows up.
+   */
+  onTurnEnd?: (info: { isFirstTurn: boolean }) => void;
 }
 
 interface ChatStore {
@@ -157,6 +164,16 @@ export const useChatStore = create<ChatStore>((set, get) => {
     options?: TurnOptions
   ) => {
     const controller = new AbortController();
+    // Snapshot first-turn flag *before* the streaming placeholder
+    // contaminates message state. A "first turn" is one with no
+    // persisted assistant reply yet — exactly the condition the
+    // backend uses to decide whether to auto-generate a title (see
+    // service/chat/service.py::_maybe_generate_title), so the host
+    // view can use this to refresh the sidebar after that fire-and-
+    // forget title task lands in the DB.
+    const isFirstTurn = !get().messages.some(
+      (m) => m.role === "assistant" && m.persisted
+    );
     set({ streaming: true, abortController: controller });
     options?.onTurnStart?.();
 
@@ -269,6 +286,12 @@ export const useChatStore = create<ChatStore>((set, get) => {
       } catch {
         // Non-fatal: streamed transcript remains usable; persisted IDs arrive on next load.
       }
+
+      // Stream completed cleanly. The host view may want to refresh
+      // server data (e.g. the session sidebar to pick up the auto-
+      // generated title). Fire after persisted-id sync above so any
+      // refreshed RSC data sees the same id space we just adopted.
+      options?.onTurnEnd?.({ isFirstTurn });
     }
   };
 

@@ -5,6 +5,8 @@ import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useFilteredSessions } from "@/features/chat/hooks/use-filtered-sessions";
+import { activeSessionId } from "@/features/chat/utils/active-session-id";
 import { api } from "@/lib/api/browser";
 import type { SessionMeta, UserOut } from "@/lib/api/shared/types";
 
@@ -15,11 +17,6 @@ import { SessionSidebarHeader } from "./session-sidebar-header";
 interface Props {
   user: UserOut;
   sessions: SessionMeta[];
-}
-
-function activeSessionId(pathname: string): string | null {
-  const match = pathname.match(/^\/chat\/([^/]+)/);
-  return match ? match[1] : null;
 }
 
 /** Chat module sidebar — conversation list with create / rename / pin / delete. */
@@ -141,21 +138,4 @@ export function SessionSidebar({ sessions }: Props) {
       />
     </aside>
   );
-}
-
-function useFilteredSessions(sessions: SessionMeta[], query: string) {
-  return useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const base = normalized
-      ? sessions.filter((session) =>
-          (session.title ?? "Untitled").toLowerCase().includes(normalized)
-        )
-      : sessions;
-    return [...base].sort((a, b) => {
-      const pinnedA = a.pinned ? 1 : 0;
-      const pinnedB = b.pinned ? 1 : 0;
-      if (pinnedA !== pinnedB) return pinnedB - pinnedA;
-      return b.updated_at.localeCompare(a.updated_at);
-    });
-  }, [sessions, query]);
 }

@@ -2,6 +2,8 @@
 
 import { BookOpen, Clock, Cpu, Hash } from "lucide-react";
 
+import { formatDuration, formatTokens } from "@/lib/format";
+
 import type { UIMessage } from "../types";
 
 import { SourcesDrawerTrigger } from "./sources-block";
@@ -59,18 +61,4 @@ export function MessageFooter({ message }: { message: UIMessage }) {
       {parts}
     </div>
   );
-}
-
-function formatTokens(n: number): string {
-  if (n < 1000) return String(n);
-  return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
-  const m = Math.floor(s / 60);
-  const r = Math.round(s - m * 60);
-  return `${m}m${r}s`;
 }

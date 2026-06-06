@@ -4,6 +4,7 @@ import { ListTree, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { slugify } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 
 export interface TocItem {
@@ -47,15 +48,6 @@ export function parseToc(markdown: string): TocItem[] {
     out.push({ level, text, id });
   }
   return out;
-}
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[ -⁯⸀-⹿\\'!"#$%&()*+,./:;<=>?@[\]^`{|}~]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
 }
 
 /**

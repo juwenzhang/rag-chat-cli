@@ -4,6 +4,7 @@ import { Cpu, Loader2, RefreshCcw } from "lucide-react";
 import Link from "next/link";
 
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { formatSize } from "@/lib/format";
 import type { ModelListItem } from "@/lib/api/shared/types";
 import { cn } from "@/lib/utils";
 
@@ -183,16 +184,4 @@ function HiddenVisionNote({ count }: { count: number }) {
       +{count} vision model{count === 1 ? "" : "s"} hidden — used by image features
     </div>
   );
-}
-
-function formatSize(bytes: number): string {
-  if (bytes <= 0) return "";
-  const units = ["B", "K", "M", "G", "T"];
-  let i = 0;
-  let n = bytes;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n.toFixed(n < 10 ? 1 : 0)}${units[i]}`;
 }

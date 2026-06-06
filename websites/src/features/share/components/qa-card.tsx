@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { Markdown } from "@/features/chat/components/markdown";
 import { Card } from "@/components/ui/card";
 import type { SharedMessage } from "@/lib/api/shared/types";
+import { formatTokens } from "@/lib/format";
 import { cn, formatRelative } from "@/lib/utils";
 
 export interface QACardProps {
@@ -137,9 +138,4 @@ function AnswerFooter({ message }: { message: SharedMessage }) {
       {parts}
     </div>
   );
-}
-
-function formatTokens(n: number): string {
-  if (n < 1000) return String(n);
-  return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
 }

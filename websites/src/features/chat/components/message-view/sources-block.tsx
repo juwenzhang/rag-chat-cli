@@ -22,6 +22,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { looksLikeMarkdown, sourceDomId } from "@/features/chat/utils/sources-helpers";
 import type { AnswerSource } from "@/lib/api/shared/types";
 import { externalLinkHref } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
@@ -238,13 +239,6 @@ function SourceQuote({ quote }: { quote: string }) {
   );
 }
 
-function looksLikeMarkdown(text: string): boolean {
-  return (
-    /(^|\n)\s*(```|#{1,6}\s|[-*+]\s|\d+\.\s|>\s|\|.+\||```mermaid)/i.test(text) ||
-    /\[[^\]]+\]\([^)]+\)|[*_]{1,2}[^*_]+[*_]{1,2}|`[^`]+`/.test(text)
-  );
-}
-
 function SourceTitle({ source, title }: { source: AnswerSource; title: string }) {
   if (source.source_type === "document" && source.document_id) {
     return (
@@ -273,8 +267,4 @@ function SourceTitle({ source, title }: { source: AnswerSource; title: string })
   }
 
   return <span className="min-w-0 truncate font-medium text-foreground">{title}</span>;
-}
-
-function sourceDomId(rank: number): string {
-  return `answer-source-${rank}`;
 }
