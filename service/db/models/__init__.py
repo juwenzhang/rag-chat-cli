@@ -27,6 +27,7 @@ from service.db.models.provider import Provider
 from service.db.models.session import ChatSession
 from service.db.models.token import RefreshToken
 from service.db.models.user import User
+from service.db.models.user_identity import UserIdentity
 from service.db.models.user_memory import UserMemory
 from service.db.models.wiki import Wiki
 from service.db.models.wiki_member import WikiMember
@@ -48,6 +49,7 @@ __all__ = [
     "Provider",
     "RefreshToken",
     "User",
+    "UserIdentity",
     "UserMemory",
     "UserPreference",
     "Wiki",

@@ -1,17 +1,11 @@
-import { redirect } from "next/navigation";
-
 import { DocumentTableClient } from "@/features/wiki/components/document-table-client";
 import { knowledgeApi } from "@/lib/api";
-import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
+import { requireAccessToken } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 
 export default async function DocumentLibraryPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  const token = await getAccessToken();
-  if (!token) redirect("/login");
-
+  const token = await requireAccessToken();
   const documents = await knowledgeApi.listDocuments(token);
 
   return (

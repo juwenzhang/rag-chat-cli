@@ -1,17 +1,11 @@
-import { redirect } from "next/navigation";
-
 import { BookmarksPageClient } from "@/features/bookmarks/components/bookmarks-page-client";
 import { bookmarkApi } from "@/lib/api";
-import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
+import { requireUser } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 
 export default async function BookmarksPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/api/auth/clear-and-login");
-  const token = await getAccessToken();
-  if (!token) redirect("/api/auth/clear-and-login");
-
+  const { token, user } = await requireUser();
   const bookmarks = await bookmarkApi.listBookmarksFull(token).catch(() => []);
   return <BookmarksPageClient currentUserId={user.id} bookmarks={bookmarks} />;
 }

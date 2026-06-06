@@ -22,6 +22,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from service.chat._tool_helpers import (
+    compact_history_tool_messages,
+    drop_orphan_tool_messages,
+    pair_safe_recent_split,
+)
 from service.chat.tokens import TokenBudget, Tokenizer, trim_to_budget
 from service.llm.client import ChatMessage, LLMError
 
@@ -74,16 +79,22 @@ class HistorySummarizer:
     ) -> list[ChatMessage]:
         """Compress old turns if needed; return the (possibly shrunken) list.
 
-        Pipeline:
+        Pipeline (each step is conditional on still overflowing):
 
-        1. If the list already fits the budget → return unchanged.
-        2. Split into ``[leading_system?] + older + recent`` where
-           ``recent`` is the last ``keep_recent`` turns.
-        3. Ask the LLM to summarize ``older`` into one bullet block.
-        4. Return ``[leading_system?, summary_as_system, *recent]``.
-        5. If even that exceeds the budget, fall back to ``trim_to_budget``
-           on the resulting list (which may further drop the summary or
-           older recent turns).
+        1. Already fits → return unchanged.
+        2. **Compact tool payloads in place** — verbose ``web_search`` /
+           ``web_fetch`` results are rewritten to a small summary form.
+           This is the cheapest knob and almost always enough to bring
+           a ReAct trace back under budget without dropping any turns.
+        3. **Pair-safe summarize** — split into ``[leading_system?] +
+           older + recent`` using
+           :func:`service.chat._tool_helpers.pair_safe_recent_split` so
+           the cut never lands inside an ``assistant(tool_calls) → tool``
+           block. Summarize ``older`` into one bullet block.
+        4. **Final trim** — if even the rebuilt list still overflows
+           (e.g. ``recent`` is huge by itself), fall back to
+           :func:`trim_to_budget`, which is also tool-call aware and
+           drops orphaned ``tool`` rows.
 
         Errors from the summarizer LLM call are logged and the function
         falls back to plain :func:`trim_to_budget` — context management
@@ -96,29 +107,51 @@ class HistorySummarizer:
         if budget.fits(used):
             return messages
 
+        # Step 2: Cheapest first. Tool payloads are the primary budget hog
+        # in any ReAct trace (web_fetch can easily ship 50k+ chars per
+        # call). Compacting *every* tool row — historical and current —
+        # often slashes 80% of the token cost without touching structure.
+        compacted = compact_history_tool_messages(messages)
+        if budget.fits(self._tokenizer.count_messages(compacted)):
+            return compacted
+
         leading_system: ChatMessage | None = None
-        body = list(messages)
+        body = list(compacted)
         if body and body[0].role == "system":
             leading_system = body.pop(0)
 
+        # Step 3a: Edge case — too short to justify a summary call.
         if len(body) <= self._keep_recent:
-            # Not enough older content to summarize — fall back to trim.
-            return trim_to_budget(messages, tokenizer=self._tokenizer, budget=budget)
+            return trim_to_budget(compacted, tokenizer=self._tokenizer, budget=budget)
 
-        older = body[: -self._keep_recent]
-        recent = body[-self._keep_recent :]
+        # Step 3b: Pair-safe split. The naive ``body[:-N], body[-N:]`` cut
+        # can land between ``assistant(tool_calls=[...])`` and its
+        # matching ``tool`` rows; the LLM then sees dangling tool_call_ids
+        # in ``recent`` and silently emits an empty turn.
+        older, recent = pair_safe_recent_split(body, keep_recent=self._keep_recent)
+
+        if not older:
+            # Boundary alignment kept everything in ``recent`` — nothing
+            # to summarize. Defer to trim.
+            return trim_to_budget(compacted, tokenizer=self._tokenizer, budget=budget)
 
         try:
             summary_text = await self._summarize(older)
         except LLMError as exc:
             logger.warning("history summarization failed: %s — falling back to trim", exc)
-            return trim_to_budget(messages, tokenizer=self._tokenizer, budget=budget)
+            return trim_to_budget(compacted, tokenizer=self._tokenizer, budget=budget)
 
         summary_msg = ChatMessage(role="system", content=_SUMMARY_PREFIX + summary_text)
         rebuilt = ([leading_system] if leading_system is not None else []) + [summary_msg] + recent
 
-        # Even after summarization, the rebuilt list may still overflow
-        # (e.g. ``recent`` itself is huge). Tighten with trim_to_budget.
+        # Defensive: ``recent`` is structurally self-contained by
+        # construction, but if a future refactor weakens that we want to
+        # drop orphans rather than ship a malformed payload.
+        rebuilt = drop_orphan_tool_messages(rebuilt)
+
+        # Step 4: Even after summarization, the rebuilt list may still
+        # overflow (e.g. ``recent`` itself is huge). Tighten with
+        # trim_to_budget — itself orphan-aware now.
         if not budget.fits(self._tokenizer.count_messages(rebuilt)):
             rebuilt = trim_to_budget(rebuilt, tokenizer=self._tokenizer, budget=budget)
         return rebuilt

@@ -35,9 +35,14 @@ class ResourceLimits:
     ``max_steps`` here is the *ceiling*; the per-call ``max_steps``
     argument to :meth:`ChatService.generate` may shrink it further but
     not extend it.
+
+    The default of ``8`` lets the model run a meaningful ReAct trace —
+    e.g. ``search → fetch → search-again → fetch → fetch → answer`` —
+    without bailing out early on non-trivial questions. Bumping further
+    in production is fine; the per-call cap is the actual safety knob.
     """
 
-    max_steps: int = 5
+    max_steps: int = 8
     max_tool_calls_per_step: int = 8
     tool_timeout_s: float = 30.0
     max_top_k: int = 20

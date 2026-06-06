@@ -101,6 +101,53 @@ class _TextParser(HTMLParser):
             self.text.append(cleaned)
 
 
+_WEB_SEARCH_DESCRIPTION = """Search the web for up-to-date information.
+
+WHEN to use:
+  - The question requires recent / time-sensitive information.
+  - You need sources you can cite ([1], [2], …).
+  - You're unsure about a specific fact and want verification.
+  - Local knowledge-base retrieval came back empty or weak.
+
+STRATEGY (most users skip step 2 — don't):
+  1. Issue an initial broad search.
+  2. If results look weak / off-topic / one-sided, run a SECOND search
+     with reformulated keywords (synonyms, narrower scope, different
+     language, or the opposite angle for comparison questions).
+  3. Pick 2–3 of the most relevant URLs and use ``web_fetch`` on each
+     to read the actual content. Snippets alone are rarely enough.
+
+QUERY hygiene:
+  - Keep queries focused (≤ 10 words). Long natural-language queries
+    match poorly on most search backends.
+  - Don't repeat the user's full question verbatim — extract the key
+    entities + intent.
+
+Returns compact result titles, URLs and short snippets in JSON. Plan
+to chain at least one ``web_fetch`` after a successful search."""
+
+_WEB_FETCH_DESCRIPTION = """Fetch a web page and extract readable text for citation.
+
+WHEN to use:
+  - After ``web_search`` returned promising URLs.
+  - The user gave you a URL directly.
+  - You need the FULL article body, not just a snippet, to ground a
+    factual claim.
+
+STRATEGY:
+  - For non-trivial questions, fetch 2–3 URLs from the search results
+    rather than just one. A single source is often biased, outdated,
+    or incomplete; triangulating across multiple sources is what
+    separates a confident answer from a guess.
+  - Prefer primary sources (official docs, the project's own blog, a
+    news outlet's article) over aggregators (forum index, tag pages,
+    listicles).
+  - If a fetched page is gated / 404 / mostly nav-chrome, don't give
+    up — fetch the next-best URL from the same search.
+
+Returns the page title and main text up to ``max_chars`` characters."""
+
+
 def build_web_tools(
     *,
     ollama_api_key: str | Callable[[], str | None] | None = None,
@@ -108,7 +155,7 @@ def build_web_tools(
     return [
         FunctionTool(
             name="web_search",
-            description="Search the web for up-to-date information. Returns compact result titles, URLs, and short snippets.",
+            description=_WEB_SEARCH_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {
@@ -121,7 +168,7 @@ def build_web_tools(
         ),
         FunctionTool(
             name="web_fetch",
-            description="Fetch a web page by URL and extract readable text for citation.",
+            description=_WEB_FETCH_DESCRIPTION,
             parameters={
                 "type": "object",
                 "properties": {

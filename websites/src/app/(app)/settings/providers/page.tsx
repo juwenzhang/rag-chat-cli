@@ -1,9 +1,7 @@
-import { redirect } from "next/navigation";
-
 import { ProvidersPageClient } from "@/features/providers/components/providers-page-client";
 import { providerApi } from "@/lib/api";
 import { ApiError } from "@/lib/api/shared/types";
-import { getAccessToken } from "@/lib/auth/session.server";
+import { requireAccessToken } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 export const metadata = {
@@ -11,8 +9,7 @@ export const metadata = {
 };
 
 export default async function ProvidersPage() {
-  const token = await getAccessToken();
-  if (!token) redirect("/api/auth/clear-and-login");
+  const token = await requireAccessToken();
 
   let providers: Awaited<ReturnType<typeof providerApi.listProviders>> = [];
   let preferences: Awaited<ReturnType<typeof providerApi.getPreferences>> = {
