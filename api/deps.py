@@ -11,7 +11,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -66,21 +66,41 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 
 async def get_current_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
     session: AsyncSession = Depends(get_db_session),
 ) -> User:
-    """Resolve the ``Authorization: Bearer <jwt>`` header to a live user row.
+    """Resolve the request's session credential to a live user row.
 
-    Raises an :class:`~fastapi.HTTPException` with the appropriate ``401``/
-    ``403`` status so the global error handler can turn it into an
-    :class:`api.schemas.common.ErrorResponse`.
+    Resolution order:
+
+    1. ``Authorization: Bearer <jwt>`` header — used by the CLI and
+       every ``/v1/*`` client. Always honoured first so cookie state
+       cannot accidentally shadow an explicit Bearer.
+    2. The configured access-token cookie (default ``rag_at``) — used
+       by the browser via the ``/`` legacy surface. The Set-Cookie
+       path is ``/`` so every request carries it. The refresh cookie
+       at ``Path=/auth`` is only consumed by the auth router itself,
+       never here.
+    3. Otherwise → 401 ``missing credentials``.
+
+    Cookie name is read from settings on each call so tests that
+    monkey-patch ``settings.auth.cookie_access_name`` and operators
+    that rename the cookie via env both work without code changes.
     """
-    if creds is None or creds.scheme.lower() != "bearer" or not creds.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="missing bearer token",
-        )
-    return await _resolve_user_from_access_token(creds.credentials, session)
+    if creds is not None and creds.scheme.lower() == "bearer" and creds.credentials:
+        return await _resolve_user_from_access_token(creds.credentials, session)
+
+    from settings import settings
+
+    cookie_token = request.cookies.get(settings.auth.cookie_access_name)
+    if cookie_token:
+        return await _resolve_user_from_access_token(cookie_token, session)
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="missing credentials",
+    )
 
 
 async def _resolve_user_from_access_token(token: str, session: AsyncSession) -> User:

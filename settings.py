@@ -55,6 +55,11 @@ _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
     "REFRESH_TOKEN_TTL_DAY": ("auth", "refresh_token_ttl_day"),
     "AUTH_BCRYPT_ROUNDS": ("auth", "bcrypt_rounds"),
     "AUTH_REFRESH_REUSE_DETECTION": ("auth", "refresh_reuse_detection"),
+    "AUTH_COOKIE_ACCESS_NAME": ("auth", "cookie_access_name"),
+    "AUTH_COOKIE_REFRESH_NAME": ("auth", "cookie_refresh_name"),
+    "AUTH_COOKIE_DOMAIN": ("auth", "cookie_domain"),
+    "AUTH_COOKIE_SECURE": ("auth", "cookie_secure"),
+    "AUTH_COOKIE_SAMESITE": ("auth", "cookie_samesite"),
     # db
     "DATABASE_URL": ("db", "database_url"),
     "DB_POOL_SIZE": ("db", "pool_size"),
@@ -152,6 +157,28 @@ class AuthSettings(_GroupBase):
     # When True, detecting a re-used (already revoked) refresh token triggers
     # mass-revocation of every live refresh token for that user. AGENTS.md §6.
     refresh_reuse_detection: bool = True
+
+    # ------------------------------------------------------------------
+    # Cookie-based session (P-AUTH-2)
+    # ------------------------------------------------------------------
+    #
+    # Browsers authenticate via these two HttpOnly cookies on the legacy
+    # ``/`` surface. The CLI / ``/v1/*`` surface continues to use Bearer
+    # only — see api/app.py.
+    #
+    # Two cookies (instead of one combined session blob) so the refresh
+    # cookie can scope ``Path=/auth`` and never leak on regular reads.
+    cookie_access_name: str = "rag_at"
+    cookie_refresh_name: str = "rag_rt"
+    # Empty string → don't set Domain (default: same-origin only).
+    # When the API and web are on different sub-domains (api.x.com /
+    # app.x.com), set this to ``.x.com`` so cookies span both.
+    cookie_domain: str = ""
+    # ``Secure`` is mandatory on prod. Dev defaults off so localhost works.
+    cookie_secure: bool = False
+    # ``Lax`` is enough for the access cookie; the refresh cookie is
+    # always set with ``Strict`` regardless (see api/auth/cookies.py).
+    cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 
 
 class DBSettings(_GroupBase):

@@ -6,6 +6,15 @@ AGENTS.md §6:
 * refresh rotation + reuse detection: an already-revoked refresh being
   presented again mass-revokes every live refresh for that user.
 
+P-AUTH-2 (multi-provider login):
+* credentials live in :class:`service.db.models.UserIdentity`, addressed
+  by ``(provider, subject)``. ``AuthService`` orchestrates — actual
+  identity CRUD lives in :class:`IdentityService`.
+* ``users.hashed_password`` is kept populated as a read-only fallback
+  during the transition window — see migration 0018 docstring. Reads go
+  through :class:`IdentityService` which already encapsulates the
+  fallback.
+
 The service works directly against SQLAlchemy async sessions but **does not**
 import FastAPI. It is therefore safe to consume from both the CLI and the
 future API layer (Change 6).
@@ -27,7 +36,8 @@ from service.auth.errors import (
     TokenReuseError,
     UserNotActiveError,
 )
-from service.auth.password import hash_password, verify_password
+from service.auth.identities import IdentityService
+from service.auth.password import hash_password
 from service.auth.tokens import (
     TokenPayload,
     create_access_token,
@@ -63,6 +73,7 @@ class AuthService:
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._sf = session_factory
+        self._identities = IdentityService()
 
     # ------------------------------------------------------------------
     # Registration
@@ -74,8 +85,18 @@ class AuthService:
         *,
         display_name: str | None = None,
     ) -> User:
-        """Create a new user. Raises :class:`EmailAlreadyExistsError` on conflict."""
+        """Create a new user. Raises :class:`EmailAlreadyExistsError` on conflict.
+
+        Writes both the new ``user_identities`` row (the source of truth
+        going forward) AND the legacy ``users.hashed_password`` column.
+        Keeping the legacy column populated lets us roll the service
+        binary back to the pre-P-AUTH-2 version without losing access
+        for newly-registered users — a cheap insurance policy for one
+        release cycle. Future OAuth-only registrations will skip the
+        legacy column entirely (it stays NULL for them).
+        """
         normalized = email.strip().lower()
+        hashed = hash_password(password)
         async with self._sf() as session:
             existing = await session.scalar(select(User).where(User.email == normalized))
             if existing is not None:
@@ -83,35 +104,28 @@ class AuthService:
 
             user = User(
                 email=normalized,
-                hashed_password=hash_password(password),
+                # Legacy column — kept populated as a rollback safety net
+                # while the wider codebase migrates to ``user_identities``.
+                hashed_password=hashed,
                 display_name=display_name,
                 is_active=True,
             )
             session.add(user)
             # Flush so ``user.id`` is populated before we reference it
-            # below for the personal-org bootstrap.
+            # below for both the identity row and the personal-org
+            # bootstrap.
             await session.flush()
 
-            # Every user lands with a personal org. Slug is
-            # ``personal-<12 hex>`` derived from their UUID so it's
-            # collision-free without an extra round-trip. The org is
-            # marked ``is_personal=True`` so the API refuses delete on
-            # it — users can't accidentally orphan their default space.
-            slug = "personal-" + user.id.hex[:12]
-            org_name = (display_name or normalized.split("@", 1)[0]) + "'s workspace"
-            org = Org(
-                slug=slug,
-                name=org_name,
-                owner_id=user.id,
-                is_personal=True,
+            # Authoritative credential row.
+            self._identities.attach(
+                session,
+                user_id=user.id,
+                provider="password",
+                subject=normalized,
+                credential=hashed,
             )
-            session.add(org)
-            await session.flush()
-            session.add(OrgMember(org_id=org.id, user_id=user.id, role="owner"))
 
-            # No default wiki — the user creates wikis explicitly. The
-            # ``wikis`` schema is in place but a fresh workspace lands
-            # empty so RAG / knowledge-base scoping stays intentional.
+            await self._bootstrap_user(session, user, display_name=display_name)
 
             await session.commit()
             await session.refresh(user)
@@ -121,12 +135,22 @@ class AuthService:
     # Login
     # ------------------------------------------------------------------
     async def login(self, email: str, password: str) -> TokenPair:
-        """Return a fresh :class:`TokenPair` or raise :class:`InvalidCredentialsError`."""
+        """Return a fresh :class:`TokenPair` or raise :class:`InvalidCredentialsError`.
+
+        Resolves the credential through :class:`IdentityService` so the
+        password-vs-OTP split (later, P-AUTH-3) doesn't require touching
+        this method again.
+        """
         normalized = email.strip().lower()
         async with self._sf() as session:
-            user = await session.scalar(select(User).where(User.email == normalized))
-            if user is None or not verify_password(password, user.hashed_password):
-                # Identical error path for both branches to avoid enumeration.
+            user = await self._identities.verify_password_credentials(
+                session,
+                email=normalized,
+                password=password,
+            )
+            if user is None:
+                # Identical error path for "no such user" and "wrong
+                # password" — avoids account enumeration.
                 raise InvalidCredentialsError("invalid email or password")
             if not user.is_active:
                 raise UserNotActiveError("user inactive")
@@ -141,6 +165,43 @@ class AuthService:
             )
             await session.commit()
             return pair
+
+    # ------------------------------------------------------------------
+    # Shared post-registration bootstrap (used by every login provider)
+    # ------------------------------------------------------------------
+    async def _bootstrap_user(
+        self,
+        session: AsyncSession,
+        user: User,
+        *,
+        display_name: str | None,
+    ) -> None:
+        """Create the personal org + initial membership for ``user``.
+
+        Pulled out so future provider-specific registration paths
+        (email-OTP, GitHub, …) don't duplicate the workspace setup.
+
+        Caller is responsible for committing the transaction.
+        """
+        # Slug is ``personal-<12 hex>`` derived from the user's UUID so
+        # it's collision-free without an extra round-trip. The org is
+        # marked ``is_personal=True`` so the API refuses delete on it
+        # — users can't accidentally orphan their default space.
+        slug = "personal-" + user.id.hex[:12]
+        normalized_email = user.email
+        org_name = (display_name or normalized_email.split("@", 1)[0]) + "'s workspace"
+        org = Org(
+            slug=slug,
+            name=org_name,
+            owner_id=user.id,
+            is_personal=True,
+        )
+        session.add(org)
+        await session.flush()
+        session.add(OrgMember(org_id=org.id, user_id=user.id, role="owner"))
+        # No default wiki — the user creates wikis explicitly. The
+        # ``wikis`` schema is in place but a fresh workspace lands empty
+        # so RAG / knowledge-base scoping stays intentional.
 
     # ------------------------------------------------------------------
     # Refresh (rotation + reuse detection)
