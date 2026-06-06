@@ -18,6 +18,8 @@ __all__ = [
     "compact_context_text",
     "compact_history_tool_messages",
     "compact_tool_result_for_history",
+    "drop_orphan_tool_messages",
+    "pair_safe_recent_split",
     "should_auto_web_search",
     "tool_call_key",
     "tool_turn_limit",
@@ -123,6 +125,132 @@ def compact_tool_result_for_history(content: str, tool_name: str | None) -> str:
         return json.dumps(compact, ensure_ascii=False)
 
     return compact_context_text(content, max_chars=1_500)
+
+
+# ---------------------------------------------------------------------------
+# Tool-call pairing helpers
+# ---------------------------------------------------------------------------
+#
+# Most chat APIs (OpenAI, Anthropic via tool-use, Ollama tool calls) are
+# strict about the structural pairing:
+#
+#   assistant(tool_calls=[c1, c2, ...]) → tool(tool_call_id=c1.id) → tool(c2.id)
+#
+# Drop or split through such a pair and the model will see a dangling
+# ``tool_call_id`` with no originating assistant message — every provider we
+# integrate with reacts to that by either erroring out or, worse, silently
+# returning an empty assistant turn. The orchestrator then renders the
+# "I gathered supporting sources but the model did not produce a final
+# answer" fallback even though the real fault was upstream.
+#
+# These two helpers give the context-window machinery (``trim_to_budget`` /
+# ``HistorySummarizer``) a way to respect those boundaries without each
+# call site re-deriving the rules.
+
+
+def drop_orphan_tool_messages(messages: list[ChatMessage]) -> list[ChatMessage]:
+    """Remove ``tool`` messages whose originating ``assistant`` is gone.
+
+    A ``tool`` row is "orphaned" if no preceding ``assistant`` message in
+    the same list declared its ``tool_call_id`` inside ``tool_calls``.
+    Trimming the head of a conversation can easily produce orphans (the
+    earliest assistant turn that requested the tools got dropped, but the
+    tool results survived because they sit later in the list); shipping
+    those to the LLM raises a 400 on every strict provider.
+
+    Returns a *new* list — input is not mutated.
+    """
+    known_ids: set[str] = set()
+    out: list[ChatMessage] = []
+    for msg in messages:
+        if msg.role == "assistant" and msg.tool_calls:
+            for tc in msg.tool_calls:
+                known_ids.add(tc.id)
+            out.append(msg)
+            continue
+        if msg.role == "tool":
+            if msg.tool_call_id and msg.tool_call_id in known_ids:
+                out.append(msg)
+            # else: orphan, drop silently.
+            continue
+        out.append(msg)
+    return out
+
+
+def pair_safe_recent_split(
+    messages: list[ChatMessage],
+    *,
+    keep_recent: int,
+) -> tuple[list[ChatMessage], list[ChatMessage]]:
+    """Split into ``(older, recent)`` without cutting through a tool pair.
+
+    The naive ``messages[:-N], messages[-N:]`` split is what the original
+    :class:`HistorySummarizer` used; it can land the cut between an
+    ``assistant(tool_calls=...)`` row and its matching ``tool`` rows,
+    leaving ``recent`` with dangling ``tool_call_id`` references that the
+    LLM cannot resolve.
+
+    This helper aims for a target of ``keep_recent`` trailing messages but
+    walks the boundary backwards (towards older) until it sits *before*
+    any ``assistant(tool_calls)`` whose tool-result rows are inside
+    ``recent``. The returned split therefore satisfies:
+
+    * ``older + recent == messages`` (lossless)
+    * No ``tool`` row in ``recent`` references a ``tool_call_id`` from a
+      message in ``older``.
+
+    ``keep_recent`` is treated as a *minimum* — the realised ``recent``
+    can be longer when boundary alignment requires it. ``older`` may
+    therefore be empty for short conversations.
+    """
+    if keep_recent <= 0:
+        return list(messages), []
+    if len(messages) <= keep_recent:
+        return [], list(messages)
+
+    boundary = len(messages) - keep_recent
+
+    # Walk the boundary left as long as messages[boundary] is a ``tool``
+    # row whose originating assistant is at messages[boundary-1] (or
+    # earlier in the same contiguous tool block). We need to land *on*
+    # that originating assistant message at the latest, so that everything
+    # to the right of the split is self-contained.
+    while boundary > 0 and _split_breaks_tool_pair(messages, boundary):
+        boundary -= 1
+
+    return messages[:boundary], messages[boundary:]
+
+
+def _split_breaks_tool_pair(messages: list[ChatMessage], boundary: int) -> bool:
+    """True when slicing at ``boundary`` would orphan a tool result.
+
+    The cut is unsafe when:
+
+    * ``messages[boundary]`` is itself a ``tool`` row (its assistant
+      sibling is to the left of the cut), OR
+    * any ``tool`` row at index ``>= boundary`` has its
+      ``tool_call_id`` declared by an assistant message at index
+      ``< boundary``.
+    """
+    head = messages[boundary]
+    if head.role == "tool":
+        return True
+
+    # Build the set of tool_call_ids that are introduced *inside* recent.
+    introduced_in_recent: set[str] = set()
+    for msg in messages[boundary:]:
+        if msg.role == "assistant" and msg.tool_calls:
+            for tc in msg.tool_calls:
+                introduced_in_recent.add(tc.id)
+
+    for msg in messages[boundary:]:
+        if (
+            msg.role == "tool"
+            and msg.tool_call_id is not None
+            and msg.tool_call_id not in introduced_in_recent
+        ):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------

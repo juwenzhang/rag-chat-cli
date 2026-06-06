@@ -96,6 +96,10 @@ _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
     "EVALUATION_ENABLED": ("evaluation", "enabled"),
     "EVALUATION_MODEL": ("evaluation", "model"),
     "EVALUATION_TIMEOUT": ("evaluation", "timeout"),
+    # chat / ReAct context window
+    "CHAT_CONTEXT_MAX_TOKENS": ("chat", "context_max_tokens"),
+    "CHAT_CONTEXT_RESERVE_FOR_REPLY": ("chat", "context_reserve_for_reply"),
+    "CHAT_KEEP_RECENT_TURNS": ("chat", "keep_recent_turns"),
     # rate limit
     "RATE_LIMIT_PER_MIN": ("rate_limit", "per_min"),
     # security (Sprint 2): Fernet key for at-rest encryption of provider API keys.
@@ -273,6 +277,34 @@ class EvaluationSettings(_GroupBase):
     timeout: int = 120
 
 
+class ChatSettings(_GroupBase):
+    """Chat / ReAct context-window management.
+
+    Controls the budget that
+    :meth:`service.chat.service.ChatService._fit_to_budget` enforces
+    before each LLM call. Defaults are sized for 128k-token models
+    (GPT-4o, Claude Sonnet, Qwen 2.5 long-context); shrink for smaller
+    backends.
+
+    ``context_max_tokens`` is the *input* ceiling: the message list
+    handed to the provider must be ≤ this value minus
+    ``context_reserve_for_reply``. The default 96k input + 16k reply
+    leaves headroom for the chat-template framing every provider injects.
+
+    Set ``context_max_tokens=0`` to disable context management entirely
+    (legacy behaviour — provider rejects over-long input).
+    """
+
+    context_max_tokens: int = 96_000
+    context_reserve_for_reply: int = 16_000
+    # Number of trailing messages :class:`HistorySummarizer` preserves
+    # verbatim. Larger = more recent context kept literal but less room
+    # to compress; smaller = more aggressive collapse. 8 is a good middle
+    # ground for ReAct traces (a few user/assistant turns + one
+    # tool round survive untouched).
+    keep_recent_turns: int = 8
+
+
 class RateLimitSettings(_GroupBase):
     per_min: int = 60
 
@@ -404,6 +436,7 @@ class Settings(BaseSettings):
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
     evaluation: EvaluationSettings = Field(default_factory=EvaluationSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
+    chat: ChatSettings = Field(default_factory=ChatSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
 

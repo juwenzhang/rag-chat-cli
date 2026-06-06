@@ -34,11 +34,26 @@ WEB_EVIDENCE_INSTRUCTION = (
 
 
 def empty_answer_fallback(sources: list[dict[str, Any]]) -> str:
-    """Placeholder text when the model finished a turn with empty content."""
+    """Placeholder text when the model finished a turn with empty content.
+
+    Two shapes:
+
+    * **Sources collected** — the ReAct loop ran tools, gathered evidence,
+      but the synthesis turn returned an empty assistant message. The
+      most common root causes are (a) a context-window overflow that
+      causes the upstream provider to silently truncate, or (b) a
+      malformed tool-call/result pairing left behind by trimming. The
+      surface message hints at retry + checking the sources panel.
+    * **No sources** — the model stopped on the very first turn with no
+      output. Almost always a transient upstream hiccup; ask for retry.
+    """
     if sources:
         return (
-            "I gathered supporting sources but the model did not produce a final answer. "
-            "Please retry, or open the sources panel to inspect the collected evidence."
+            "I gathered supporting sources for this question but the model "
+            "didn't produce a final answer this round — usually caused by "
+            "a context-window overflow on a long ReAct trace. Please retry "
+            "(or open the sources panel to inspect the evidence already "
+            "collected)."
         )
     return "The model stopped before producing a final answer. Please retry."
 

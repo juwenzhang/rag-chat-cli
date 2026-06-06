@@ -272,23 +272,48 @@ class ChatService:
     async def _fit_to_budget(self, messages: list[ChatMessage]) -> list[ChatMessage]:
         """Trim or summarize ``messages`` to fit ``self._token_budget``.
 
-        Escalation ladder:
+        Escalation ladder (cheapest → costliest, each step gated on the
+        previous still overflowing):
 
-        * No tokenizer wired → return ``messages`` untouched (legacy path,
-          relies on the LLM provider rejecting over-long input).
-        * Tokenizer but no budget → also untouched (caller wants counting
-          available but no enforcement).
-        * Tokenizer + budget but no summarizer → :func:`trim_to_budget`
-          drops oldest non-system turns.
-        * Tokenizer + budget + summarizer → :meth:`HistorySummarizer.compress`
-          collapses old turns into a summary, then falls back to trimming
-          if the summary itself overflows.
+        1. **No tokenizer / no budget** → unchanged. The caller opted out
+           of context management; we rely on the provider rejecting an
+           over-long input.
+        2. **Compact tool payloads in-place** —
+           :func:`service.chat._tool_helpers.compact_history_tool_messages`
+           rewrites every ``role="tool"`` row to a small summary form
+           (``web_search`` keeps 5 ``(title, url)`` pairs, ``web_fetch``
+           keeps a 1.2k-char preview). This is the single biggest lever
+           for ReAct traces because tool payloads dominate token usage.
+           No structural change → still safe.
+        3. **Summarize old turns** — when a :class:`HistorySummarizer` is
+           wired, collapse pre-history into one bullet block. The
+           summarizer is tool-call-aware and won't cut through an
+           ``assistant(tool_calls) → tool`` pair.
+        4. **Trim head** — :func:`trim_to_budget` drops oldest non-system
+           turns. Also tool-call-aware: it removes orphaned ``tool``
+           rows whose originating assistant message got dropped, so
+           strict providers (OpenAI/Anthropic/Ollama tool-use) never see
+           a dangling ``tool_call_id``.
         """
         if self._tokenizer is None or self._token_budget is None:
             return messages
+
+        # Step 2: cheapest. We still call this even when we technically
+        # fit — it's a no-op for already-compact payloads — to ensure
+        # downstream comparisons happen against the compact form.
+        if self._token_budget.fits(self._tokenizer.count_messages(messages)):
+            return messages
+
+        compacted = _compact_history_tool_messages(messages)
+        if self._token_budget.fits(self._tokenizer.count_messages(compacted)):
+            return compacted
+
+        # Step 3: summarize-then-trim if a summarizer is wired.
         if self._summarizer is not None:
-            return await self._summarizer.compress(messages, budget=self._token_budget)
-        return trim_to_budget(messages, tokenizer=self._tokenizer, budget=self._token_budget)
+            return await self._summarizer.compress(compacted, budget=self._token_budget)
+
+        # Step 4: bare trim. Itself orphan-aware as of #context-pairing.
+        return trim_to_budget(compacted, tokenizer=self._tokenizer, budget=self._token_budget)
 
     async def _load_history(self, session_id: str) -> tuple[list[ChatMessage], Event | None]:
         try:

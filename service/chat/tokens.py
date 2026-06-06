@@ -193,6 +193,13 @@ def trim_to_budget(
        the LLM is actually answering.
     3. Earlier turns — dropped oldest-first until the total fits.
 
+    The trimmer is **tool-call aware**: any orphaned ``tool`` rows left
+    behind by the head-drop (i.e. their originating ``assistant(tool_calls)``
+    message got dropped) are removed in a final pass. Without this every
+    strict tool-aware provider (OpenAI / Ollama / Anthropic) returns an
+    empty assistant turn and the orchestrator surfaces the "I gathered
+    sources but the model did not produce a final answer" fallback.
+
     Returns the surviving subset. If even after dropping everything except
     (1) + (last) the list still exceeds the budget, the result is returned
     as-is — the caller is expected to swap in :mod:`core.history` (#15) or
@@ -219,10 +226,20 @@ def trim_to_budget(
 
     # Fast path: already fits.
     if budget.fits(total(middle)):
-        return ([leading_system] if leading_system else []) + middle + [last]
+        kept = ([leading_system] if leading_system else []) + middle + [last]
+        return _drop_orphans(kept)
 
     # Drop oldest from ``middle`` until it fits or middle is empty.
     while middle and not budget.fits(total(middle)):
         middle.pop(0)
 
-    return ([leading_system] if leading_system else []) + middle + [last]
+    kept = ([leading_system] if leading_system else []) + middle + [last]
+    return _drop_orphans(kept)
+
+
+def _drop_orphans(messages: list[ChatMessage]) -> list[ChatMessage]:
+    # Local import to avoid a top-level cycle with ``_tool_helpers``
+    # (which does not import ``tokens`` today, but might in future).
+    from service.chat._tool_helpers import drop_orphan_tool_messages
+
+    return drop_orphan_tool_messages(messages)
