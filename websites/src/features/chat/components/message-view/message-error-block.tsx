@@ -2,7 +2,7 @@
 
 import { AlertCircle, ExternalLink } from "lucide-react";
 
-import { ErrorCode } from "@/lib/api/shared/enums";
+import { pickErrorVariant } from "@/features/chat/utils/error-variant";
 import type { ErrorPayload } from "@/lib/api/shared/types";
 
 /**
@@ -11,7 +11,7 @@ import type { ErrorPayload } from "@/lib/api/shared/types";
  * ``docs/backend/ERROR_CODES.md``.
  */
 export function MessageErrorBlock({ error }: { error: ErrorPayload }) {
-  const variant = pickVariant(error);
+  const variant = pickErrorVariant(error);
   if (variant.kind === "subscription") {
     return (
       <CalloutBlock
@@ -54,31 +54,6 @@ export function MessageErrorBlock({ error }: { error: ErrorPayload }) {
       </span>
     </div>
   );
-}
-
-type Variant =
-  | { kind: "subscription"; href: string }
-  | { kind: "rateLimited" }
-  | { kind: "unauthorized" }
-  | { kind: "modelNotFound" }
-  | { kind: "generic" };
-
-function pickVariant(error: ErrorPayload): Variant {
-  switch (error.code) {
-    case ErrorCode.LlmSubscriptionRequired:
-      return {
-        kind: "subscription",
-        href: error.upstream_url ?? "https://ollama.com/upgrade",
-      };
-    case ErrorCode.LlmRateLimited:
-      return { kind: "rateLimited" };
-    case ErrorCode.LlmUnauthorized:
-      return { kind: "unauthorized" };
-    case ErrorCode.LlmModelNotFound:
-      return { kind: "modelNotFound" };
-    default:
-      return { kind: "generic" };
-  }
 }
 
 function CalloutBlock({

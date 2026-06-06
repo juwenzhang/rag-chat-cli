@@ -1,16 +1,8 @@
 "use client";
 
-import { normalizeAssetUrl } from "@/lib/assets";
+import { splitAttachedImages } from "@/features/chat/utils/split-attached-images";
 
 import type { UIMessage } from "../types";
-
-interface AttachedImage {
-  filename: string;
-  url: string;
-  description?: string;
-}
-
-const ATTACHED_IMAGE_RE = /\n*\[Attached image: ([^\]]+)\]\(([^)]+)\)(?:\n([^\n]+))?/g;
 
 /** User message — right-aligned soft-tinted bubble, no avatar. */
 export function UserMessage({ message }: { message: UIMessage }) {
@@ -48,18 +40,4 @@ export function UserMessage({ message }: { message: UIMessage }) {
       </div>
     </div>
   );
-}
-
-function splitAttachedImages(content: string): { text: string; images: AttachedImage[] } {
-  const images: AttachedImage[] = [];
-  const text = content
-    .replace(
-      ATTACHED_IMAGE_RE,
-      (_match, filename: string, url: string, description?: string) => {
-        images.push({ filename, url: normalizeAssetUrl(url), description });
-        return "\n";
-      }
-    )
-    .trim();
-  return { text, images };
 }

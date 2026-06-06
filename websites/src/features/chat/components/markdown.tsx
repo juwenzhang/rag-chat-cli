@@ -2,18 +2,18 @@
 
 import { Check, Copy } from "lucide-react";
 import { all } from "lowlight";
-import {
-  memo,
-  useEffect,
-  useId,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-} from "react";
+import { memo, useEffect, useId, useState, type ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 
+import {
+  extractLanguage,
+  extractText,
+  hashString,
+  headingId,
+  isMermaidLanguage,
+} from "@/features/chat/utils/markdown-helpers";
 import { normalizeAssetUrl } from "@/lib/assets";
 import { externalLinkHref, isHttpUrl } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
@@ -224,54 +224,5 @@ function MermaidBlock({ chart }: { chart: string }) {
         <p className="text-xs text-muted-foreground">Rendering Mermaid diagram…</p>
       )}
     </div>
-  );
-}
-
-function isMermaidLanguage(language: string | null): boolean {
-  return language === "mermaid" || language === "mmd" || language === "marmaid";
-}
-
-function hashString(input: string): string {
-  let hash = 0;
-  for (let i = 0; i < input.length; i += 1) {
-    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
-  }
-  return hash.toString(36);
-}
-
-function extractLanguage(node: ReactNode): string | null {
-  const first = Array.isArray(node) ? node[0] : node;
-  if (!first || typeof first !== "object" || !("props" in first)) return null;
-  const props = (first as { props: { className?: string } }).props;
-  const cls = props?.className || "";
-  const match = cls.match(/language-([\w-]+)/);
-  return match ? match[1] : null;
-}
-
-function extractText(node: ReactNode): string {
-  if (typeof node === "string") return node;
-  if (Array.isArray(node)) return node.map(extractText).join("");
-  if (node && typeof node === "object" && "props" in node) {
-    return extractText(
-      (node as { props: { children?: ReactNode } }).props.children ?? null
-    );
-  }
-  return "";
-}
-
-/**
- * GitHub-style slug from a heading's children. Must stay in lock-step
- * with ``parseToc``'s ``slugify`` (components/wiki/wiki-toc.tsx) so
- * the outline anchors match the rendered ids.
- */
-function headingId(children: ReactNode): string {
-  const text = extractText(children).trim();
-  return (
-    text
-      .toLowerCase()
-      .replace(/[ -⁯⸀-⹿\\'!"#$%&()*+,./:;<=>?@[\]^`{|}~]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "") || "section"
   );
 }

@@ -84,7 +84,15 @@
 - [ ] 列表渲染稳定 `key`（**不用 index**）
 - [ ] 表单：受控组件 + `react-hook-form`，不裸写 onChange 链
 
-### C.4 TUI（Ink）特有
+### C.4 文件结构（组件文件即组件本身）
+
+- [ ] **组件文件不内嵌自定义 hook**：`function useXxx` 必须在 `features/<domain>/hooks/use-xxx.ts`
+- [ ] **组件文件不内嵌跨域 util**：纯函数 helper 必须在 `features/<domain>/utils/` 或 `lib/`
+- [ ] 一个 hook / 一个 util = 一个文件，文件名即名字（kebab-case）
+- [ ] 例外：≤5 行的紧耦合 closure（如 `const isAdult = u => u.age >= 18`），只在该文件 1 处用，可保留
+- [ ] 详见 [PRINCIPLES.md §4.3](PRINCIPLES.md)
+
+### C.5 TUI（Ink）特有
 
 - [ ] 不在 render 里做 IO（IO 走 hook + store）
 - [ ] 长文本流式输出走 `useReducer` 累加，不每帧 setState

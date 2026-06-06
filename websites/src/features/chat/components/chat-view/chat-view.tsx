@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useScrollFollow } from "@/features/chat/hooks/use-scroll-follow";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import type {
   MessageOut,
@@ -108,9 +110,26 @@ export function ChatView({
     [t]
   );
 
+  const router = useRouter();
+
   const onTurnStart = useCallback(() => {
     stickToBottomRef.current = true;
   }, []);
+
+  // First-turn sidebar refresh: the backend generates the session
+  // title fire-and-forget *after* the SSE done event, so we wait a
+  // short beat to let that DB write land before refetching server
+  // data. 1500 ms is enough for a local LLM round-trip; if the title
+  // task is still pending the next user-triggered refresh
+  // (rename / pin / new session) will cover it. See
+  // service/chat/service.py::_maybe_generate_title.
+  const onTurnEnd = useCallback(
+    ({ isFirstTurn }: { isFirstTurn: boolean }) => {
+      if (!isFirstTurn) return;
+      window.setTimeout(() => router.refresh(), 1500);
+    },
+    [router]
+  );
 
   useEffect(() => {
     initSession({
@@ -155,18 +174,18 @@ export function ChatView({
     const last = messages[messages.length - 1];
     if (!last || last.role !== "user" || !last.persisted) return;
     autoFiredSessionRef.current = sessionId;
-    void regenerate({ onTurnStart });
-  }, [messages, onTurnStart, regenerate, sessionId, streaming]);
+    void regenerate({ onTurnStart, onTurnEnd });
+  }, [messages, onTurnEnd, onTurnStart, regenerate, sessionId, streaming]);
 
   const submit = useCallback(
     (content: string) => {
       const trimmed = content.trim();
       if (!trimmed || streaming) return false;
       setInput("");
-      void send(trimmed, { onTurnStart });
+      void send(trimmed, { onTurnStart, onTurnEnd });
       return true;
     },
-    [onTurnStart, send, streaming]
+    [onTurnEnd, onTurnStart, send, streaming]
   );
 
   const jumpToBottom = useCallback(() => {
@@ -191,7 +210,7 @@ export function ChatView({
         atBottom={atBottom}
         copy={copy.transcript}
         onPickPrompt={submit}
-        onRegenerate={() => void regenerate({ onTurnStart })}
+        onRegenerate={() => void regenerate({ onTurnStart, onTurnEnd })}
         onJumpToBottom={jumpToBottom}
       />
       <ChatComposer
@@ -216,39 +235,4 @@ export function ChatView({
       />
     </div>
   );
-}
-
-function useScrollFollow({
-  scrollRef,
-  stickToBottomRef,
-  messages,
-  setAtBottom,
-}: {
-  scrollRef: RefObject<HTMLDivElement | null>;
-  stickToBottomRef: RefObject<boolean>;
-  messages: unknown[];
-  setAtBottom: (next: boolean) => void;
-}) {
-  const isNearBottom = useCallback((el: HTMLElement) => {
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-  }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const near = isNearBottom(el);
-      stickToBottomRef.current = near;
-      setAtBottom(near);
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [isNearBottom, scrollRef, setAtBottom, stickToBottomRef]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    if (!stickToBottomRef.current) return;
-    el.scrollTop = el.scrollHeight;
-  }, [messages, scrollRef, stickToBottomRef]);
 }
