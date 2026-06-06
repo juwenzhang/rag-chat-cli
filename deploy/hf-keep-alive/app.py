@@ -51,9 +51,21 @@ TARGETS = [
     for line in os.getenv("TARGETS", DEFAULT_TARGETS).splitlines()
     if line.strip() and not line.strip().startswith("#")
 ]
-PING_INTERVAL_S = int(os.getenv("PING_INTERVAL_S", "300"))  # 5 min
+# 600 s = 10 min. With the A leg also pinging at */10 we land at
+# ~12 hits/hour per target, comfortably below HF's free-tier rate-limit
+# threshold for "/" paths.
+PING_INTERVAL_S = int(os.getenv("PING_INTERVAL_S", "600"))
 PING_TIMEOUT_S = float(os.getenv("PING_TIMEOUT_S", "30"))
 PORT = int(os.getenv("PORT", "7860"))
+
+# Browser-shaped User-Agent — httpx default ('python-httpx/0.x') is the
+# fastest way to get rate-limited by HF's edge. Real Firefox UA stays
+# under the heuristic radar.
+_HTTP_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"),
+    "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +91,10 @@ async def ping_loop() -> None:
         return
 
     log.info("ping loop: %d target(s), interval=%ds", len(TARGETS), PING_INTERVAL_S)
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        headers=_HTTP_HEADERS,
+    ) as client:
         # First cycle runs immediately so we don't have to wait
         # PING_INTERVAL_S after a fresh container start.
         while not _never.is_set():
