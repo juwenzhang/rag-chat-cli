@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Toaster } from "sonner";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 import { LOCALE_COOKIE, resolveLocale } from "@/lib/i18n/messages";
 import { I18nProvider } from "@/lib/i18n/provider";
@@ -97,6 +98,7 @@ export default async function RootLayout({
           }}
         />
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
