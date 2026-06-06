@@ -119,6 +119,22 @@ jobs:
 
           git remote add hf \
             "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}"
+
+          # HF's git endpoint occasionally returns HTTP 429 (rate limit)
+          # for back-to-back force-pushes. Retry with exponential backoff
+          # so a transient throttle doesn't fail the whole deploy.
           # Force-push because every snapshot rewrites history; the Space
           # never needs to track ours commit-for-commit.
-          git push --force hf main
+          attempt=1
+          max_attempts=5
+          delay=30
+          until git push --force hf main; do
+            if [ "${attempt}" -ge "${max_attempts}" ]; then
+              echo "git push failed after ${attempt} attempts" >&2
+              exit 1
+            fi
+            echo "git push attempt ${attempt} failed; retrying in ${delay}s..." >&2
+            sleep "${delay}"
+            attempt=$((attempt + 1))
+            delay=$((delay * 2))
+          done
