@@ -53,6 +53,26 @@ _DEFAULT_USER_MEMORY_INTRO = (
     "Long-term context about this user (apply when relevant; do not repeat verbatim unless asked):"
 )
 
+# Injected only when the turn has tools available. Encourages the model
+# to actually use the ReAct loop instead of answering from priors after
+# a single tool call (the most common failure mode we've observed).
+_DEFAULT_REACT_GUIDANCE = (
+    "When external knowledge is needed, follow this loop instead of "
+    "answering after one tool call:\n"
+    "  1. Plan briefly: what facts do I need, and from which kind of source?\n"
+    "  2. Search broadly first. If the first results look weak, off-topic, "
+    "or one-sided, reformulate keywords and search AGAIN before fetching.\n"
+    "  3. Read primary sources: ``web_fetch`` 2–3 of the most promising URLs "
+    "from the search results — a single source is rarely sufficient for "
+    "comparison, 'why', or 'how' questions.\n"
+    "  4. Synthesize: combine evidence from multiple sources and cite each "
+    "non-trivial claim with [N] referencing the source rank.\n"
+    "  5. Acknowledge uncertainty: if sources disagree or are inconclusive, "
+    "say so explicitly rather than picking one arbitrarily.\n"
+    "Do not stop after a single search + single fetch unless the question "
+    "is genuinely trivial (a definition, a date, a single well-known fact)."
+)
+
 
 @dataclass(frozen=True, slots=True)
 class PromptTemplates:
@@ -67,6 +87,7 @@ class PromptTemplates:
     system: str = _DEFAULT_SYSTEM
     citation_intro: str = _DEFAULT_CITATION_INTRO
     user_memory_intro: str = _DEFAULT_USER_MEMORY_INTRO
+    react_guidance: str = _DEFAULT_REACT_GUIDANCE
 
 
 DEFAULT_TEMPLATES = PromptTemplates()
@@ -89,6 +110,7 @@ class PromptBuilder:
         system_override: str | None = None,
         memories: list[UserMemoryEntry] | None = None,
         hits: list[KnowledgeHit] | None = None,
+        tools_available: bool = False,
     ) -> list[ChatMessage]:
         """Return the list of system messages to prepend before the user turn.
 
@@ -96,8 +118,11 @@ class PromptBuilder:
 
         1. Persona / default system message — present iff
            ``system_override`` (or the template default) is non-empty.
-        2. Long-term user memories — present iff ``memories`` is non-empty.
-        3. Retrieved citation block — present iff ``hits`` is non-empty.
+        2. ReAct guidance — present iff ``tools_available`` is true.
+           Goes immediately after the persona so the loop discipline is
+           in scope before any retrieval / memory blocks bias the model.
+        3. Long-term user memories — present iff ``memories`` is non-empty.
+        4. Retrieved citation block — present iff ``hits`` is non-empty.
 
         A caller passing all-empty inputs gets ``[]`` so the legacy
         "no-system-prelude" code path is preserved.
@@ -107,6 +132,9 @@ class PromptBuilder:
         sys_text = system_override if system_override is not None else self.templates.system
         if sys_text:
             out.append(ChatMessage(role="system", content=sys_text))
+
+        if tools_available and self.templates.react_guidance:
+            out.append(ChatMessage(role="system", content=self.templates.react_guidance))
 
         if memories:
             out.append(

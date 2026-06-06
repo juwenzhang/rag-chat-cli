@@ -583,16 +583,25 @@ class ChatService:
                 return
 
         # 4. ReAct loop.
+        # Resolve ``tools_for_call`` up-front so the prompt builder can
+        # inject the ReAct guidance system message when tools are
+        # actually available for this turn.
+        tools_for_call: list[ToolSpec] | None = None
+        if use_tools and self._tools is not None and len(self._tools) > 0:
+            tools_for_call = self._tools.as_specs()
+
         # Prompt order (oldest → newest):
         #   <system prelude> + <prior chat history> + <user question>
         # ``system prelude`` is composed by :class:`PromptBuilder` from the
-        # persona system prompt + user memories + retrieval hits. Neither
-        # block is persisted to chat memory — all three are regenerated per
-        # turn from fresh sources.
+        # persona system prompt + ReAct guidance (when tools are armed)
+        # + user memories + retrieval hits. None of these blocks are
+        # persisted to chat memory — they are regenerated per turn from
+        # fresh sources.
         prelude = self._prompt_builder.build(
             system_override=self._system_prompt,
             memories=memories or None,
             hits=hits or None,
+            tools_available=tools_for_call is not None,
         )
         # When we *did* persist the user msg above, ``history`` was
         # loaded before the persist so ``user_msg`` is not yet inside
@@ -603,9 +612,6 @@ class ChatService:
             [*prelude, *history, user_msg] if persist_user else [*prelude, *history]
         )
         usage: dict[str, Any] | None = None
-        tools_for_call: list[ToolSpec] | None = None
-        if use_tools and self._tools is not None and len(self._tools) > 0:
-            tools_for_call = self._tools.as_specs()
         executed_tool_keys: set[str] = set()
         executed_tool_counts: dict[str, int] = {}
 
