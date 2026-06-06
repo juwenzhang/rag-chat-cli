@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { slugify } from "@/lib/slug";
+
 /** ``true`` when the fenced-code language should render as a Mermaid diagram. */
 export function isMermaidLanguage(language: string | null): boolean {
   return language === "mermaid" || language === "mmd" || language === "marmaid";
@@ -37,18 +39,9 @@ export function extractText(node: ReactNode): string {
 }
 
 /**
- * GitHub-style slug from a heading's children. Must stay in lock-step
- * with ``parseToc``'s ``slugify`` (components/wiki/wiki-toc.tsx) so
- * outline anchors match the rendered ids.
+ * Heading id used by rendered Markdown — flatten children to text and
+ * slug it via the shared ``lib/slug`` so wiki TOC anchors line up.
  */
 export function headingId(children: ReactNode): string {
-  const text = extractText(children).trim();
-  return (
-    text
-      .toLowerCase()
-      .replace(/[ -⁯⸀-⹿\\'!"#$%&()*+,./:;<=>?@[\]^`{|}~]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "") || "section"
-  );
+  return slugify(extractText(children).trim()) || "section";
 }

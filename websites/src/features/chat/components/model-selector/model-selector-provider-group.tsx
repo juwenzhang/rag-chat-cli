@@ -4,7 +4,7 @@ import { Cpu, Loader2, RefreshCcw } from "lucide-react";
 import Link from "next/link";
 
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { formatSize } from "@/features/chat/utils/format-numbers";
+import { formatSize } from "@/lib/format";
 import type { ModelListItem } from "@/lib/api/shared/types";
 import { cn } from "@/lib/utils";
 

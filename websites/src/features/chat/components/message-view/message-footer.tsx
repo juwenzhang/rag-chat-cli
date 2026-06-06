@@ -2,7 +2,7 @@
 
 import { BookOpen, Clock, Cpu, Hash } from "lucide-react";
 
-import { formatDuration, formatTokens } from "@/features/chat/utils/format-numbers";
+import { formatDuration, formatTokens } from "@/lib/format";
 
 import type { UIMessage } from "../types";
 

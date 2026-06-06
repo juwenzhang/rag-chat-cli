@@ -15,8 +15,8 @@ import { toast } from "sonner";
 import { Markdown } from "tiptap-markdown";
 
 import { Button } from "@/components/ui/button";
+import { filesFromClipboard, insertImage } from "@/features/wiki/utils/tiptap-helpers";
 import { api } from "@/lib/api/browser";
-import type { AssetOut } from "@/lib/api/shared/types";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -217,23 +217,4 @@ export function TipTapEditor({
       <EditorContent editor={editor} />
     </div>
   );
-}
-
-function filesFromClipboard(data: DataTransfer): File[] {
-  return Array.from(data.items)
-    .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-    .map((item) => item.getAsFile())
-    .filter((file): file is File => Boolean(file));
-}
-
-function insertImage(editor: Editor, asset: AssetOut) {
-  editor
-    .chain()
-    .focus()
-    .setImage({
-      src: asset.url,
-      alt: asset.filename,
-      title: asset.description ?? undefined,
-    })
-    .run();
 }
