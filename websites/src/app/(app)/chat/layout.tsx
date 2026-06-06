@@ -1,8 +1,7 @@
 import { SessionSidebar } from "@/features/chat/components/session-sidebar";
 import { chatApi } from "@/lib/api";
 import { ApiError } from "@/lib/api/shared/types";
-import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
-import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function ChatLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  const token = await getAccessToken();
-  if (!token) redirect("/login");
+  const { token, user } = await requireUser();
 
   let sessions: Awaited<ReturnType<typeof chatApi.listSessions>> = [];
   try {

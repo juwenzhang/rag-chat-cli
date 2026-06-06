@@ -9,7 +9,7 @@ import {
   type WikiOut,
   type WikiPageListOut,
 } from "@/lib/api/shared/types";
-import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
+import { requireAccessToken } from "@/lib/auth/session.server";
 import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
@@ -26,11 +26,7 @@ export const dynamic = "force-dynamic";
 export default async function WikiLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  const token = await getAccessToken();
-  if (!token) redirect("/login");
-
+  const token = await requireAccessToken();
   const orgs = await orgApi.listOrgs(token);
   const activeOrg = await resolveActiveOrg(orgs);
   if (!activeOrg) redirect("/orgs");

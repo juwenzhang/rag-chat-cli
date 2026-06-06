@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { WikiEditorClient } from "@/features/wiki/components/wiki-editor";
 import { orgApi, wikiApi } from "@/lib/api";
 import { ApiError } from "@/lib/api/shared/types";
-import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
+import { requireAccessToken } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +13,7 @@ interface Props {
 
 export default async function WikiPagePage({ params }: Props) {
   const { wikiId, pageId } = await params;
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  const token = await getAccessToken();
-  if (!token) redirect("/login");
+  const token = await requireAccessToken();
 
   let page;
   try {

@@ -8,7 +8,10 @@ const PUBLIC_PREFIXES = [
   "/public",
   "/api/health",
   // Auth helpers — must be reachable while logged-out / with a stale cookie
-  // so we don't trap users in a redirect loop.
+  // so we don't trap users in a redirect loop. The refresh-and-back bridge
+  // is the most important entry point here: a Server Component bounces a
+  // request with an expired access cookie through this prefix to rotate
+  // the cookies before re-rendering.
   "/api/auth",
   // Per-Q&A shares are public by design — viewers don't need to log in.
   // The owner-only sub-routes (POST/DELETE) guard themselves at the BFF
@@ -17,24 +20,86 @@ const PUBLIC_PREFIXES = [
   "/api/shares",
 ];
 
-const SESSION_COOKIE = process.env.SESSION_COOKIE_NAME || "rag_session";
+// Cookie names — kept in sync with ``lib/auth/session.server.ts``.
+// We could derive these from env, but the names are stable enough that
+// hardcoding keeps the middleware bundle tiny (middleware runs on every
+// request — pulling in env utilities adds noticeable startup cost).
+const ACCESS_COOKIE = "rag_at";
+const REFRESH_COOKIE = "rag_rt";
+const LEGACY_COMBINED_COOKIE = process.env.SESSION_COOKIE_NAME || "rag_session";
 
 /**
- * Decode the base64url-encoded session cookie and check whether the
- * refresh token is still valid. We don't check the access token here —
- * an expired access with a valid refresh is still a "logged-in" state
- * because BFF route handlers will rotate it on the next API call.
+ * Decode the base64url-encoded access-cookie envelope written by
+ * ``setSession``. Returns the embedded **refresh** expiry (epoch
+ * seconds) or 0 when the envelope is malformed / missing.
  *
- * Returns false on missing cookie, malformed payload, or expired refresh.
+ * We deliberately key off ``refresh_exp`` rather than ``access_exp``
+ * here: the middleware just wants to know "is the session still
+ * recoverable", and the refresh window is the answer to that. An
+ * expired access JWT is fine — the SC layer handles that via
+ * ``/api/auth/refresh-and-back``.
+ *
+ * Must stay in sync with the ``AccessCookiePayload`` shape in
+ * ``lib/auth/session.server.ts``.
  */
-function hasValidSession(req: NextRequest): boolean {
-  const raw = req.cookies.get(SESSION_COOKIE)?.value;
-  if (!raw) return false;
+function refreshExpFromAccessCookie(raw: string | undefined): number {
+  if (!raw) return 0;
   try {
     let b64 = raw.replace(/-/g, "+").replace(/_/g, "/");
     while (b64.length % 4) b64 += "=";
-    const decoded = atob(b64);
-    const session = JSON.parse(decoded) as { refresh_expires_at?: number };
+    const payload = JSON.parse(atob(b64)) as {
+      access_token?: string;
+      refresh_exp?: number;
+    };
+    if (!payload.access_token || typeof payload.refresh_exp !== "number") {
+      return 0;
+    }
+    return payload.refresh_exp;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The middleware's only job is to decide "should this request reach a
+ * route at all", not "is the access token still valid".
+ *
+ * We can NOT inspect the refresh cookie here: it is scoped to
+ * ``Path=/api/auth`` so the browser doesn't send it on regular page
+ * navigations — that's the whole point of the refresh cookie's narrow
+ * path. So we look at the access cookie instead, but only to confirm
+ * the user has *some* session at all. An expired access (still inside
+ * the cookie's max-age window, which we tie to the refresh expiry) is
+ * fine: the Server Component will detect that and bounce through
+ * ``/api/auth/refresh-and-back`` to rotate cookies. The middleware
+ * only kicks the user to /login when even the access cookie is gone
+ * (or its envelope's ``exp`` is so far in the past that it's outside
+ * the refresh window — at which point refresh-and-back would fail too).
+ *
+ * Falls back to the legacy P-AUTH-1 combined cookie so a rolling
+ * deploy doesn't kick everyone out the moment the new code lands.
+ */
+function hasValidSession(req: NextRequest): boolean {
+  // Access cookie is the source of truth for "session exists" — its
+  // ``Path=/`` means middleware sees it on every navigation. The
+  // envelope carries the refresh window's expiry, so we can tell
+  // "fully signed out" from "expired access but recoverable" without
+  // ever needing to read the refresh cookie itself.
+  const accessRaw = req.cookies.get(ACCESS_COOKIE)?.value;
+  if (accessRaw) {
+    const refreshExp = refreshExpFromAccessCookie(accessRaw);
+    if (refreshExp > Math.floor(Date.now() / 1000)) {
+      return true;
+    }
+  }
+
+  // ---- legacy fallback (P-AUTH-1 single-cookie format) ----
+  const legacy = req.cookies.get(LEGACY_COMBINED_COOKIE)?.value;
+  if (!legacy) return false;
+  try {
+    let b64 = legacy.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    const session = JSON.parse(atob(b64)) as { refresh_expires_at?: number };
     const exp = Number(session.refresh_expires_at) || 0;
     return exp > Math.floor(Date.now() / 1000);
   } catch {
@@ -77,10 +142,23 @@ export function proxy(req: NextRequest) {
         return url;
       })()
     );
-    // Clear any stale cookie so this redirect is a clean reset.
-    if (req.cookies.has(SESSION_COOKIE)) {
+    // Clear any stale cookies so this redirect is a clean reset. We
+    // don't know each cookie's original ``Path`` here, so we re-emit
+    // them with the same paths used when they were written.
+    if (req.cookies.has(REFRESH_COOKIE)) {
       res.cookies.set({
-        name: SESSION_COOKIE,
+        name: REFRESH_COOKIE,
+        value: "",
+        path: "/api",
+        maxAge: 0,
+      });
+    }
+    if (req.cookies.has("rag_at")) {
+      res.cookies.set({ name: "rag_at", value: "", path: "/", maxAge: 0 });
+    }
+    if (req.cookies.has(LEGACY_COMBINED_COOKIE)) {
+      res.cookies.set({
+        name: LEGACY_COMBINED_COOKIE,
         value: "",
         path: "/",
         maxAge: 0,

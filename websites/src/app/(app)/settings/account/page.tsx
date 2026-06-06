@@ -1,6 +1,5 @@
 import { ArrowRight, CheckCircle2, Palette, UserRound } from "lucide-react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { LanguageToggle } from "@/components/shell/language-toggle";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { getCurrentUser } from "@/lib/auth/session.server";
+import { requireUser } from "@/lib/auth/session.server";
 import { getServerI18n } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
@@ -22,9 +21,7 @@ export const metadata = {
 };
 
 export default async function AccountSettingsPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/api/auth/clear-and-login");
-
+  const { user } = await requireUser();
   const { t } = await getServerI18n();
 
   return (

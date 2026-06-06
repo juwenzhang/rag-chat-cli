@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { DocumentTableClient } from "@/features/wiki/components/document-table-client";
 import { knowledgeApi, orgApi, wikiApi } from "@/lib/api";
-import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
+import { requireAccessToken } from "@/lib/auth/session.server";
 import { getServerI18n } from "@/lib/i18n/server";
 import { resolveActiveOrg } from "@/lib/org/active-org.server";
 import { cn, formatRelative } from "@/lib/utils";
@@ -16,11 +16,7 @@ export const dynamic = "force-dynamic";
  * /wiki — workspace's wiki list + document library.
  */
 export default async function WikiIndexPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  const token = await getAccessToken();
-  if (!token) redirect("/login");
-
+  const token = await requireAccessToken();
   const orgs = await orgApi.listOrgs(token);
   const activeOrg = await resolveActiveOrg(orgs);
   if (!activeOrg) redirect("/orgs");

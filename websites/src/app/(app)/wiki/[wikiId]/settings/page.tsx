@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { WikiSettingsClient } from "@/features/wiki/components/wiki-settings-client";
 import { wikiApi } from "@/lib/api";
 import { ApiError } from "@/lib/api/shared/types";
-import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
+import { requireUser } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +13,7 @@ interface Props {
 
 export default async function WikiSettingsPage({ params }: Props) {
   const { wikiId } = await params;
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  const token = await getAccessToken();
-  if (!token) redirect("/login");
+  const { token, user } = await requireUser();
 
   let wiki;
   try {

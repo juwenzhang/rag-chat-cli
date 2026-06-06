@@ -1,10 +1,8 @@
-import { redirect } from "next/navigation";
-
 import { GlobalRail } from "@/components/shell/global-rail";
 import { resolveActiveOrg } from "@/lib/org/active-org.server";
 import { orgApi, providerApi } from "@/lib/api";
 import { ApiError, type OrgOut } from "@/lib/api/shared/types";
-import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
+import { requireUser } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 
@@ -13,15 +11,16 @@ export const dynamic = "force-dynamic";
  * global navigation rail. Per-module sidebars (chat sessions, wiki
  * page tree, …) live inside their own route-group layouts so they
  * don't bleed into unrelated pages.
+ *
+ * ``requireUser`` transparently bridges the "access expired but
+ * refresh still valid" gap by 302-ing the request through a Route
+ * Handler that rotates the cookie. Without it, a page reload after
+ * the 15-minute access TTL would unconditionally land on /login.
  */
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/api/auth/clear-and-login");
-
-  const token = await getAccessToken();
-  if (!token) redirect("/api/auth/clear-and-login");
+  const { token, user } = await requireUser();
 
   // Eagerly trigger the provider-seed onboarding so the chat toolbar's
   // model selector picks up the starter Ollama provider on first

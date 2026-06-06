@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { DocumentEditorClient } from "@/features/wiki/components/document-editor-client";
 import { knowledgeApi } from "@/lib/api";
 import { ApiError } from "@/lib/api/shared/types";
-import { getAccessToken, getCurrentUser } from "@/lib/auth/session.server";
+import { requireAccessToken } from "@/lib/auth/session.server";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +13,7 @@ interface Props {
 
 export default async function DocumentEditorPage({ params }: Props) {
   const { documentId } = await params;
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  const token = await getAccessToken();
-  if (!token) redirect("/login");
+  const token = await requireAccessToken();
 
   let doc;
   try {
