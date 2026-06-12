@@ -8,6 +8,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 __all__ = [
     "UploadSession",
@@ -119,7 +120,7 @@ class UploadSessionStore:
     def _session_root(self, user_id: uuid.UUID, upload_id: str) -> Path:
         return self._root / str(user_id) / upload_id
 
-    def _session_from_meta(self, meta: dict, session_root: Path) -> UploadSession:
+    def _session_from_meta(self, meta: dict[str, Any], session_root: Path) -> UploadSession:
         return UploadSession(
             upload_id=str(meta["upload_id"]),
             user_id=uuid.UUID(str(meta["user_id"])),
@@ -133,18 +134,19 @@ class UploadSessionStore:
         )
 
     @staticmethod
-    def _write_meta_sync(session_root: Path, meta: dict) -> None:
+    def _write_meta_sync(session_root: Path, meta: dict[str, Any]) -> None:
         chunks_dir = session_root / _CHUNKS_DIRNAME
         chunks_dir.mkdir(parents=True, exist_ok=True)
         meta_path = session_root / _META_FILENAME
         meta_path.write_text(json.dumps(meta), encoding="utf-8")
 
     @staticmethod
-    def _read_meta_sync(session_root: Path) -> dict:
+    def _read_meta_sync(session_root: Path) -> dict[str, Any]:
         meta_path = session_root / _META_FILENAME
         if not meta_path.is_file():
             raise FileNotFoundError(str(session_root))
-        return json.loads(meta_path.read_text(encoding="utf-8"))
+        data: dict[str, Any] = json.loads(meta_path.read_text(encoding="utf-8"))
+        return data
 
     @staticmethod
     def _write_chunk_sync(session: UploadSession, index: int, data: bytes) -> None:
