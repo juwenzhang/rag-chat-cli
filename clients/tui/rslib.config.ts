@@ -51,19 +51,21 @@ export default defineConfig({
     entry: {index: './src/index.tsx'},
     define
   },
+  // 需要进行压缩
   lib: [
     {
-      format: 'esm',
+      format: 'cjs',
       bundle: true,
       output: {
         distPath: {root: './dist'},
-        filename: {js: 'index.mjs'}
+        filename: {js: 'index.cjs'}
       },
-      banner: {js: '#!/usr/bin/env node'}
-    }
+      banner: {js: '#!/usr/bin/env node'},
+    },
   ],
   output: {
     target: 'node',
-    sourceMap: true
+    sourceMap: true,
+    minify: true,
   }
 });

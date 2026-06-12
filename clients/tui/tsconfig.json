@@ -5,6 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
+    "jsxImportSource": "ink",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,

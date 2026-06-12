@@ -1,7 +1,6 @@
 {
-  "name": "lhx-rag",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@luhanxin/rag-tui",
+  "version": "0.1.1",
   "description": "lhx-rag — Ink-based terminal client for the rag-ai-cli FastAPI backend.",
   "type": "module",
   "bin": {
@@ -15,6 +14,9 @@
   "packageManager": "pnpm@10.0.0",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
