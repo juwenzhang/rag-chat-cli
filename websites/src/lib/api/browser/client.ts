@@ -114,7 +114,11 @@ export async function bff<T = unknown>(
   return payload as T;
 }
 
-export async function bffForm<T = unknown>(path: string, formData: FormData): Promise<T> {
+export async function bffForm<T = unknown>(
+  path: string,
+  formData: FormData,
+  opts: { signal?: AbortSignal } = {}
+): Promise<T> {
   const requestId = createRequestId();
   const startedAt = performance.now();
   const res = await fetch(path, {
@@ -126,6 +130,7 @@ export async function bffForm<T = unknown>(path: string, formData: FormData): Pr
     body: formData,
     credentials: "same-origin",
     cache: "no-store",
+    signal: opts.signal,
   });
   const durationMs = Math.round(performance.now() - startedAt);
   const responseRequestId = res.headers.get("x-request-id") ?? requestId;

@@ -316,11 +316,179 @@ const shares = {
   remove: (token: string) => bff<void>(`/api/shares/${token}`, { method: "DELETE" }),
 };
 
+/**
+ * Files smaller than this go through the single-shot multipart endpoint
+ * (one round trip, simplest path). Anything bigger is split into chunks
+ * so a flaky network only retries the failed slice instead of the whole
+ * blob, and so the BFF/FastAPI hop never has to buffer a fat request.
+ */
+const SINGLE_SHOT_LIMIT = 1.5 * 1024 * 1024;
+const DEFAULT_CHUNK_SIZE = 512 * 1024;
+const MAX_PARALLEL_CHUNKS = 3;
+
+export interface UploadProgress {
+  /** 0..1 — bytes acknowledged by the server / total bytes. */
+  ratio: number;
+  loaded: number;
+  total: number;
+}
+
+export interface UploadImageOptions {
+  signal?: AbortSignal;
+  onProgress?: (p: UploadProgress) => void;
+  /** Override the auto-chosen strategy; mostly for tests. */
+  forceChunked?: boolean;
+}
+
+interface UploadCreateOut {
+  status: "ready" | "completed";
+  upload_id?: string | null;
+  chunk_size?: number | null;
+  expected_chunks?: number | null;
+  received_chunks?: number[] | null;
+  asset?: AssetOut | null;
+}
+
+interface UploadCompleteOut {
+  status: "completed";
+  asset: AssetOut;
+}
+
+async function sha256Hex(buffer: ArrayBuffer): Promise<string | null> {
+  // crypto.subtle is unavailable in old browsers and on http origins; in
+  // those cases we just skip the dedupe shortcut rather than blowing up.
+  if (typeof crypto === "undefined" || !crypto.subtle) return null;
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", buffer);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return null;
+  }
+}
+
+async function uploadImageSingleShot(
+  file: File,
+  opts: UploadImageOptions
+): Promise<AssetOut> {
+  const form = new FormData();
+  form.set("file", file);
+  opts.onProgress?.({ ratio: 0, loaded: 0, total: file.size });
+  const asset = await bffForm<AssetOut>("/api/assets/images", form, {
+    signal: opts.signal,
+  });
+  opts.onProgress?.({ ratio: 1, loaded: file.size, total: file.size });
+  return asset;
+}
+
+async function uploadImageChunked(
+  file: File,
+  opts: UploadImageOptions
+): Promise<AssetOut> {
+  const buffer = await file.arrayBuffer();
+  const sourceHash = await sha256Hex(buffer);
+
+  const created = await bff<UploadCreateOut>("/api/assets/uploads", {
+    method: "POST",
+    body: {
+      filename: file.name || "image",
+      content_type: file.type || "application/octet-stream",
+      total_size: file.size,
+      source_hash: sourceHash,
+      chunk_size: DEFAULT_CHUNK_SIZE,
+    },
+    signal: opts.signal,
+  });
+
+  // Server-side dedupe hit — no bytes need to leave the browser.
+  if (created.status === "completed" && created.asset) {
+    opts.onProgress?.({ ratio: 1, loaded: file.size, total: file.size });
+    return created.asset;
+  }
+  if (!created.upload_id || !created.chunk_size || !created.expected_chunks) {
+    throw new Error("upload session response is missing fields");
+  }
+
+  const uploadId = created.upload_id;
+  const chunkSize = created.chunk_size;
+  const expected = created.expected_chunks;
+
+  let acknowledged = 0;
+  const ack = (n: number) => {
+    acknowledged += n;
+    opts.onProgress?.({
+      ratio: Math.min(1, acknowledged / file.size),
+      loaded: Math.min(file.size, acknowledged),
+      total: file.size,
+    });
+  };
+
+  // Bound concurrency so we don't open too many parallel sockets on the
+  // user's network stack — the wins flatten out fast past 3 streams.
+  const queue = Array.from({ length: expected }, (_, i) => i);
+  const workers: Promise<void>[] = [];
+  let aborted: unknown = null;
+  const upload = async () => {
+    while (queue.length > 0 && !aborted) {
+      const index = queue.shift();
+      if (index === undefined) return;
+      const start = index * chunkSize;
+      const end = Math.min(start + chunkSize, file.size);
+      const slice = buffer.slice(start, end);
+      try {
+        const res = await fetch(
+          `/api/assets/uploads/${encodeURIComponent(uploadId)}/chunks/${index}`,
+          {
+            method: "PUT",
+            body: slice,
+            headers: { "Content-Type": "application/octet-stream" },
+            credentials: "same-origin",
+            cache: "no-store",
+            signal: opts.signal,
+          }
+        );
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`chunk ${index} failed: ${res.status} ${text}`);
+        }
+        ack(end - start);
+      } catch (err) {
+        aborted = err;
+        throw err;
+      }
+    }
+  };
+  for (let i = 0; i < Math.min(MAX_PARALLEL_CHUNKS, expected); i += 1) {
+    workers.push(upload());
+  }
+
+  try {
+    await Promise.all(workers);
+  } catch (err) {
+    // Best-effort cleanup; don't mask the original failure.
+    void fetch(`/api/assets/uploads/${encodeURIComponent(uploadId)}`, {
+      method: "DELETE",
+      credentials: "same-origin",
+      cache: "no-store",
+    }).catch(() => undefined);
+    throw err;
+  }
+
+  const completed = await bff<UploadCompleteOut>(
+    `/api/assets/uploads/${encodeURIComponent(uploadId)}/complete`,
+    { method: "POST", signal: opts.signal }
+  );
+  opts.onProgress?.({ ratio: 1, loaded: file.size, total: file.size });
+  return completed.asset;
+}
+
 const assets = {
-  uploadImage: (file: File) => {
-    const form = new FormData();
-    form.set("file", file);
-    return bffForm<AssetOut>("/api/assets/images", form);
+  uploadImage: (file: File, options: UploadImageOptions = {}) => {
+    const useChunked = options.forceChunked || file.size > SINGLE_SHOT_LIMIT;
+    return useChunked
+      ? uploadImageChunked(file, options)
+      : uploadImageSingleShot(file, options);
   },
 };
 

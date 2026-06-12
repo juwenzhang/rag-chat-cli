@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -19,6 +21,7 @@ from service.knowledge import KnowledgeService
 from service.llm.ollama import OllamaClient
 from service.platform.storage import ObjectStorage, build_object_storage
 from service.platform.storage.images import normalize_image_to_webp
+from service.platform.storage.uploads import UploadSession, UploadSessionStore
 from service.platform.storage.vision import describe_image_asset
 from service.providers.runtime import build_llm_for_user
 
@@ -35,6 +38,33 @@ _MAX_IMAGE_BYTES = 8 * 1024 * 1024
 _IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 _WEBP_MAX_DIMENSION = 2048
 _WEBP_QUALITY = 82
+_DEFAULT_CHUNK_SIZE = 1 * 1024 * 1024  # 1 MiB
+_MAX_CHUNK_SIZE = 4 * 1024 * 1024  # 4 MiB
+_UPLOAD_TMP_SUBDIR = "tmp/uploads"
+
+
+class UploadCreateBody(BaseModel):
+    filename: str = Field(min_length=1, max_length=512)
+    content_type: str
+    total_size: int = Field(ge=1, le=_MAX_IMAGE_BYTES)
+    source_hash: str | None = Field(default=None, max_length=128)
+    chunk_size: int | None = Field(default=None, ge=64 * 1024, le=_MAX_CHUNK_SIZE)
+
+
+class UploadCreateOut(BaseModel):
+    """Either an in-progress session or an immediate dedupe hit."""
+
+    status: str  # "ready" | "completed"
+    upload_id: str | None = None
+    chunk_size: int | None = None
+    expected_chunks: int | None = None
+    received_chunks: list[int] | None = None
+    asset: AssetOut | None = None
+
+
+class UploadCompleteOut(BaseModel):
+    status: str  # "completed"
+    asset: AssetOut
 
 
 @router.post("/assets/images", response_model=AssetOut, status_code=status.HTTP_201_CREATED)
@@ -46,29 +76,271 @@ async def upload_image(
     session: AsyncSession = Depends(get_db_session),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> AssetOut:
+    """Single-shot image upload (kept for small files / backwards compat)."""
+
     content_type = file.content_type or "application/octet-stream"
-    if content_type not in _IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="only png/jpeg/webp/gif images are supported")
+    _ensure_supported_image_type(content_type)
     data = await file.read()
+    _ensure_image_bytes(data)
+
+    asset, was_existing = await _persist_image_asset(
+        request=request,
+        session=session,
+        session_factory=session_factory,
+        user=user,
+        data=data,
+        filename=file.filename or "image",
+        content_type=content_type,
+    )
+    if was_existing:
+        response.status_code = status.HTTP_200_OK
+    return await _to_out(asset, request)
+
+
+# ----------------------------------------------------------- chunked upload
+
+
+@router.post(
+    "/assets/uploads",
+    response_model=UploadCreateOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_upload_session(
+    body: UploadCreateBody,
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> UploadCreateOut:
+    """Open a resumable chunked upload session.
+
+    If the client provides ``source_hash`` we try to short-circuit the
+    upload entirely: a hit on the user's existing assets returns the
+    asset without ever transferring the bytes.
+    """
+
+    _ensure_supported_image_type(body.content_type)
+    if body.total_size > _MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="image too large")
+
+    if body.source_hash:
+        existing = await _find_existing_image_by_source_hash(
+            session,
+            user_id=user.id,
+            source_hash=body.source_hash,
+        )
+        if existing is not None:
+            response.status_code = status.HTTP_200_OK
+            return UploadCreateOut(status="completed", asset=await _to_out(existing, request))
+
+    chunk_size = body.chunk_size or _DEFAULT_CHUNK_SIZE
+    store = _upload_store(request)
+    session_obj = await store.create(
+        user_id=user.id,
+        filename=body.filename,
+        content_type=body.content_type,
+        total_size=body.total_size,
+        chunk_size=chunk_size,
+        source_hash=body.source_hash,
+    )
+    return UploadCreateOut(
+        status="ready",
+        upload_id=session_obj.upload_id,
+        chunk_size=session_obj.chunk_size,
+        expected_chunks=session_obj.expected_chunks,
+        received_chunks=[],
+    )
+
+
+@router.put(
+    "/assets/uploads/{upload_id}/chunks/{index}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def put_upload_chunk(
+    upload_id: str,
+    index: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+) -> Response:
+    """Upload a single chunk's raw bytes for an open session."""
+
+    store = _upload_store(request)
+    session_obj = await _load_session(store, user_id=user.id, upload_id=upload_id)
+
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=400, detail="empty chunk")
+    try:
+        await store.write_chunk(session_obj, index=index, data=data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/assets/uploads/{upload_id}/complete",
+    response_model=UploadCompleteOut,
+)
+async def complete_upload_session(
+    upload_id: str,
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> UploadCompleteOut:
+    """Reassemble all chunks and run the standard image persistence pipeline."""
+
+    store = _upload_store(request)
+    session_obj = await _load_session(store, user_id=user.id, upload_id=upload_id)
+
+    received = await store.received_indices(session_obj)
+    if len(received) != session_obj.expected_chunks or received != list(
+        range(session_obj.expected_chunks)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"missing chunks: got {len(received)}/{session_obj.expected_chunks}",
+        )
+
+    try:
+        data = await store.assemble(session_obj)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        asset, was_existing = await _persist_image_asset(
+            request=request,
+            session=session,
+            session_factory=session_factory,
+            user=user,
+            data=data,
+            filename=session_obj.filename,
+            content_type=session_obj.content_type,
+            source_hash_override=session_obj.source_hash,
+        )
+    finally:
+        await store.discard(session_obj)
+
+    if was_existing:
+        response.status_code = status.HTTP_200_OK
+    return UploadCompleteOut(status="completed", asset=await _to_out(asset, request))
+
+
+@router.delete(
+    "/assets/uploads/{upload_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_upload_session(
+    upload_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+) -> Response:
+    """Discard an in-progress session and reclaim its scratch space."""
+
+    store = _upload_store(request)
+    try:
+        session_obj = await _load_session(store, user_id=user.id, upload_id=upload_id)
+    except HTTPException:
+        # Idempotent: missing == already gone.
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    await store.discard(session_obj)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --------------------------------------------------------------- read route
+
+
+@router.get("/assets/{asset_id}", response_model=AssetOut)
+async def get_asset(
+    asset_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> AssetOut:
+    row = await session.get(Asset, asset_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status_code=404, detail="asset not found")
+    return await _to_out(row, request)
+
+
+def _ensure_supported_image_type(content_type: str) -> None:
+    if content_type not in _IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="only png/jpeg/webp/gif images are supported",
+        )
+
+
+def _ensure_image_bytes(data: bytes) -> None:
     if not data:
         raise HTTPException(status_code=400, detail="empty file")
     if len(data) > _MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="image too large")
 
-    source_hash = _sha256_hex(data)
+
+def _upload_store(request: Request) -> UploadSessionStore:
+    """Build (and cache on app.state) the chunked-upload temp store."""
+
+    store = getattr(request.app.state, "upload_store", None)
+    if isinstance(store, UploadSessionStore):
+        return store
+    settings = request.app.state.settings
+    root = Path(settings.storage.local_root) / _UPLOAD_TMP_SUBDIR
+    store = UploadSessionStore(root)
+    request.app.state.upload_store = store
+    return store
+
+
+async def _load_session(
+    store: UploadSessionStore,
+    *,
+    user_id: uuid.UUID,
+    upload_id: str,
+) -> UploadSession:
+    try:
+        return await store.get(user_id=user_id, upload_id=upload_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="upload session not found") from exc
+
+
+async def _persist_image_asset(
+    *,
+    request: Request,
+    session: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
+    user: User,
+    data: bytes,
+    filename: str,
+    content_type: str,
+    source_hash_override: str | None = None,
+) -> tuple[Asset, bool]:
+    """Run the shared dedupe + normalize + store + index pipeline.
+
+    Returns ``(asset, was_existing)`` so the caller can decide whether
+    to flip the response status from 201 to 200.
+    """
+
+    _ensure_image_bytes(data)
+    source_hash = source_hash_override or _sha256_hex(data)
+
+    # Trust-but-verify: clients can supply the hash so we can dedupe
+    # before transferring bytes; if they lie we fall back to truth.
+    if source_hash_override and source_hash != _sha256_hex(data):
+        source_hash = _sha256_hex(data)
+
     existing = await _find_existing_image_by_source_hash(
         session,
         user_id=user.id,
         source_hash=source_hash,
     )
     if existing is not None:
-        response.status_code = status.HTTP_200_OK
-        return await _to_out(existing, request)
+        return existing, True
 
     try:
         normalized = await normalize_image_to_webp(
             data=data,
-            filename=file.filename or "image",
+            filename=filename,
             content_type=content_type,
             max_dimension=_WEBP_MAX_DIMENSION,
             quality=_WEBP_QUALITY,
@@ -93,8 +365,7 @@ async def upload_image(
         )
     if existing is not None:
         await _remember_source_hash(session, existing, source_hash)
-        response.status_code = status.HTTP_200_OK
-        return await _to_out(existing, request)
+        return existing, True
 
     asset_id = uuid.uuid4()
     key = f"assets/{user.id}/{content_hash}.webp"
@@ -133,24 +404,10 @@ async def upload_image(
             )
         if existing is None:
             raise
-        response.status_code = status.HTTP_200_OK
-        return await _to_out(existing, request)
+        return existing, True
     await session.refresh(row)
     await _try_index_image_asset(request, user, row, session, session_factory)
-    return await _to_out(row, request)
-
-
-@router.get("/assets/{asset_id}", response_model=AssetOut)
-async def get_asset(
-    asset_id: uuid.UUID,
-    request: Request,
-    user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-) -> AssetOut:
-    row = await session.get(Asset, asset_id)
-    if row is None or row.user_id != user.id:
-        raise HTTPException(status_code=404, detail="asset not found")
-    return await _to_out(row, request)
+    return row, False
 
 
 def _sha256_hex(data: bytes) -> str:
