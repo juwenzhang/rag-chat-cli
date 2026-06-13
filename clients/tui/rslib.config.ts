@@ -1,7 +1,8 @@
 import {existsSync, readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 
-import {defineConfig} from '@rslib/core';
+import { pluginReact } from '@rsbuild/plugin-react';
+import { defineConfig } from '@rslib/core';
 
 /**
  * rslib config for lhx-rag.
@@ -54,18 +55,19 @@ export default defineConfig({
   // 需要进行压缩
   lib: [
     {
-      format: 'cjs',
+      format: 'esm',
       bundle: true,
       output: {
-        distPath: {root: './dist'},
-        filename: {js: 'index.cjs'}
+        distPath: { root: './dist' },
+        filename: { js: 'index.mjs' },
       },
-      banner: {js: '#!/usr/bin/env node'},
+      banner: { js: '#!/usr/bin/env node' },
     },
   ],
   output: {
     target: 'node',
     sourceMap: true,
     minify: true,
-  }
+  },
+  plugins: [pluginReact()],
 });
